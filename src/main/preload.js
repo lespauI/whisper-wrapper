@@ -8,9 +8,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     saveFile: (content, filename) => ipcRenderer.invoke('dialog:saveFile', content, filename),
   
     // Audio recording
-    startRecording: () => ipcRenderer.invoke('recording:start'),
-    stopRecording: () => ipcRenderer.invoke('recording:stop'),
+    startRecording: (options) => ipcRenderer.invoke('recording:start', options),
+    stopRecording: (audioData) => ipcRenderer.invoke('recording:stop', audioData),
     pauseRecording: () => ipcRenderer.invoke('recording:pause'),
+    resumeRecording: () => ipcRenderer.invoke('recording:resume'),
+    getRecordingStatus: () => ipcRenderer.invoke('recording:status'),
+    getRecordingSettings: () => ipcRenderer.invoke('recording:settings'),
+    updateRecordingSettings: (settings) => ipcRenderer.invoke('recording:updateSettings', settings),
+    getRecordingHistory: () => ipcRenderer.invoke('recording:history'),
+    getRecordingConstraints: () => ipcRenderer.invoke('recording:constraints'),
   
     // Transcription
     transcribeFile: (filePath) => ipcRenderer.invoke('transcription:file', filePath),
@@ -22,6 +28,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
     // File system
     getAppPath: () => ipcRenderer.invoke('app:getPath'),
+    openProjectDirectory: () => ipcRenderer.invoke('app:openProjectDirectory'),
+  
+    // Local Whisper
+    testWhisper: () => ipcRenderer.invoke('whisper:test'),
   
     // Event listeners
     onTranscriptionProgress: (callback) => {

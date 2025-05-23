@@ -7,7 +7,7 @@ module.exports = {
     app: {
         name: 'Whisper Wrapper',
         version: '0.1.0',
-        description: 'A user-friendly interface for OpenAI\'s Whisper speech-to-text model'
+        description: 'A user-friendly interface for local Whisper speech-to-text processing'
     },
 
     // Window settings
@@ -20,12 +20,14 @@ module.exports = {
         center: true
     },
 
-    // OpenAI API settings
-    openai: {
-        baseURL: 'https://api.openai.com/v1',
-        model: 'whisper-1',
-        timeout: 60000,
-        maxRetries: 3
+    // Local Whisper settings
+    whisper: {
+        model: 'base',
+        language: 'auto',
+        threads: 4,
+        translate: false,
+        modelsPath: './models',
+        binaryPath: './whisper.cpp/main'
     },
 
     // File handling settings
@@ -49,10 +51,10 @@ module.exports = {
 
     // Transcription settings
     transcription: {
-        language: null, // Auto-detect
-        prompt: '',
-        temperature: 0,
-        responseFormat: 'text'
+        language: 'auto', // Auto-detect
+        model: 'base',
+        threads: 4,
+        translate: false
     },
 
     // Export settings
@@ -82,6 +84,6 @@ module.exports = {
     security: {
         enableCSP: true,
         allowExternalResources: false,
-        encryptApiKey: true
+        enableLocalProcessing: true
     }
 };

@@ -99,25 +99,36 @@ For more details, see the [architecture documentation](./.architecture/whisper-w
 - ✅ Build and packaging scripts
 - ✅ Basic test suite
 
-### 🚧 Phase 2: Core Functionality (Next)
-- File upload and processing implementation
-- Whisper API integration
-- Error handling and validation
+### ✅ Phase 2: Core Functionality (COMPLETED)
+- ✅ File upload and processing implementation
+- ✅ Whisper API integration
+- ✅ Error handling and validation
+- ✅ IPC communication system
+- ✅ Native file dialogs and drag-and-drop
+- ✅ Real-time transcription progress
+- ✅ Settings management with API key validation
 
-### 📋 Phase 3: Recording Functionality (Planned)
-- Audio capture using Web Audio API
-- Recording controls and visualization
-- Audio processing and storage
+### ✅ Phase 3: Recording Functionality (COMPLETED)
+- ✅ Audio capture using Web Audio API
+- ✅ Recording controls and visualization
+- ✅ Audio processing and storage
+- ✅ Recording service with pause/resume functionality
+- ✅ Recording settings and quality management
+- ✅ Recording history and validation
+- ✅ Integration tests for recording workflow
 
-### 📋 Phase 4: Transcription Display and Editing (Planned)
-- Enhanced transcription display with Markdown
-- Text editing functionality
-- Export options implementation
+### 🚧 Phase 4: Transcription Display and Editing (IN PROGRESS)
+- ✅ Enhanced transcription display with Markdown
+- ✅ Text editing functionality
+- ✅ Export options implementation
+- 🚧 Advanced editing features
+- 🚧 Transcription formatting improvements
 
-### 📋 Phase 5: UI Refinement and Testing (Planned)
+### 📋 Phase 5: UI Refinement and Testing (PLANNED)
 - UI polish and animations
 - Comprehensive testing
 - Performance optimization
+- Accessibility improvements
 
 ## Development
 

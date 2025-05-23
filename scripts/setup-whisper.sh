@@ -29,11 +29,9 @@ cd "$WHISPER_DIR"
 # Build for the current platform
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS
-    make clean
     make -j$(sysctl -n hw.ncpu)
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Linux
-    make clean
     make -j$(nproc)
 elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
     # Windows

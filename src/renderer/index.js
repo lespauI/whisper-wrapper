@@ -59,6 +59,11 @@ class WhisperWrapperApp {
             this.closeSettings();
         });
 
+        // Setup Whisper button
+        document.getElementById('setup-whisper-btn').addEventListener('click', () => {
+            this.setupWhisper();
+        });
+
         // Close modal on backdrop click
         document.getElementById('settings-modal').addEventListener('click', (e) => {
             if (e.target === e.currentTarget) {
@@ -222,9 +227,10 @@ class WhisperWrapperApp {
         } catch (error) {
             console.error('Error processing file:', error);
             this.showError(error.message || 'Failed to process file');
-            this.showTranscriptionLoading(false);
         } finally {
+            // Always hide loading states and progress
             this.showProgress(false);
+            this.showTranscriptionLoading(false);
             // Clean up progress listener
             window.electronAPI.removeAllListeners('transcription:progress');
         }
@@ -502,8 +508,10 @@ class WhisperWrapperApp {
         }
     }
 
-    openSettings() {
+    async openSettings() {
         document.getElementById('settings-modal').classList.remove('hidden');
+        await this.checkWhisperStatus();
+        await this.loadSettings();
     }
 
     closeSettings() {
@@ -512,14 +520,16 @@ class WhisperWrapperApp {
 
     async saveSettings() {
         try {
-            const apiKey = document.getElementById('api-key').value;
             const model = document.getElementById('model-select').value;
             const language = document.getElementById('language-select').value;
+            const threads = parseInt(document.getElementById('threads-select').value);
+            const translate = document.getElementById('translate-checkbox').checked;
             
             const settings = {
-                apiKey,
                 model,
-                language
+                language,
+                threads,
+                translate
             };
             
             // Save settings via IPC
@@ -538,14 +548,17 @@ class WhisperWrapperApp {
         try {
             const settings = await window.electronAPI.getConfig();
             
-            if (settings.apiKey) {
-                document.getElementById('api-key').value = settings.apiKey;
-            }
             if (settings.model) {
                 document.getElementById('model-select').value = settings.model;
             }
             if (settings.language) {
                 document.getElementById('language-select').value = settings.language;
+            }
+            if (settings.threads) {
+                document.getElementById('threads-select').value = settings.threads.toString();
+            }
+            if (settings.translate !== undefined) {
+                document.getElementById('translate-checkbox').checked = settings.translate;
             }
             
         } catch (error) {
@@ -825,6 +838,102 @@ class WhisperWrapperApp {
         } catch (error) {
             console.error('Error saving recording:', error);
             this.showError('Failed to save recording');
+        }
+    }
+
+    // Local Whisper Methods
+
+    async checkWhisperStatus() {
+        try {
+            const statusElement = document.getElementById('whisper-status');
+            const statusText = document.getElementById('whisper-status-text');
+            const setupButton = document.getElementById('setup-whisper-btn');
+            
+            statusText.textContent = 'Checking...';
+            statusElement.className = 'status-indicator';
+            setupButton.style.display = 'none';
+            
+            // Test local Whisper installation
+            const testResult = await window.electronAPI.testWhisper();
+            
+            if (testResult.success) {
+                statusText.textContent = 'Local Whisper is ready';
+                statusElement.className = 'status-indicator success';
+                
+                // Update model options with available models
+                this.updateModelOptions(testResult.details.availableModels);
+            } else {
+                statusText.textContent = testResult.message || 'Local Whisper not available';
+                statusElement.className = 'status-indicator error';
+                setupButton.style.display = 'inline-block';
+            }
+            
+        } catch (error) {
+            console.error('Error checking Whisper status:', error);
+            const statusElement = document.getElementById('whisper-status');
+            const statusText = document.getElementById('whisper-status-text');
+            const setupButton = document.getElementById('setup-whisper-btn');
+            
+            statusText.textContent = 'Error checking Whisper status';
+            statusElement.className = 'status-indicator error';
+            setupButton.style.display = 'inline-block';
+        }
+    }
+
+    updateModelOptions(availableModels) {
+        const modelSelect = document.getElementById('model-select');
+        
+        // Clear existing options
+        modelSelect.innerHTML = '';
+        
+        if (availableModels && availableModels.length > 0) {
+            availableModels.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.name;
+                option.textContent = `${model.name.charAt(0).toUpperCase() + model.name.slice(1)} (${model.size})`;
+                modelSelect.appendChild(option);
+            });
+        } else {
+            // Fallback options
+            const defaultModels = [
+                { name: 'base', size: '39 MB' },
+                { name: 'small', size: '244 MB' },
+                { name: 'medium', size: '769 MB' },
+                { name: 'large', size: '1550 MB' }
+            ];
+            
+            defaultModels.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.name;
+                option.textContent = `${model.name.charAt(0).toUpperCase() + model.name.slice(1)} (${model.size})`;
+                modelSelect.appendChild(option);
+            });
+        }
+    }
+
+    async setupWhisper() {
+        try {
+            this.updateStatus('Setting up local Whisper...');
+            
+            // Show setup instructions
+            const message = `To set up local Whisper:
+
+1. Open a terminal in the project directory
+2. Run the setup script:
+   - macOS/Linux: ./scripts/setup-whisper.sh
+   - Windows: scripts\\setup-whisper.bat
+
+This will download and build whisper.cpp and the required models.
+
+Would you like to open the project directory?`;
+            
+            if (confirm(message)) {
+                await window.electronAPI.openProjectDirectory();
+            }
+            
+        } catch (error) {
+            console.error('Error setting up Whisper:', error);
+            this.showError('Failed to setup Whisper');
         }
     }
 }

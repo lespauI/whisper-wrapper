@@ -1,4 +1,5 @@
 # Whisper Wrapper
+***Disclaimer! This project is 100% AI-generated with [Zencoder.ai](https://zencoder.ai/)***
 
 A Node.js desktop application that provides a user-friendly interface for OpenAI's Whisper speech-to-text model. This application allows you to transcribe audio and video files, as well as record audio directly for transcription.
 

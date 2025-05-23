@@ -46,10 +46,10 @@ class ConfigManager {
      */
     getSimplified() {
         return {
-            apiKey: this.get('openai.apiKey'),
-            model: this.get('openai.model', 'whisper-1'),
-            language: this.get('transcription.language'),
-            temperature: this.get('transcription.temperature', 0)
+            model: this.get('transcription.model', 'base'),
+            language: this.get('transcription.language', 'auto'),
+            threads: this.get('transcription.threads', 4),
+            translate: this.get('transcription.translate', false)
         };
     }
 
@@ -58,17 +58,17 @@ class ConfigManager {
      * @param {Object} config - Simplified configuration
      */
     setSimplified(config) {
-        if (config.apiKey !== undefined) {
-            this.set('openai.apiKey', config.apiKey);
-        }
         if (config.model !== undefined) {
-            this.set('openai.model', config.model);
+            this.set('transcription.model', config.model);
         }
         if (config.language !== undefined) {
             this.set('transcription.language', config.language);
         }
-        if (config.temperature !== undefined) {
-            this.set('transcription.temperature', config.temperature);
+        if (config.threads !== undefined) {
+            this.set('transcription.threads', config.threads);
+        }
+        if (config.translate !== undefined) {
+            this.set('transcription.translate', config.translate);
         }
     }
 

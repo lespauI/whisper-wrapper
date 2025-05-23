@@ -31,6 +31,8 @@ class IPCHandlers {
 
         // App handlers
         ipcMain.handle('app:getPath', this.handleGetAppPath.bind(this));
+        ipcMain.handle('whisper:test', this.handleTestWhisper.bind(this));
+        ipcMain.handle('app:openProjectDirectory', this.handleOpenProjectDirectory.bind(this));
     }
 
     async handleOpenFile() {
@@ -141,14 +143,13 @@ class IPCHandlers {
 
             // Get current configuration
             const currentConfig = config.getSimplified();
-            const apiKey = currentConfig.apiKey;
 
-            if (!apiKey) {
-                throw new Error('OpenAI API key not configured. Please set it in Settings.');
+            // Check if local Whisper is available
+            if (!this.transcriptionService.isAvailable()) {
+                throw new Error('Local Whisper is not available. Please run the setup script first.');
             }
 
             // Set up transcription service with current config
-            this.transcriptionService.setApiKey(apiKey);
             if (currentConfig.model) {
                 this.transcriptionService.setModel(currentConfig.model);
             }
@@ -163,12 +164,13 @@ class IPCHandlers {
                 // Send progress update
                 event.sender.send('transcription:progress', { 
                     status: 'processing', 
-                    message: 'Sending file to OpenAI Whisper...' 
+                    message: 'Processing with local Whisper...' 
                 });
 
                 // Transcribe the file
                 const result = await this.transcriptionService.transcribeFile(tempFilePath, {
-                    temperature: currentConfig.temperature || 0
+                    threads: currentConfig.threads || 4,
+                    translate: currentConfig.translate || false
                 });
 
                 // Clean up temp file
@@ -210,14 +212,13 @@ class IPCHandlers {
         try {
             // Get current configuration
             const currentConfig = config.getSimplified();
-            const apiKey = currentConfig.apiKey;
 
-            if (!apiKey) {
-                throw new Error('OpenAI API key not configured. Please set it in Settings.');
+            // Check if local Whisper is available
+            if (!this.transcriptionService.isAvailable()) {
+                throw new Error('Local Whisper is not available. Please run the setup script first.');
             }
 
             // Set up transcription service with current config
-            this.transcriptionService.setApiKey(apiKey);
             if (currentConfig.model) {
                 this.transcriptionService.setModel(currentConfig.model);
             }
@@ -243,10 +244,10 @@ class IPCHandlers {
 
             // Transcribe the audio buffer
             const result = await this.transcriptionService.transcribeBuffer(
-                audioBuffer, 
-                'recording.wav',
+                audioBuffer,
                 {
-                    temperature: currentConfig.temperature || 0
+                    threads: currentConfig.threads || 4,
+                    translate: currentConfig.translate || false
                 }
             );
 
@@ -287,13 +288,21 @@ class IPCHandlers {
 
     async handleSetConfig(event, newConfig) {
         try {
-            // Validate API key if provided
-            if (newConfig.apiKey) {
-                const testService = new TranscriptionService(newConfig.apiKey);
-                const isValid = await testService.testConnection();
+            // Test local Whisper if model is specified
+            if (newConfig.model) {
+                const testService = new TranscriptionService();
+                const testResult = await testService.testConnection();
                 
-                if (!isValid) {
-                    throw new Error('Invalid API key or connection failed');
+                if (!testResult.success) {
+                    throw new Error(`Local Whisper test failed: ${testResult.message}`);
+                }
+                
+                // Check if the specified model is available
+                const availableModels = testService.getAvailableModels();
+                const modelExists = availableModels.some(m => m.name === newConfig.model);
+                
+                if (!modelExists) {
+                    throw new Error(`Model '${newConfig.model}' not found. Available models: ${availableModels.map(m => m.name).join(', ')}`);
                 }
             }
 
@@ -318,6 +327,30 @@ class IPCHandlers {
         } catch (error) {
             console.error('Error getting app paths:', error);
             return {};
+        }
+    }
+
+    async handleTestWhisper() {
+        try {
+            const testResult = await this.transcriptionService.testConnection();
+            return testResult;
+        } catch (error) {
+            console.error('Error testing Whisper:', error);
+            return {
+                success: false,
+                message: `Test failed: ${error.message}`
+            };
+        }
+    }
+
+    async handleOpenProjectDirectory() {
+        try {
+            const { shell } = require('electron');
+            await shell.openPath(process.cwd());
+            return { success: true };
+        } catch (error) {
+            console.error('Error opening project directory:', error);
+            throw new Error(`Failed to open project directory: ${error.message}`);
         }
     }
 }

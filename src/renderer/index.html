@@ -204,15 +204,22 @@
             </div>
             <div class="modal-body">
                 <div class="setting-group">
-                    <label for="api-key">OpenAI API Key:</label>
-                    <input type="password" id="api-key" placeholder="Enter your OpenAI API key">
-                    <small>Your API key is stored locally and never shared.</small>
+                    <label for="whisper-status">Local Whisper Status:</label>
+                    <div id="whisper-status" class="status-indicator">
+                        <span id="whisper-status-text">Checking...</span>
+                        <button id="setup-whisper-btn" class="btn btn-secondary" style="display: none;">Setup Whisper</button>
+                    </div>
+                    <small>Local Whisper processing - no internet connection required.</small>
                 </div>
                 <div class="setting-group">
                     <label for="model-select">Whisper Model:</label>
                     <select id="model-select">
-                        <option value="whisper-1">whisper-1</option>
+                        <option value="base">Base (39 MB)</option>
+                        <option value="small">Small (244 MB)</option>
+                        <option value="medium">Medium (769 MB)</option>
+                        <option value="large">Large (1550 MB)</option>
                     </select>
+                    <small>Larger models provide better accuracy but require more processing time.</small>
                 </div>
                 <div class="setting-group">
                     <label for="language-select">Language (optional):</label>
@@ -229,6 +236,23 @@
                         <option value="ko">Korean</option>
                         <option value="zh">Chinese</option>
                     </select>
+                </div>
+                <div class="setting-group">
+                    <label for="threads-select">Processing Threads:</label>
+                    <select id="threads-select">
+                        <option value="1">1 Thread</option>
+                        <option value="2">2 Threads</option>
+                        <option value="4" selected>4 Threads</option>
+                        <option value="8">8 Threads</option>
+                    </select>
+                    <small>More threads can speed up processing on multi-core systems.</small>
+                </div>
+                <div class="setting-group">
+                    <label>
+                        <input type="checkbox" id="translate-checkbox">
+                        Translate to English
+                    </label>
+                    <small>Automatically translate non-English audio to English.</small>
                 </div>
             </div>
             <div class="modal-footer">

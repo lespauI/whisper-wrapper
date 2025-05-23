@@ -719,3 +719,32 @@ body {
         align-items: center;
     }
 }
+
+/* Status Indicator */
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem;
+    border-radius: 6px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+}
+
+.status-indicator.success {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+    color: #166534;
+}
+
+.status-indicator.error {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #dc2626;
+}
+
+.status-indicator.warning {
+    background: #fffbeb;
+    border-color: #fed7aa;
+    color: #d97706;
+}

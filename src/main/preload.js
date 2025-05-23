@@ -22,6 +22,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
     // File system
     getAppPath: () => ipcRenderer.invoke('app:getPath'),
+    openProjectDirectory: () => ipcRenderer.invoke('app:openProjectDirectory'),
+  
+    // Local Whisper
+    testWhisper: () => ipcRenderer.invoke('whisper:test'),
   
     // Event listeners
     onTranscriptionProgress: (callback) => {

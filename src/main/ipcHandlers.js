@@ -7,12 +7,14 @@ const path = require('path');
 const fs = require('fs');
 const FileService = require('../services/fileService');
 const TranscriptionService = require('../services/transcriptionService');
+const RecordingService = require('../services/recordingService');
 const config = require('../config');
 
 class IPCHandlers {
     constructor() {
         this.fileService = new FileService();
         this.transcriptionService = new TranscriptionService();
+        this.recordingService = new RecordingService();
         this.setupHandlers();
     }
 
@@ -24,6 +26,17 @@ class IPCHandlers {
         // Transcription handlers
         ipcMain.handle('transcription:file', this.handleTranscribeFile.bind(this));
         ipcMain.handle('transcription:audio', this.handleTranscribeAudio.bind(this));
+
+        // Recording handlers
+        ipcMain.handle('recording:start', this.handleStartRecording.bind(this));
+        ipcMain.handle('recording:pause', this.handlePauseRecording.bind(this));
+        ipcMain.handle('recording:resume', this.handleResumeRecording.bind(this));
+        ipcMain.handle('recording:stop', this.handleStopRecording.bind(this));
+        ipcMain.handle('recording:status', this.handleGetRecordingStatus.bind(this));
+        ipcMain.handle('recording:settings', this.handleGetRecordingSettings.bind(this));
+        ipcMain.handle('recording:updateSettings', this.handleUpdateRecordingSettings.bind(this));
+        ipcMain.handle('recording:history', this.handleGetRecordingHistory.bind(this));
+        ipcMain.handle('recording:constraints', this.handleGetRecordingConstraints.bind(this));
 
         // Configuration handlers
         ipcMain.handle('config:get', this.handleGetConfig.bind(this));
@@ -351,6 +364,99 @@ class IPCHandlers {
         } catch (error) {
             console.error('Error opening project directory:', error);
             throw new Error(`Failed to open project directory: ${error.message}`);
+        }
+    }
+
+    // Recording Handlers
+
+    async handleStartRecording(event, options = {}) {
+        try {
+            const result = await this.recordingService.startRecording(options);
+            console.log('Recording started via IPC:', result.recordingId);
+            return result;
+        } catch (error) {
+            console.error('Error starting recording:', error);
+            throw new Error(`Failed to start recording: ${error.message}`);
+        }
+    }
+
+    async handlePauseRecording() {
+        try {
+            const result = await this.recordingService.pauseRecording();
+            console.log('Recording paused via IPC:', result.recordingId);
+            return result;
+        } catch (error) {
+            console.error('Error pausing recording:', error);
+            throw new Error(`Failed to pause recording: ${error.message}`);
+        }
+    }
+
+    async handleResumeRecording() {
+        try {
+            const result = await this.recordingService.resumeRecording();
+            console.log('Recording resumed via IPC:', result.recordingId);
+            return result;
+        } catch (error) {
+            console.error('Error resuming recording:', error);
+            throw new Error(`Failed to resume recording: ${error.message}`);
+        }
+    }
+
+    async handleStopRecording(event, audioData = null) {
+        try {
+            const result = await this.recordingService.stopRecording(audioData);
+            console.log('Recording stopped via IPC:', result.recording.id);
+            return result;
+        } catch (error) {
+            console.error('Error stopping recording:', error);
+            throw new Error(`Failed to stop recording: ${error.message}`);
+        }
+    }
+
+    async handleGetRecordingStatus() {
+        try {
+            return this.recordingService.getStatus();
+        } catch (error) {
+            console.error('Error getting recording status:', error);
+            throw new Error(`Failed to get recording status: ${error.message}`);
+        }
+    }
+
+    async handleGetRecordingSettings() {
+        try {
+            return this.recordingService.getSettings();
+        } catch (error) {
+            console.error('Error getting recording settings:', error);
+            throw new Error(`Failed to get recording settings: ${error.message}`);
+        }
+    }
+
+    async handleUpdateRecordingSettings(event, newSettings) {
+        try {
+            const result = this.recordingService.updateSettings(newSettings);
+            console.log('Recording settings updated via IPC:', result);
+            return { success: true, settings: result };
+        } catch (error) {
+            console.error('Error updating recording settings:', error);
+            throw new Error(`Failed to update recording settings: ${error.message}`);
+        }
+    }
+
+    async handleGetRecordingHistory() {
+        try {
+            return this.recordingService.getRecordingHistory();
+        } catch (error) {
+            console.error('Error getting recording history:', error);
+            throw new Error(`Failed to get recording history: ${error.message}`);
+        }
+    }
+
+    async handleGetRecordingConstraints() {
+        try {
+            return this.recordingService.getRecordingConstraints();
+        } catch (error) {
+            console.error('Error getting recording constraints:', error);
+            throw new Error(`Failed to get recording constraints: ${error.message}`);
         }
     }
 }

@@ -1,44 +1,82 @@
 {
-  "name": "whishper-wrapper",
+  "name": "whisper-wrapper",
   "version": "0.1.0",
+  "description": "A Node.js desktop application that provides a user-friendly interface for OpenAI's Whisper speech-to-text model",
+  "main": "src/main/index.js",
   "private": true,
+  "homepage": "./",
   "dependencies": {
-    "@testing-library/dom": "^10.4.0",
-    "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.3.0",
-    "@testing-library/user-event": "^13.5.0",
+    "axios": "^1.2.2",
+    "electron": "^22.0.0",
+    "electron-store": "^8.1.0",
+    "express": "^4.18.2",
+    "ffmpeg-static": "^5.1.0",
+    "fluent-ffmpeg": "^2.1.2",
+    "form-data": "^4.0.2",
+    "lodash": "^4.17.21",
+    "marked": "^4.2.5",
+    "openai": "^3.2.1",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/fluent-ffmpeg": "^2.1.20",
     "@types/jest": "^27.5.2",
+    "@types/lodash": "^4.14.191",
     "@types/node": "^16.18.126",
-    "@types/react": "^19.1.5",
-    "@types/react-dom": "^19.1.5",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "react-scripts": "5.0.1",
+    "@types/uuid": "^9.0.0",
+    "concurrently": "^7.6.0",
+    "electron-builder": "^24.0.0",
+    "eslint": "^8.30.0",
+    "jest": "^29.3.1",
+    "prettier": "^2.8.1",
     "typescript": "^4.9.5",
-    "web-vitals": "^2.1.4"
+    "wait-on": "^7.0.1"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "start": "concurrently \"npm run start:renderer\" \"wait-on http://localhost:3000 && NODE_ENV=development npm run start:electron\"",
+    "start:renderer": "node scripts/start-renderer.js",
+    "start:electron": "electron .",
+    "build": "npm run build:renderer && npm run build:electron",
+    "build:renderer": "node scripts/build-renderer.js",
+    "build:electron": "electron-builder",
+    "test": "jest",
+    "lint": "eslint src/**/*.js",
+    "format": "prettier --write src/**/*.js",
+    "package": "npm run build && electron-builder --publish=never"
+  },
+  "build": {
+    "appId": "com.whisper-wrapper.app",
+    "productName": "Whisper Wrapper",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/main/**/*",
+      "src/renderer/dist/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   },
   "eslintConfig": {
     "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
+      "eslint:recommended"
     ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+    "env": {
+      "node": true,
+      "browser": true,
+      "es2021": true
+    },
+    "parserOptions": {
+      "ecmaVersion": 12,
+      "sourceType": "module"
+    }
   }
 }

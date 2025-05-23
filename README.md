@@ -1,46 +1,171 @@
-# Getting Started with Create React App
+# Whisper Wrapper
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A Node.js desktop application that provides a user-friendly interface for OpenAI's Whisper speech-to-text model. This application allows you to transcribe audio and video files, as well as record audio directly for transcription.
 
-## Available Scripts
+## Features
+
+- **File Upload**: Upload audio and video files for transcription
+- **Audio Recording**: Record audio directly within the application
+- **Markdown Formatting**: View and edit transcriptions with Markdown formatting
+- **Export Options**: Download transcriptions in various formats
+- **Local Processing**: Runs entirely on your local machine
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js (v16 or higher)
+- npm (v8 or higher)
+- FFmpeg (for audio/video processing)
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/whisper-wrapper.git
+   cd whisper-wrapper
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Start the application:
+   ```bash
+   npm start
+   ```
+
+4. Configure your OpenAI API key:
+   - Click the settings button (⚙️) in the application
+   - Enter your OpenAI API key
+   - Save the settings
+
+## Usage
+
+### Transcribing Files
+
+1. Click the "Upload" button or drag and drop a file into the designated area
+2. Select an audio or video file from your computer
+3. Wait for the transcription to complete
+4. View and edit the transcription in the editor
+5. Download the transcription using the "Download" button
+
+### Recording Audio
+
+1. Click the "Record" button to start recording
+2. Speak clearly into your microphone
+3. Click "Stop" when finished
+4. Wait for the transcription to complete
+5. View and edit the transcription in the editor
+6. Download the transcription using the "Download" button
+
+## Supported File Formats
+
+### Audio
+- MP3
+- WAV
+- M4A
+- FLAC
+- OGG
+
+### Video
+- MP4
+- MOV
+- AVI
+- MKV
+- WEBM
+
+## Architecture
+
+The application follows a client-side MVC architecture with the following components:
+
+- **UI Layer**: Web interface and components
+- **Service Layer**: File processing, recording, and transcription services
+- **Data Layer**: File storage and configuration management
+
+For more details, see the [architecture documentation](./.architecture/whisper-wrapper/).
+
+## Development Status
+
+### ✅ Phase 1: Project Setup and Basic Structure (COMPLETED)
+- ✅ Project initialization and dependencies
+- ✅ Electron application shell with main and renderer processes
+- ✅ Basic UI with tabbed interface (Upload, Record, Transcription)
+- ✅ Service layer foundation (File, Recording, Transcription, Export services)
+- ✅ Configuration system with electron-store
+- ✅ Development tools setup (ESLint, Prettier, Jest)
+- ✅ Build and packaging scripts
+- ✅ Basic test suite
+
+### 🚧 Phase 2: Core Functionality (Next)
+- File upload and processing implementation
+- Whisper API integration
+- Error handling and validation
+
+### 📋 Phase 3: Recording Functionality (Planned)
+- Audio capture using Web Audio API
+- Recording controls and visualization
+- Audio processing and storage
+
+### 📋 Phase 4: Transcription Display and Editing (Planned)
+- Enhanced transcription display with Markdown
+- Text editing functionality
+- Export options implementation
+
+### 📋 Phase 5: UI Refinement and Testing (Planned)
+- UI polish and animations
+- Comprehensive testing
+- Performance optimization
+
+## Development
+
+### Project Structure
+
+```
+whisper-wrapper/
+├── src/                # Source code
+│   ├── main/           # Electron main process
+│   ├── renderer/       # Electron renderer process
+│   ├── services/       # Service layer
+│   ├── utils/          # Utility functions
+│   └── config/         # Configuration
+├── tests/              # Test files
+└── ...
+```
+
+### Available Scripts
 
 In the project directory, you can run:
 
-### `npm start`
+#### `npm start`
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+Runs the app in development mode.
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+#### `npm test`
 
-### `npm test`
+Launches the test runner.
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+#### `npm run build`
 
-### `npm run build`
+Builds the app for production to the `dist` folder.
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Contributing
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-### `npm run eject`
+## License
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## Acknowledgments
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
-
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
+- [OpenAI Whisper](https://openai.com/research/whisper) for the speech recognition model
+- [Electron](https://www.electronjs.org/) for the desktop application framework
+- [FFmpeg](https://ffmpeg.org/) for audio/video processing

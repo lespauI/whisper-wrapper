@@ -26,3 +26,7 @@ yarn-error.log*
 
 test-config.js
 test-whisper.js
+/whisper.cpp
+
+# Whisper models (large binary files)
+/models/*.bin

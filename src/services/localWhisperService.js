@@ -9,9 +9,16 @@ const os = require('os');
 
 class LocalWhisperService {
     constructor() {
+        console.log('🔧 LocalWhisperService: Initializing...');
+        
         this.whisperPath = this.findWhisperBinary();
         this.modelsPath = path.join(process.cwd(), 'models');
         this.tempDir = path.join(os.tmpdir(), 'whisper-wrapper');
+        
+        console.log('📁 LocalWhisperService: Paths configured:');
+        console.log(`   - Whisper binary: ${this.whisperPath || 'NOT FOUND'}`);
+        console.log(`   - Models directory: ${this.modelsPath}`);
+        console.log(`   - Temp directory: ${this.tempDir}`);
         
         // Default settings
         this.model = 'base';
@@ -19,16 +26,32 @@ class LocalWhisperService {
         this.threads = 4;
         this.translate = false;
         
+        console.log('⚙️ LocalWhisperService: Default settings:');
+        console.log(`   - Model: ${this.model}`);
+        console.log(`   - Language: ${this.language}`);
+        console.log(`   - Threads: ${this.threads}`);
+        
         // Ensure temp directory exists
         if (!fs.existsSync(this.tempDir)) {
             fs.mkdirSync(this.tempDir, { recursive: true });
+            console.log(`📂 LocalWhisperService: Created temp directory: ${this.tempDir}`);
+        } else {
+            console.log(`📂 LocalWhisperService: Using existing temp directory: ${this.tempDir}`);
         }
+        
+        // Log available models
+        const availableModels = this.getAvailableModels();
+        console.log(`🤖 LocalWhisperService: Found ${availableModels.length} models:`, availableModels.map(m => m.name));
+        
+        console.log('✅ LocalWhisperService: Initialization complete');
     }
 
     /**
      * Find the whisper.cpp binary
      */
     findWhisperBinary() {
+        console.log('🔍 LocalWhisperService: Searching for whisper.cpp binary...');
+        
         const possiblePaths = [
             path.join(process.cwd(), 'whisper.cpp', 'build', 'bin', 'whisper-cli'),
             path.join(process.cwd(), 'whisper.cpp', 'build', 'bin', 'whisper-cli.exe'),
@@ -39,12 +62,17 @@ class LocalWhisperService {
             path.join(process.cwd(), 'whisper.cpp', 'build', 'bin', 'Release', 'main.exe'),
         ];
 
+        console.log('🔍 LocalWhisperService: Checking possible paths:');
         for (const whisperPath of possiblePaths) {
-            if (fs.existsSync(whisperPath)) {
+            const exists = fs.existsSync(whisperPath);
+            console.log(`   - ${whisperPath}: ${exists ? '✅ FOUND' : '❌ NOT FOUND'}`);
+            if (exists) {
+                console.log(`🎯 LocalWhisperService: Using whisper binary: ${whisperPath}`);
                 return whisperPath;
             }
         }
 
+        console.log('❌ LocalWhisperService: No whisper.cpp binary found!');
         return null;
     }
 
@@ -124,11 +152,147 @@ class LocalWhisperService {
     }
 
     /**
+     * Extract audio from video file using ffmpeg
+     * @param {string} inputPath - Path to video file
+     * @param {string} outputPath - Path for extracted audio
+     * @returns {Promise<void>}
+     */
+    async extractAudioFromVideo(inputPath, outputPath) {
+        console.log('🎬 LocalWhisperService: Extracting audio from video...');
+        console.log(`📹 Input: ${inputPath}`);
+        console.log(`🎵 Output: ${outputPath}`);
+
+        return new Promise((resolve, reject) => {
+            // Use ffmpeg to extract audio as WAV
+            const ffmpegArgs = [
+                '-i', inputPath,           // Input file
+                '-vn',                     // No video
+                '-acodec', 'pcm_s16le',    // Audio codec: 16-bit PCM
+                '-ar', '16000',            // Sample rate: 16kHz (good for speech)
+                '-ac', '1',                // Mono audio
+                '-y',                      // Overwrite output file
+                outputPath                 // Output file
+            ];
+
+            console.log('🚀 LocalWhisperService: Executing ffmpeg command:');
+            console.log(`   Command: ffmpeg ${ffmpegArgs.join(' ')}`);
+
+            const ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
+
+            let stdout = '';
+            let stderr = '';
+
+            ffmpegProcess.stdout.on('data', (data) => {
+                stdout += data.toString();
+            });
+
+            ffmpegProcess.stderr.on('data', (data) => {
+                const chunk = data.toString();
+                stderr += chunk;
+                // FFmpeg outputs progress to stderr, so we log it
+                if (chunk.includes('time=') || chunk.includes('size=')) {
+                    console.log('📊 FFmpeg progress:', chunk.trim());
+                }
+            });
+
+            ffmpegProcess.on('close', (code) => {
+                if (code === 0) {
+                    console.log('✅ LocalWhisperService: Audio extraction completed successfully');
+                    
+                    // Verify output file exists and has content
+                    if (fs.existsSync(outputPath)) {
+                        const stats = fs.statSync(outputPath);
+                        console.log(`📊 Extracted audio size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+                        resolve();
+                    } else {
+                        reject(new Error('Audio extraction completed but output file not found'));
+                    }
+                } else {
+                    console.log(`❌ LocalWhisperService: FFmpeg failed with code ${code}`);
+                    console.log('📄 FFmpeg stderr:', stderr);
+                    reject(new Error(`FFmpeg failed with code ${code}: ${stderr}`));
+                }
+            });
+
+            ffmpegProcess.on('error', (error) => {
+                console.log('❌ LocalWhisperService: Failed to start ffmpeg:', error.message);
+                reject(new Error(`Failed to start ffmpeg: ${error.message}`));
+            });
+        });
+    }
+
+    /**
+     * Check if file is a video format that needs audio extraction
+     * @param {string} filePath - Path to file
+     * @returns {boolean}
+     */
+    isVideoFile(filePath) {
+        const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.flv', '.wmv'];
+        const ext = path.extname(filePath).toLowerCase();
+        return videoExtensions.includes(ext);
+    }
+
+    /**
+     * Check if file is already an audio format supported by whisper.cpp
+     * @param {string} filePath - Path to file
+     * @returns {boolean}
+     */
+    isSupportedAudioFile(filePath) {
+        const supportedExtensions = ['.wav', '.mp3', '.flac', '.ogg'];
+        const ext = path.extname(filePath).toLowerCase();
+        return supportedExtensions.includes(ext);
+    }
+
+    /**
      * Transcribe audio file using whisper.cpp
      */
     async transcribeFile(filePath, options = {}) {
+        console.log('🎤 LocalWhisperService: Starting transcription...');
+        console.log(`📁 Input file: ${filePath}`);
+        console.log(`⚙️ Options:`, options);
+        
         if (!this.isAvailable()) {
+            console.log('❌ LocalWhisperService: whisper.cpp is not available');
             throw new Error('whisper.cpp is not available. Please run the setup script first.');
+        }
+
+        // Check if input file exists
+        if (!fs.existsSync(filePath)) {
+            console.log(`❌ LocalWhisperService: Input file does not exist: ${filePath}`);
+            throw new Error(`Input file does not exist: ${filePath}`);
+        }
+
+        const fileStats = fs.statSync(filePath);
+        console.log(`📊 Input file size: ${(fileStats.size / 1024 / 1024).toFixed(2)} MB`);
+
+        // Determine if we need to extract audio from video
+        let audioFilePath = filePath;
+        let needsCleanup = false;
+
+        if (this.isVideoFile(filePath)) {
+            console.log('🎬 LocalWhisperService: Video file detected, extracting audio...');
+            
+            // Create temporary audio file path
+            const audioFileName = `extracted_audio_${Date.now()}.wav`;
+            audioFilePath = path.join(this.tempDir, audioFileName);
+            needsCleanup = true;
+
+            try {
+                // Extract audio from video
+                await this.extractAudioFromVideo(filePath, audioFilePath);
+                console.log(`🎵 LocalWhisperService: Audio extracted to: ${audioFilePath}`);
+            } catch (extractionError) {
+                console.log('❌ LocalWhisperService: Audio extraction failed:', extractionError.message);
+                throw new Error(`Audio extraction failed: ${extractionError.message}`);
+            }
+        } else if (this.isSupportedAudioFile(filePath)) {
+            console.log('🎵 LocalWhisperService: Audio file detected, proceeding with transcription');
+        } else {
+            console.log('❌ LocalWhisperService: Unsupported file format');
+            const ext = path.extname(filePath);
+            throw new Error(`Unsupported file format: ${ext}. Supported formats: .wav, .mp3, .flac, .ogg, .mp4, .mov, .avi, .mkv, .webm`);
         }
 
         const {
@@ -139,19 +303,29 @@ class LocalWhisperService {
             threads = 4
         } = options;
 
+        console.log(`🤖 Using model: ${model}`);
+        console.log(`🌍 Language: ${language}`);
+        console.log(`🔄 Translate: ${translate}`);
+        console.log(`🧵 Threads: ${threads}`);
+
         // Find model file
         const modelPath = this.findModelPath(model);
         if (!modelPath) {
-            throw new Error(`Model '${model}' not found. Available models: ${this.getAvailableModels().map(m => m.name).join(', ')}`);
+            const availableModels = this.getAvailableModels().map(m => m.name).join(', ');
+            console.log(`❌ LocalWhisperService: Model '${model}' not found. Available: ${availableModels}`);
+            throw new Error(`Model '${model}' not found. Available models: ${availableModels}`);
         }
+
+        console.log(`📦 Model path: ${modelPath}`);
 
         // Prepare output file
         const outputFile = path.join(this.tempDir, `transcription_${Date.now()}.json`);
+        console.log(`📄 Output file: ${outputFile}`);
 
         // Build whisper.cpp command
         const args = [
             '-m', modelPath,
-            '-f', filePath,
+            '-f', audioFilePath,  // Use the audio file path (extracted or original)
             '-t', threads.toString(),
             '-oj', // Output JSON
             '-of', outputFile.replace('.json', '') // whisper.cpp adds .json automatically
@@ -170,7 +344,12 @@ class LocalWhisperService {
         // Add other options
         args.push('-np'); // No progress output to stderr
 
+        console.log('🚀 LocalWhisperService: Executing whisper.cpp command:');
+        console.log(`   Command: ${this.whisperPath}`);
+        console.log(`   Args: ${args.join(' ')}`);
+
         return new Promise((resolve, reject) => {
+            const startTime = Date.now();
             const whisperProcess = spawn(this.whisperPath, args, {
                 stdio: ['pipe', 'pipe', 'pipe']
             });
@@ -179,23 +358,39 @@ class LocalWhisperService {
             let stderr = '';
 
             whisperProcess.stdout.on('data', (data) => {
-                stdout += data.toString();
+                const chunk = data.toString();
+                stdout += chunk;
+                console.log('📤 STDOUT:', chunk.trim());
             });
 
             whisperProcess.stderr.on('data', (data) => {
-                stderr += data.toString();
+                const chunk = data.toString();
+                stderr += chunk;
+                console.log('📥 STDERR:', chunk.trim());
             });
 
             whisperProcess.on('close', (code) => {
+                const duration = Date.now() - startTime;
+                console.log(`⏱️ LocalWhisperService: Process completed in ${duration}ms with code ${code}`);
+                
                 if (code === 0) {
+                    console.log('✅ LocalWhisperService: Transcription successful, processing output...');
                     try {
                         // Read the JSON output file
                         const jsonOutputFile = outputFile;
+                        console.log(`📖 Looking for output file: ${jsonOutputFile}`);
+                        
                         if (fs.existsSync(jsonOutputFile)) {
+                            console.log('📄 JSON output file found, parsing...');
                             const result = JSON.parse(fs.readFileSync(jsonOutputFile, 'utf8'));
+                            console.log('📊 Parsed JSON result:', {
+                                transcriptionSegments: result.transcription?.length || 0,
+                                hasTranscription: !!result.transcription
+                            });
                             
                             // Clean up temp file
                             fs.unlinkSync(jsonOutputFile);
+                            console.log('🗑️ Cleaned up temp file');
                             
                             // Extract text from segments
                             const text = result.transcription
@@ -203,36 +398,90 @@ class LocalWhisperService {
                                 .join(' ')
                                 .trim();
 
+                            console.log(`📝 Extracted text (${text.length} chars): ${text.substring(0, 100)}...`);
+
                             // Detect language from result
                             const detectedLanguage = this.detectLanguageFromOutput(stderr) || language;
+                            console.log(`🌍 Detected language: ${detectedLanguage}`);
 
-                            resolve({
+                            const finalResult = {
                                 success: true,
                                 text: text,
                                 language: detectedLanguage,
                                 segments: result.transcription,
                                 model: model,
                                 duration: this.extractDuration(stderr)
-                            });
+                            };
+
+                            console.log('🎉 LocalWhisperService: Transcription completed successfully!');
+                            
+                            // Clean up extracted audio file if needed
+                            if (needsCleanup && fs.existsSync(audioFilePath)) {
+                                console.log('🗑️ LocalWhisperService: Cleaning up extracted audio file');
+                                fs.unlinkSync(audioFilePath);
+                            }
+                            
+                            resolve(finalResult);
                         } else {
+                            console.log('⚠️ JSON output file not found, using fallback text extraction');
                             // Fallback: extract text from stdout
                             const text = this.extractTextFromOutput(stdout);
-                            resolve({
+                            console.log(`📝 Fallback extracted text: ${text}`);
+                            
+                            const fallbackResult = {
                                 success: true,
                                 text: text,
                                 language: language,
                                 model: model
-                            });
+                            };
+                            
+                            console.log('✅ LocalWhisperService: Transcription completed with fallback method');
+                            
+                            // Clean up extracted audio file if needed
+                            if (needsCleanup && fs.existsSync(audioFilePath)) {
+                                console.log('🗑️ LocalWhisperService: Cleaning up extracted audio file');
+                                fs.unlinkSync(audioFilePath);
+                            }
+                            
+                            resolve(fallbackResult);
                         }
                     } catch (error) {
+                        console.log('❌ LocalWhisperService: Failed to parse output:', error.message);
+                        console.log('📄 STDOUT:', stdout);
+                        console.log('📄 STDERR:', stderr);
+                        
+                        // Clean up extracted audio file if needed
+                        if (needsCleanup && fs.existsSync(audioFilePath)) {
+                            console.log('🗑️ LocalWhisperService: Cleaning up extracted audio file');
+                            fs.unlinkSync(audioFilePath);
+                        }
+                        
                         reject(new Error(`Failed to parse whisper.cpp output: ${error.message}`));
                     }
                 } else {
+                    console.log(`❌ LocalWhisperService: whisper.cpp failed with code ${code}`);
+                    console.log('📄 STDERR:', stderr);
+                    console.log('📄 STDOUT:', stdout);
+                    
+                    // Clean up extracted audio file if needed
+                    if (needsCleanup && fs.existsSync(audioFilePath)) {
+                        console.log('🗑️ LocalWhisperService: Cleaning up extracted audio file');
+                        fs.unlinkSync(audioFilePath);
+                    }
+                    
                     reject(new Error(`whisper.cpp failed with code ${code}: ${stderr}`));
                 }
             });
 
             whisperProcess.on('error', (error) => {
+                console.log('❌ LocalWhisperService: Failed to start whisper.cpp process:', error.message);
+                
+                // Clean up extracted audio file if needed
+                if (needsCleanup && fs.existsSync(audioFilePath)) {
+                    console.log('🗑️ LocalWhisperService: Cleaning up extracted audio file');
+                    fs.unlinkSync(audioFilePath);
+                }
+                
                 reject(new Error(`Failed to start whisper.cpp: ${error.message}`));
             });
         });

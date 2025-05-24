@@ -9,7 +9,8 @@ jest.setTimeout(30000);
 jest.mock('electron', () => ({
     app: {
         getPath: jest.fn(() => '/mock/path'),
-        quit: jest.fn()
+        quit: jest.fn(),
+        whenReady: jest.fn(() => Promise.resolve())
     },
     dialog: {
         showOpenDialog: jest.fn(),
@@ -33,8 +34,10 @@ jest.mock('electron', () => ({
     BrowserWindow: jest.fn(() => ({
         loadFile: jest.fn(),
         on: jest.fn(),
+        close: jest.fn(),
         webContents: {
-            openDevTools: jest.fn()
+            openDevTools: jest.fn(),
+            executeJavaScript: jest.fn(() => Promise.resolve('mock result'))
         }
     }))
 }));
@@ -49,21 +52,8 @@ jest.mock('electron-store', () => {
     }));
 });
 
-// Mock fs operations for tests that don't need real file system
-const mockFs = {
-    existsSync: jest.fn(),
-    readFileSync: jest.fn(),
-    writeFileSync: jest.fn(),
-    readdirSync: jest.fn(),
-    statSync: jest.fn(),
-    createReadStream: jest.fn(),
-    createWriteStream: jest.fn(),
-    mkdirSync: jest.fn(),
-    unlinkSync: jest.fn()
-};
-
-// Mock fs module
-jest.mock('fs', () => mockFs);
+// Note: fs is not globally mocked to allow integration tests to use real file system
+// Individual tests can mock fs methods as needed
 
 // Global test utilities
 global.testUtils = {
@@ -78,8 +68,7 @@ global.testUtils = {
         success: true,
         text: 'Hello world',
         language: 'en'
-    }),
-    mockFs
+    })
 };
 
 // Console override for cleaner test output

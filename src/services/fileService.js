@@ -27,10 +27,16 @@ class FileService {
         try {
             const stats = fs.statSync(filePath);
             const fileSize = stats.size;
-            const maxSize = 25 * 1024 * 1024; // 25MB limit for Whisper API
-
+            
+            // Note: File size limit removed for local whisper.cpp processing
+            // The original 25MB limit was for OpenAI's Whisper API
+            // Local whisper.cpp can handle much larger files
+            
+            // Optional: Set a reasonable upper limit to prevent system issues
+            const maxSize = 10 * 1024 * 1024 * 1024; // 10GB limit (very generous)
+            
             if (fileSize > maxSize) {
-                throw new Error('File size exceeds 25MB limit');
+                throw new Error('File size exceeds 10GB limit');
             }
 
             const ext = path.extname(filePath).toLowerCase();

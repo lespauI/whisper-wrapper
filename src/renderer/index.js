@@ -20,6 +20,17 @@ class WhisperWrapperApp {
             autoTranscribe: true
         };
         
+        // Transcription editing state
+        this.transcriptionState = {
+            originalText: '',
+            currentText: '',
+            isDirty: false,
+            lastSaved: null,
+            autoSaveTimer: null,
+            history: [],
+            historyIndex: -1
+        };
+        
         this.init();
     }
 
@@ -158,15 +169,96 @@ class WhisperWrapperApp {
 
     setupTranscription() {
         const copyBtn = document.getElementById('copy-btn');
-        const downloadBtn = document.getElementById('download-btn');
+        const transcriptionText = document.getElementById('transcription-text');
 
+        // Basic actions
         copyBtn.addEventListener('click', () => {
             this.copyTranscription();
         });
 
-        downloadBtn.addEventListener('click', () => {
-            this.downloadTranscription();
+        // Enhanced export options
+        this.setupExportDropdown();
+
+        // Undo/Redo buttons
+        document.getElementById('undo-btn').addEventListener('click', () => {
+            this.undoTranscription();
         });
+
+        document.getElementById('redo-btn').addEventListener('click', () => {
+            this.redoTranscription();
+        });
+
+        // Find & Replace
+        document.getElementById('find-replace-btn').addEventListener('click', () => {
+            this.toggleFindReplace();
+        });
+
+        document.getElementById('close-find-btn').addEventListener('click', () => {
+            this.closeFindReplace();
+        });
+
+        document.getElementById('find-next-btn').addEventListener('click', () => {
+            this.findNext();
+        });
+
+        document.getElementById('find-prev-btn').addEventListener('click', () => {
+            this.findPrevious();
+        });
+
+        document.getElementById('replace-btn').addEventListener('click', () => {
+            this.replaceNext();
+        });
+
+        document.getElementById('replace-all-btn').addEventListener('click', () => {
+            this.replaceAll();
+        });
+
+        // Clear draft
+        document.getElementById('clear-draft-btn').addEventListener('click', () => {
+            this.clearDraft();
+        });
+
+        // Find input events
+        document.getElementById('find-input').addEventListener('input', () => {
+            this.updateFindResults();
+        });
+
+        document.getElementById('find-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    this.findPrevious();
+                } else {
+                    this.findNext();
+                }
+            } else if (e.key === 'Escape') {
+                this.closeFindReplace();
+            }
+        });
+
+        // Auto-save functionality
+        transcriptionText.addEventListener('input', (e) => {
+            this.handleTranscriptionEdit(e.target.value);
+        });
+
+        // Keyboard shortcuts
+        transcriptionText.addEventListener('keydown', (e) => {
+            this.handleKeyboardShortcuts(e);
+        });
+
+        // Load any saved draft on startup
+        this.loadTranscriptionDraft();
+
+        // Save draft before page unload
+        window.addEventListener('beforeunload', () => {
+            this.saveTranscriptionDraft();
+        });
+
+        // Update UI state periodically
+        setInterval(() => {
+            this.updateTranscriptionStatus();
+            this.updateUndoRedoButtons();
+        }, 1000);
     }
 
     setupSettings() {
@@ -476,6 +568,17 @@ class WhisperWrapperApp {
         transcriptionText.value = text;
         emptyState.classList.add('hidden');
         loadingState.classList.add('hidden');
+        
+        // Initialize transcription state
+        this.transcriptionState.originalText = text;
+        this.transcriptionState.currentText = text;
+        this.transcriptionState.isDirty = false;
+        this.transcriptionState.lastSaved = new Date();
+        this.transcriptionState.history = [text];
+        this.transcriptionState.historyIndex = 0;
+        
+        // Update UI indicators
+        this.updateTranscriptionStatus();
     }
 
     copyTranscription() {
@@ -500,11 +603,538 @@ class WhisperWrapperApp {
                 
                 if (!result.canceled) {
                     this.updateStatus('Transcription saved successfully');
+                    // Mark as saved
+                    this.transcriptionState.isDirty = false;
+                    this.transcriptionState.lastSaved = new Date();
+                    this.updateTranscriptionStatus();
                 }
             } catch (error) {
                 console.error('Error saving transcription:', error);
                 this.showError('Failed to save transcription');
             }
+        }
+    }
+
+    // Auto-save and editing functionality
+    handleTranscriptionEdit(newText) {
+        const oldText = this.transcriptionState.currentText;
+        
+        if (newText !== oldText) {
+            this.transcriptionState.currentText = newText;
+            this.transcriptionState.isDirty = true;
+            
+            // Add to history for undo/redo
+            if (this.transcriptionState.historyIndex < this.transcriptionState.history.length - 1) {
+                // Remove future history if we're not at the end
+                this.transcriptionState.history = this.transcriptionState.history.slice(0, this.transcriptionState.historyIndex + 1);
+            }
+            this.transcriptionState.history.push(newText);
+            this.transcriptionState.historyIndex = this.transcriptionState.history.length - 1;
+            
+            // Limit history size
+            if (this.transcriptionState.history.length > 50) {
+                this.transcriptionState.history.shift();
+                this.transcriptionState.historyIndex--;
+            }
+            
+            // Update status
+            this.updateTranscriptionStatus();
+            
+            // Schedule auto-save
+            this.scheduleAutoSave();
+        }
+    }
+
+    scheduleAutoSave() {
+        // Clear existing timer
+        if (this.transcriptionState.autoSaveTimer) {
+            clearTimeout(this.transcriptionState.autoSaveTimer);
+        }
+        
+        // Schedule new auto-save in 2 seconds
+        this.transcriptionState.autoSaveTimer = setTimeout(() => {
+            this.saveTranscriptionDraft();
+        }, 2000);
+    }
+
+    async saveTranscriptionDraft() {
+        if (this.transcriptionState.isDirty && this.transcriptionState.currentText) {
+            try {
+                const draft = {
+                    text: this.transcriptionState.currentText,
+                    originalText: this.transcriptionState.originalText,
+                    timestamp: new Date().toISOString(),
+                    wordCount: this.getWordCount(this.transcriptionState.currentText)
+                };
+                
+                localStorage.setItem('whisper-transcription-draft', JSON.stringify(draft));
+                this.transcriptionState.lastSaved = new Date();
+                this.updateTranscriptionStatus();
+                
+                console.log('Draft auto-saved');
+            } catch (error) {
+                console.error('Failed to save draft:', error);
+            }
+        }
+    }
+
+    loadTranscriptionDraft() {
+        try {
+            const draftData = localStorage.getItem('whisper-transcription-draft');
+            if (draftData) {
+                const draft = JSON.parse(draftData);
+                const transcriptionText = document.getElementById('transcription-text');
+                
+                // Only load if there's no current transcription
+                if (!transcriptionText.value && draft.text) {
+                    transcriptionText.value = draft.text;
+                    this.transcriptionState.currentText = draft.text;
+                    this.transcriptionState.originalText = draft.originalText || '';
+                    this.transcriptionState.isDirty = true;
+                    this.transcriptionState.lastSaved = new Date(draft.timestamp);
+                    
+                    this.updateTranscriptionStatus();
+                    this.updateStatus('Draft loaded from previous session');
+                    
+                    // Show transcription tab content
+                    const emptyState = document.getElementById('transcription-empty');
+                    emptyState.classList.add('hidden');
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load draft:', error);
+        }
+    }
+
+    clearTranscriptionDraft() {
+        localStorage.removeItem('whisper-transcription-draft');
+        this.transcriptionState.isDirty = false;
+        this.updateTranscriptionStatus();
+    }
+
+    handleKeyboardShortcuts(e) {
+        // Ctrl/Cmd + Z for undo
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+            e.preventDefault();
+            this.undoTranscription();
+        }
+        
+        // Ctrl/Cmd + Shift + Z or Ctrl/Cmd + Y for redo
+        if (((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Z') || 
+            ((e.ctrlKey || e.metaKey) && e.key === 'y')) {
+            e.preventDefault();
+            this.redoTranscription();
+        }
+        
+        // Ctrl/Cmd + S for save
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            this.downloadTranscription();
+        }
+        
+        // Ctrl/Cmd + F for find
+        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+            e.preventDefault();
+            this.toggleFindReplace();
+        }
+        
+        // Escape to close find/replace
+        if (e.key === 'Escape') {
+            this.closeFindReplace();
+        }
+        
+        // Ctrl/Cmd + A for select all
+        if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+            // Let default behavior happen
+        }
+    }
+
+    undoTranscription() {
+        if (this.transcriptionState.historyIndex > 0) {
+            this.transcriptionState.historyIndex--;
+            const previousText = this.transcriptionState.history[this.transcriptionState.historyIndex];
+            
+            const transcriptionText = document.getElementById('transcription-text');
+            transcriptionText.value = previousText;
+            this.transcriptionState.currentText = previousText;
+            this.transcriptionState.isDirty = previousText !== this.transcriptionState.originalText;
+            
+            this.updateTranscriptionStatus();
+            this.scheduleAutoSave();
+        }
+    }
+
+    redoTranscription() {
+        if (this.transcriptionState.historyIndex < this.transcriptionState.history.length - 1) {
+            this.transcriptionState.historyIndex++;
+            const nextText = this.transcriptionState.history[this.transcriptionState.historyIndex];
+            
+            const transcriptionText = document.getElementById('transcription-text');
+            transcriptionText.value = nextText;
+            this.transcriptionState.currentText = nextText;
+            this.transcriptionState.isDirty = nextText !== this.transcriptionState.originalText;
+            
+            this.updateTranscriptionStatus();
+            this.scheduleAutoSave();
+        }
+    }
+
+    getWordCount(text) {
+        if (!text) return 0;
+        return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+    }
+
+    getCharacterCount(text) {
+        return text ? text.length : 0;
+    }
+
+    updateTranscriptionStatus() {
+        const wordCount = this.getWordCount(this.transcriptionState.currentText);
+        const charCount = this.getCharacterCount(this.transcriptionState.currentText);
+        
+        // Update status in footer or transcription area
+        let statusText = `${wordCount} words, ${charCount} characters`;
+        
+        if (this.transcriptionState.isDirty) {
+            statusText += ' • Unsaved changes';
+        } else if (this.transcriptionState.lastSaved) {
+            const timeSince = Math.floor((new Date() - this.transcriptionState.lastSaved) / 1000);
+            if (timeSince < 60) {
+                statusText += ' • Saved just now';
+            } else if (timeSince < 3600) {
+                statusText += ` • Saved ${Math.floor(timeSince / 60)}m ago`;
+            } else {
+                statusText += ` • Saved ${Math.floor(timeSince / 3600)}h ago`;
+            }
+        }
+        
+        // Update the status text
+        const statusElement = document.getElementById('transcription-status');
+        if (statusElement) {
+            statusElement.textContent = statusText;
+        }
+    }
+
+    updateUndoRedoButtons() {
+        const undoBtn = document.getElementById('undo-btn');
+        const redoBtn = document.getElementById('redo-btn');
+        
+        if (undoBtn) {
+            undoBtn.disabled = this.transcriptionState.historyIndex <= 0;
+        }
+        
+        if (redoBtn) {
+            redoBtn.disabled = this.transcriptionState.historyIndex >= this.transcriptionState.history.length - 1;
+        }
+    }
+
+    // Export dropdown functionality
+    setupExportDropdown() {
+        const dropdownBtn = document.getElementById('export-dropdown-btn');
+        const dropdownMenu = document.getElementById('export-dropdown');
+        
+        dropdownBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdownMenu.classList.toggle('hidden');
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', () => {
+            dropdownMenu.classList.add('hidden');
+        });
+        
+        // Export handlers
+        document.getElementById('export-txt-btn').addEventListener('click', () => {
+            this.exportAs('txt');
+            dropdownMenu.classList.add('hidden');
+        });
+        
+        document.getElementById('export-md-btn').addEventListener('click', () => {
+            this.exportAs('md');
+            dropdownMenu.classList.add('hidden');
+        });
+        
+        document.getElementById('export-json-btn').addEventListener('click', () => {
+            this.exportAs('json');
+            dropdownMenu.classList.add('hidden');
+        });
+    }
+
+    async exportAs(format) {
+        const transcriptionText = document.getElementById('transcription-text');
+        
+        if (!transcriptionText.value) {
+            this.showError('No transcription to export');
+            return;
+        }
+        
+        try {
+            let content = '';
+            let extension = '';
+            let mimeType = '';
+            
+            switch (format) {
+                case 'txt':
+                    content = transcriptionText.value;
+                    extension = 'txt';
+                    mimeType = 'text/plain';
+                    break;
+                    
+                case 'md':
+                    content = this.formatAsMarkdown(transcriptionText.value);
+                    extension = 'md';
+                    mimeType = 'text/markdown';
+                    break;
+                    
+                case 'json':
+                    content = this.formatAsJSON(transcriptionText.value);
+                    extension = 'json';
+                    mimeType = 'application/json';
+                    break;
+                    
+                default:
+                    throw new Error('Unsupported format');
+            }
+            
+            const filename = `transcription-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.${extension}`;
+            const result = await window.electronAPI.saveFile(content, filename);
+            
+            if (!result.canceled) {
+                this.updateStatus(`Transcription exported as ${format.toUpperCase()}`);
+                // Mark as saved if it's the current content
+                if (format === 'txt') {
+                    this.transcriptionState.isDirty = false;
+                    this.transcriptionState.lastSaved = new Date();
+                    this.updateTranscriptionStatus();
+                }
+            }
+        } catch (error) {
+            console.error('Error exporting transcription:', error);
+            this.showError(`Failed to export as ${format.toUpperCase()}`);
+        }
+    }
+
+    formatAsMarkdown(text) {
+        const timestamp = new Date().toISOString();
+        const wordCount = this.getWordCount(text);
+        
+        return `# Transcription
+
+**Generated:** ${timestamp}  
+**Word Count:** ${wordCount}
+
+---
+
+${text}
+
+---
+
+*Generated by Whisper Wrapper*`;
+    }
+
+    formatAsJSON(text) {
+        const data = {
+            transcription: text,
+            metadata: {
+                timestamp: new Date().toISOString(),
+                wordCount: this.getWordCount(text),
+                characterCount: this.getCharacterCount(text),
+                generatedBy: 'Whisper Wrapper'
+            }
+        };
+        
+        return JSON.stringify(data, null, 2);
+    }
+
+    // Find & Replace functionality
+    toggleFindReplace() {
+        const panel = document.getElementById('find-replace-panel');
+        const findInput = document.getElementById('find-input');
+        
+        if (panel.classList.contains('hidden')) {
+            panel.classList.remove('hidden');
+            findInput.focus();
+            
+            // Pre-fill with selected text if any
+            const transcriptionText = document.getElementById('transcription-text');
+            const selectedText = transcriptionText.value.substring(
+                transcriptionText.selectionStart,
+                transcriptionText.selectionEnd
+            );
+            
+            if (selectedText) {
+                findInput.value = selectedText;
+                this.updateFindResults();
+            }
+        } else {
+            this.closeFindReplace();
+        }
+    }
+
+    closeFindReplace() {
+        const panel = document.getElementById('find-replace-panel');
+        panel.classList.add('hidden');
+        
+        // Clear highlights
+        this.clearFindHighlights();
+        
+        // Focus back to textarea
+        document.getElementById('transcription-text').focus();
+    }
+
+    updateFindResults() {
+        const findInput = document.getElementById('find-input');
+        const findResults = document.getElementById('find-results');
+        const transcriptionText = document.getElementById('transcription-text');
+        
+        const searchTerm = findInput.value;
+        if (!searchTerm) {
+            findResults.textContent = '';
+            this.clearFindHighlights();
+            return;
+        }
+        
+        const text = transcriptionText.value;
+        const matches = this.findMatches(text, searchTerm);
+        
+        if (matches.length === 0) {
+            findResults.textContent = 'No matches';
+        } else {
+            findResults.textContent = `${matches.length} matches`;
+        }
+        
+        this.currentFindIndex = -1;
+        this.findMatches = matches;
+    }
+
+    findMatches(text, searchTerm) {
+        const matches = [];
+        const regex = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+        let match;
+        
+        while ((match = regex.exec(text)) !== null) {
+            matches.push({
+                start: match.index,
+                end: match.index + match[0].length,
+                text: match[0]
+            });
+        }
+        
+        return matches;
+    }
+
+    findNext() {
+        if (!this.findMatches || this.findMatches.length === 0) {
+            return;
+        }
+        
+        this.currentFindIndex = (this.currentFindIndex + 1) % this.findMatches.length;
+        this.highlightMatch(this.currentFindIndex);
+    }
+
+    findPrevious() {
+        if (!this.findMatches || this.findMatches.length === 0) {
+            return;
+        }
+        
+        this.currentFindIndex = this.currentFindIndex <= 0 ? 
+            this.findMatches.length - 1 : 
+            this.currentFindIndex - 1;
+        this.highlightMatch(this.currentFindIndex);
+    }
+
+    highlightMatch(index) {
+        if (!this.findMatches || index < 0 || index >= this.findMatches.length) {
+            return;
+        }
+        
+        const transcriptionText = document.getElementById('transcription-text');
+        const match = this.findMatches[index];
+        
+        transcriptionText.focus();
+        transcriptionText.setSelectionRange(match.start, match.end);
+        
+        // Update results text
+        const findResults = document.getElementById('find-results');
+        findResults.textContent = `${index + 1} of ${this.findMatches.length}`;
+    }
+
+    replaceNext() {
+        if (!this.findMatches || this.currentFindIndex < 0) {
+            return;
+        }
+        
+        const replaceInput = document.getElementById('replace-input');
+        const replaceText = replaceInput.value;
+        const transcriptionText = document.getElementById('transcription-text');
+        
+        const match = this.findMatches[this.currentFindIndex];
+        const newText = transcriptionText.value.substring(0, match.start) + 
+                       replaceText + 
+                       transcriptionText.value.substring(match.end);
+        
+        transcriptionText.value = newText;
+        this.handleTranscriptionEdit(newText);
+        
+        // Update find results
+        this.updateFindResults();
+    }
+
+    replaceAll() {
+        const findInput = document.getElementById('find-input');
+        const replaceInput = document.getElementById('replace-input');
+        const transcriptionText = document.getElementById('transcription-text');
+        
+        const searchTerm = findInput.value;
+        const replaceText = replaceInput.value;
+        
+        if (!searchTerm) {
+            return;
+        }
+        
+        const regex = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+        const newText = transcriptionText.value.replace(regex, replaceText);
+        
+        transcriptionText.value = newText;
+        this.handleTranscriptionEdit(newText);
+        
+        // Update find results
+        this.updateFindResults();
+        
+        this.updateStatus(`Replaced all occurrences of "${searchTerm}"`);
+    }
+
+    clearFindHighlights() {
+        // Clear any highlighting (if we implement visual highlighting later)
+        this.findMatches = [];
+        this.currentFindIndex = -1;
+    }
+
+    clearDraft() {
+        if (confirm('Are you sure you want to clear the current transcription? This action cannot be undone.')) {
+            const transcriptionText = document.getElementById('transcription-text');
+            transcriptionText.value = '';
+            
+            // Reset state
+            this.transcriptionState = {
+                originalText: '',
+                currentText: '',
+                isDirty: false,
+                lastSaved: null,
+                autoSaveTimer: null,
+                history: [''],
+                historyIndex: 0
+            };
+            
+            this.clearTranscriptionDraft();
+            this.updateTranscriptionStatus();
+            this.updateUndoRedoButtons();
+            
+            // Show empty state
+            const emptyState = document.getElementById('transcription-empty');
+            emptyState.classList.remove('hidden');
+            
+            this.updateStatus('Transcription cleared');
         }
     }
 

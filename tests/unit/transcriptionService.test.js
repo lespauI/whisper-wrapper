@@ -103,10 +103,15 @@ describe('TranscriptionService', () => {
             expect(result).toEqual({
                 success: true,
                 text: 'Hello world',
+                markdown: expect.any(String),
+                plainText: expect.any(String),
                 language: 'en',
                 segments: [],
                 model: 'base',
-                duration: 10.5
+                duration: 10.5,
+                metadata: expect.any(Object),
+                srt: expect.any(String),
+                vtt: expect.any(String)
             });
             expect(mockLocalWhisper.transcribeFile).toHaveBeenCalledWith('/path/to/file.wav', {
                 model: 'base',

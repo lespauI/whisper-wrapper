@@ -150,68 +150,102 @@ class IPCHandlers {
     }
 
     async handleTranscribeFile(event, filePath) {
+        console.log('🎬 IPC: handleTranscribeFile called');
+        console.log(`📁 File path: ${filePath}`);
+        
         try {
             // Validate the file
+            console.log('🔍 IPC: Validating file...');
             await this.fileService.validateFile(filePath);
+            console.log('✅ IPC: File validation passed');
 
             // Get current configuration
             const currentConfig = config.getSimplified();
+            console.log('⚙️ IPC: Current config:', currentConfig);
 
             // Check if local Whisper is available
-            if (!this.transcriptionService.isAvailable()) {
+            const isAvailable = this.transcriptionService.isAvailable();
+            console.log(`🤖 IPC: Local Whisper available: ${isAvailable}`);
+            
+            if (!isAvailable) {
+                console.log('❌ IPC: Local Whisper is not available');
                 throw new Error('Local Whisper is not available. Please run the setup script first.');
             }
 
             // Set up transcription service with current config
             if (currentConfig.model) {
+                console.log(`🎯 IPC: Setting model to: ${currentConfig.model}`);
                 this.transcriptionService.setModel(currentConfig.model);
             }
             if (currentConfig.language) {
+                console.log(`🌍 IPC: Setting language to: ${currentConfig.language}`);
                 this.transcriptionService.setLanguage(currentConfig.language);
             }
 
             // Copy file to temp directory for processing
+            console.log('📂 IPC: Copying file to temp directory...');
             const tempFilePath = await this.fileService.copyToTemp(filePath);
+            console.log(`📂 IPC: Temp file created: ${tempFilePath}`);
 
             try {
                 // Send progress update
+                console.log('📡 IPC: Sending progress update - processing');
                 event.sender.send('transcription:progress', { 
                     status: 'processing', 
                     message: 'Processing with local Whisper...' 
                 });
 
                 // Transcribe the file
-                const result = await this.transcriptionService.transcribeFile(tempFilePath, {
+                console.log('🎤 IPC: Starting transcription...');
+                const transcriptionOptions = {
                     threads: currentConfig.threads || 4,
                     translate: currentConfig.translate || false
+                };
+                console.log('🎤 IPC: Transcription options:', transcriptionOptions);
+                
+                const result = await this.transcriptionService.transcribeFile(tempFilePath, transcriptionOptions);
+                console.log('🎤 IPC: Transcription result:', {
+                    success: result.success,
+                    textLength: result.text?.length || 0,
+                    language: result.language,
+                    duration: result.duration
                 });
 
                 // Clean up temp file
+                console.log('🗑️ IPC: Cleaning up temp file...');
                 await this.fileService.cleanup(tempFilePath);
+                console.log('✅ IPC: Temp file cleaned up');
 
                 // Send completion update
+                console.log('📡 IPC: Sending progress update - completed');
                 event.sender.send('transcription:progress', { 
                     status: 'completed', 
                     message: 'Transcription completed successfully' 
                 });
 
-                return {
+                const finalResult = {
                     success: true,
                     text: result.text,
                     language: result.language,
                     duration: result.duration
                 };
 
+                console.log('🎉 IPC: handleTranscribeFile completed successfully!');
+                return finalResult;
+
             } catch (transcriptionError) {
+                console.log('❌ IPC: Transcription error occurred:', transcriptionError.message);
                 // Clean up temp file on error
                 await this.fileService.cleanup(tempFilePath);
                 throw transcriptionError;
             }
 
         } catch (error) {
-            console.error('Error transcribing file:', error);
+            console.error('❌ IPC: Error transcribing file:', error);
+            console.error('❌ IPC: Error stack:', error.stack);
             
             // Send error update
+            console.log('📡 IPC: Sending progress update - error');
             event.sender.send('transcription:progress', { 
                 status: 'error', 
                 message: error.message 

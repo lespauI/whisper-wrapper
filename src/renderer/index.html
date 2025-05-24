@@ -151,12 +151,40 @@
                             <div class="transcription-header">
                                 <h3>Transcription Result</h3>
                                 <div class="transcription-actions">
+                                    <button id="undo-btn" class="btn btn-secondary" title="Undo (Ctrl+Z)" disabled>
+                                        ↶ Undo
+                                    </button>
+                                    <button id="redo-btn" class="btn btn-secondary" title="Redo (Ctrl+Y)" disabled>
+                                        ↷ Redo
+                                    </button>
                                     <button id="copy-btn" class="btn btn-secondary" title="Copy to clipboard">
                                         📋 Copy
                                     </button>
-                                    <button id="download-btn" class="btn btn-primary" title="Download transcription">
-                                        💾 Download
+                                    <div class="dropdown">
+                                        <button id="export-dropdown-btn" class="btn btn-primary dropdown-toggle" title="Export options">
+                                            💾 Export ▼
+                                        </button>
+                                        <div id="export-dropdown" class="dropdown-menu hidden">
+                                            <button id="export-txt-btn" class="dropdown-item">📄 Export as TXT</button>
+                                            <button id="export-md-btn" class="dropdown-item">📝 Export as Markdown</button>
+                                            <button id="export-json-btn" class="dropdown-item">🔧 Export as JSON</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="transcription-toolbar">
+                                <div class="toolbar-left">
+                                    <button id="find-replace-btn" class="btn btn-small" title="Find & Replace (Ctrl+F)">
+                                        🔍 Find
                                     </button>
+                                    <button id="clear-draft-btn" class="btn btn-small btn-danger" title="Clear draft">
+                                        🗑️ Clear
+                                    </button>
+                                </div>
+                                <div class="toolbar-right">
+                                    <span id="transcription-status" class="transcription-status">
+                                        Ready to transcribe
+                                    </span>
                                 </div>
                             </div>
                             <div class="transcription-content">
@@ -164,17 +192,42 @@
                                     <div class="spinner"></div>
                                     <p>Transcribing audio...</p>
                                 </div>
+                                <div id="find-replace-panel" class="find-replace-panel hidden">
+                                    <div class="find-replace-row">
+                                        <input type="text" id="find-input" placeholder="Find..." class="find-input">
+                                        <button id="find-prev-btn" class="btn btn-small" title="Previous">↑</button>
+                                        <button id="find-next-btn" class="btn btn-small" title="Next">↓</button>
+                                        <button id="close-find-btn" class="btn btn-small" title="Close">✕</button>
+                                    </div>
+                                    <div class="find-replace-row">
+                                        <input type="text" id="replace-input" placeholder="Replace..." class="find-input">
+                                        <button id="replace-btn" class="btn btn-small">Replace</button>
+                                        <button id="replace-all-btn" class="btn btn-small">Replace All</button>
+                                        <span id="find-results" class="find-results"></span>
+                                    </div>
+                                </div>
                                 <div id="transcription-editor" class="transcription-editor">
                                     <textarea 
                                         id="transcription-text" 
-                                        placeholder="Your transcription will appear here..."
+                                        placeholder="Your transcription will appear here...&#10;&#10;Keyboard shortcuts:&#10;• Ctrl+Z / Cmd+Z: Undo&#10;• Ctrl+Y / Cmd+Y: Redo&#10;• Ctrl+S / Cmd+S: Save&#10;• Ctrl+F / Cmd+F: Find & Replace&#10;&#10;Auto-save is enabled - your changes are automatically saved as you type."
                                         rows="15"
+                                        spellcheck="true"
                                     ></textarea>
                                 </div>
                                 <div id="transcription-empty" class="empty-state">
                                     <div class="empty-icon">📝</div>
                                     <h4>No transcription yet</h4>
                                     <p>Upload a file or record audio to get started</p>
+                                    <div class="empty-features">
+                                        <h5>Features available:</h5>
+                                        <ul>
+                                            <li>✨ Auto-save as you type</li>
+                                            <li>↶ Undo/Redo support</li>
+                                            <li>🔍 Find & Replace</li>
+                                            <li>💾 Multiple export formats</li>
+                                            <li>⌨️ Keyboard shortcuts</li>
+                                        </ul>
+                                    </div>
                                 </div>
                             </div>
                         </div>

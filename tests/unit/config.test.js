@@ -61,7 +61,7 @@ describe('Configuration System', () => {
 
         it('should have file settings', () => {
             expect(defaultConfig.files).toBeDefined();
-            expect(defaultConfig.files.maxSize).toBe(25 * 1024 * 1024); // 25MB
+            expect(defaultConfig.files.maxSize).toBe(10 * 1024 * 1024 * 1024); // 10GB
             expect(Array.isArray(defaultConfig.files.supportedAudioFormats)).toBe(true);
             expect(Array.isArray(defaultConfig.files.supportedVideoFormats)).toBe(true);
             expect(defaultConfig.files.tempDirectory).toBe('temp');

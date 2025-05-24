@@ -32,7 +32,7 @@ module.exports = {
 
     // File handling settings
     files: {
-        maxSize: 25 * 1024 * 1024, // 25MB
+        maxSize: 10 * 1024 * 1024 * 1024, // 10GB (increased from 25MB for local processing)
         supportedAudioFormats: ['.mp3', '.wav', '.m4a', '.flac', '.ogg'],
         supportedVideoFormats: ['.mp4', '.mov', '.avi', '.mkv', '.webm'],
         tempDirectory: 'temp',

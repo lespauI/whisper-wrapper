@@ -160,6 +160,7 @@ class WhisperWrapperApp {
         const stopBtn = document.getElementById('stop-record-btn');
         const saveBtn = document.getElementById('save-record-btn');
         const transcribeBtn = document.getElementById('transcribe-record-btn');
+        const clearBtn = document.getElementById('clear-record-btn');
 
         // Recording controls
         startBtn.addEventListener('click', () => {
@@ -184,6 +185,10 @@ class WhisperWrapperApp {
 
         transcribeBtn.addEventListener('click', () => {
             this.transcribeRecording();
+        });
+
+        clearBtn.addEventListener('click', () => {
+            this.clearRecording();
         });
 
         // Recording settings
@@ -459,6 +464,7 @@ class WhisperWrapperApp {
         const stopBtn = document.getElementById('stop-record-btn');
         const saveBtn = document.getElementById('save-record-btn');
         const transcribeBtn = document.getElementById('transcribe-record-btn');
+        const clearBtn = document.getElementById('clear-record-btn');
 
         if (this.isRecording && !this.isPaused) {
             // Currently recording
@@ -471,6 +477,7 @@ class WhisperWrapperApp {
             stopBtn.classList.remove('hidden');
             saveBtn.classList.add('hidden');
             transcribeBtn.classList.add('hidden');
+            clearBtn.classList.add('hidden');
         } else if (this.isPaused) {
             // Recording paused
             indicator.classList.remove('recording');
@@ -482,6 +489,7 @@ class WhisperWrapperApp {
             stopBtn.classList.remove('hidden');
             saveBtn.classList.add('hidden');
             transcribeBtn.classList.add('hidden');
+            clearBtn.classList.add('hidden');
         } else if (this.recordingBlob) {
             // Recording completed
             indicator.classList.remove('recording', 'paused');
@@ -491,13 +499,11 @@ class WhisperWrapperApp {
             resumeBtn.classList.add('hidden');
             stopBtn.classList.add('hidden');
             saveBtn.classList.remove('hidden');
+            clearBtn.classList.remove('hidden');
             
-            // Show transcribe button only if auto-transcribe is disabled
-            if (!this.recordingSettings.autoTranscribe) {
-                transcribeBtn.classList.remove('hidden');
-            } else {
-                transcribeBtn.classList.add('hidden');
-            }
+            // Always show transcribe button when recording is available
+            // Users can transcribe again with different settings or models
+            transcribeBtn.classList.remove('hidden');
         } else {
             // Ready to record
             indicator.classList.remove('recording', 'paused');
@@ -508,6 +514,7 @@ class WhisperWrapperApp {
             stopBtn.classList.add('hidden');
             saveBtn.classList.add('hidden');
             transcribeBtn.classList.add('hidden');
+            clearBtn.classList.add('hidden');
         }
     }
 
@@ -536,6 +543,9 @@ class WhisperWrapperApp {
         try {
             // Show recording info
             this.showRecordingInfo(audioBlob);
+            
+            // Update UI to show the recording buttons now that recordingBlob is set
+            this.updateRecordingUI();
             
             // Auto-transcribe if enabled
             if (this.recordingSettings.autoTranscribe) {
@@ -567,11 +577,14 @@ class WhisperWrapperApp {
                     this.showTranscriptionResult(result.text, result.segments);
                     this.updateStatus(`Recording transcribed (Language: ${result.language || 'unknown'})`);
                     this.switchTab('transcription');
+                    
+                    // Keep recording available for saving or re-transcribing
+                    // User can come back to recording tab and use the buttons
                 } else {
                     throw new Error('Transcription failed');
                 }
             } else {
-                this.updateStatus('Recording completed. Click "Save Recording" or start a new recording.');
+                this.updateStatus('Recording completed. Use the buttons below to save, transcribe, or clear the recording.');
             }
             
         } catch (error) {
@@ -1618,19 +1631,10 @@ ${text}
         const constraints = { audio: true };
         
         switch (this.recordingSettings.quality) {
-        case 'high':
-            constraints.audio = {
-                sampleRate: 44100,
-                channelCount: 2,
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-            };
-            break;
         case 'medium':
             constraints.audio = {
-                sampleRate: 22050,
-                channelCount: 1,
+                sampleRate: { ideal: 22050 },
+                channelCount: { ideal: 1 },
                 echoCancellation: true,
                 noiseSuppression: true,
                 autoGainControl: true
@@ -1638,12 +1642,16 @@ ${text}
             break;
         case 'low':
             constraints.audio = {
-                sampleRate: 16000,
-                channelCount: 1,
+                sampleRate: { ideal: 16000 },
+                channelCount: { ideal: 1 },
                 echoCancellation: true,
                 noiseSuppression: true,
                 autoGainControl: true
             };
+            break;
+        default:
+            // Fallback to basic audio constraints
+            constraints.audio = true;
             break;
         }
         
@@ -1821,12 +1829,6 @@ ${text}
             
             if (!result.canceled) {
                 this.updateStatus('Recording saved successfully');
-                // Reset recording state
-                this.recordingBlob = null;
-                this.updateRecordingUI();
-                document.getElementById('recording-info').classList.add('hidden');
-                document.getElementById('record-time').textContent = '00:00';
-                document.getElementById('record-size').textContent = '0 KB';
             }
         } catch (error) {
             console.error('Error saving recording:', error);
@@ -1860,13 +1862,6 @@ ${text}
                 this.showTranscriptionResult(result.text, result.segments);
                 this.updateStatus(`Recording transcribed (Language: ${result.language || 'unknown'})`);
                 this.switchTab('transcription');
-                
-                // Reset recording state after successful transcription
-                this.recordingBlob = null;
-                this.updateRecordingUI();
-                document.getElementById('recording-info').classList.add('hidden');
-                document.getElementById('record-time').textContent = '00:00';
-                document.getElementById('record-size').textContent = '0 KB';
             } else {
                 throw new Error('Transcription failed');
             }
@@ -1880,6 +1875,23 @@ ${text}
             if (window.electronAPI) {
                 window.electronAPI.removeAllListeners('transcription:progress');
             }
+        }
+    }
+
+    clearRecording() {
+        if (!this.recordingBlob) {
+            return;
+        }
+        
+        // Ask for confirmation
+        if (confirm('Are you sure you want to clear the recording? This action cannot be undone.')) {
+            // Clear recording state
+            this.recordingBlob = null;
+            this.updateRecordingUI();
+            document.getElementById('recording-info').classList.add('hidden');
+            document.getElementById('record-time').textContent = '00:00';
+            document.getElementById('record-size').textContent = '0 KB';
+            this.updateStatus('Recording cleared');
         }
     }
 

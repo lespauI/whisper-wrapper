@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+    <title>Whisper Wrapper</title>
+    <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+    <div id="app">
+        <header class="app-header">
+            <div class="header-content">
+                <h1 class="app-title">
+                    <span class="app-icon">🎤</span>
+                    Whisper Wrapper
+                </h1>
+                <div class="header-actions">
+                    <button id="settings-btn" class="btn btn-secondary" title="Settings">
+                        ⚙️
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="app-main">
+            <div class="container">
+                <!-- Navigation Tabs -->
+                <nav class="tab-navigation">
+                    <button class="tab-btn active" data-tab="upload">
+                        📁 Upload File
+                    </button>
+                    <button class="tab-btn" data-tab="record">
+                        🎙️ Record Audio
+                    </button>
+                    <button class="tab-btn" data-tab="transcription">
+                        📝 Transcription
+                    </button>
+                </nav>
+
+                <!-- Tab Content -->
+                <div class="tab-content">
+                    <!-- Upload Tab -->
+                    <div id="upload-tab" class="tab-pane active">
+                        <div class="upload-section">
+                            <div id="file-upload" class="file-upload-area">
+                                <div class="upload-content">
+                                    <div class="upload-icon">📁</div>
+                                    <h3>Upload Audio or Video File</h3>
+                                    <p>Drag and drop your file here, or click to browse</p>
+                                    <button id="browse-btn" class="btn btn-primary">Browse Files</button>
+                                    <div class="supported-formats">
+                                        <small>Supported formats: MP3, WAV, M4A, FLAC, OGG, MP4, MOV, AVI, MKV, WEBM</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="upload-progress" class="upload-progress hidden">
+                                <div class="progress-bar">
+                                    <div class="progress-fill"></div>
+                                </div>
+                                <div class="progress-text">Processing file...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Record Tab -->
+                    <div id="record-tab" class="tab-pane">
+                        <div class="record-section">
+                            <!-- Recording Settings -->
+                            <div class="record-settings">
+                                <h4>Recording Settings</h4>
+                                <div class="settings-row">
+                                    <div class="setting-group">
+                                        <label for="quality-select">Quality:</label>
+                                        <select id="quality-select">
+                                            <option value="high">High (44.1kHz, Stereo)</option>
+                                            <option value="medium" selected>Medium (22kHz, Mono)</option>
+                                            <option value="low">Low (16kHz, Mono)</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-group">
+                                        <label for="format-select">Format:</label>
+                                        <select id="format-select">
+                                            <option value="wav" selected>WAV</option>
+                                            <option value="webm">WebM</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-group">
+                                        <label for="auto-transcribe">Auto-transcribe:</label>
+                                        <input type="checkbox" id="auto-transcribe" checked>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="record-controls">
+                                <div class="record-status">
+                                    <div id="record-indicator" class="record-indicator"></div>
+                                    <span id="record-status-text">Ready to record</span>
+                                </div>
+                                <div class="record-timer">
+                                    <span id="record-time">00:00</span>
+                                    <span id="record-size" class="record-size">0 KB</span>
+                                </div>
+                                <div class="record-buttons">
+                                    <button id="start-record-btn" class="btn btn-record">
+                                        🎙️ Start Recording
+                                    </button>
+                                    <button id="pause-record-btn" class="btn btn-secondary hidden">
+                                        ⏸️ Pause
+                                    </button>
+                                    <button id="resume-record-btn" class="btn btn-primary hidden">
+                                        ▶️ Resume
+                                    </button>
+                                    <button id="stop-record-btn" class="btn btn-danger hidden">
+                                        ⏹️ Stop
+                                    </button>
+                                    <button id="save-record-btn" class="btn btn-success hidden">
+                                        💾 Save Recording
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Audio Level Meter -->
+                            <div class="audio-level-container">
+                                <label>Input Level:</label>
+                                <div class="audio-level-meter">
+                                    <div id="audio-level-bar" class="audio-level-bar"></div>
+                                </div>
+                                <span id="audio-level-text">0%</span>
+                            </div>
+
+                            <!-- Audio Visualization -->
+                            <div class="record-visualization">
+                                <canvas id="audio-visualizer" width="600" height="120"></canvas>
+                            </div>
+
+                            <!-- Recording Info -->
+                            <div id="recording-info" class="recording-info hidden">
+                                <div class="info-row">
+                                    <span>Duration: <span id="final-duration">--</span></span>
+                                    <span>Size: <span id="final-size">--</span></span>
+                                    <span>Quality: <span id="final-quality">--</span></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Transcription Tab -->
+                    <div id="transcription-tab" class="tab-pane">
+                        <div class="transcription-section">
+                            <div class="transcription-header">
+                                <h3>Transcription Result</h3>
+                                <div class="transcription-actions">
+                                    <button id="undo-btn" class="btn btn-secondary" title="Undo (Ctrl+Z)" disabled>
+                                        ↶ Undo
+                                    </button>
+                                    <button id="redo-btn" class="btn btn-secondary" title="Redo (Ctrl+Y)" disabled>
+                                        ↷ Redo
+                                    </button>
+                                    <button id="copy-btn" class="btn btn-secondary" title="Copy to clipboard">
+                                        📋 Copy
+                                    </button>
+                                    <div class="dropdown">
+                                        <button id="export-dropdown-btn" class="btn btn-primary dropdown-toggle" title="Export options">
+                                            💾 Export ▼
+                                        </button>
+                                        <div id="export-dropdown" class="dropdown-menu hidden">
+                                            <button id="export-txt-btn" class="dropdown-item">📄 Export as TXT</button>
+                                            <button id="export-md-btn" class="dropdown-item">📝 Export as Markdown</button>
+                                            <button id="export-json-btn" class="dropdown-item">🔧 Export as JSON</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="transcription-toolbar">
+                                <div class="toolbar-left">
+                                    <button id="toggle-view-btn" class="btn btn-small" title="Toggle between timestamped and plain text view">
+                                        🕒 Timestamped View
+                                    </button>
+                                    <button id="find-replace-btn" class="btn btn-small" title="Find & Replace (Ctrl+F)">
+                                        🔍 Find
+                                    </button>
+                                    <button id="clear-draft-btn" class="btn btn-small btn-danger" title="Clear draft">
+                                        🗑️ Clear
+                                    </button>
+                                </div>
+                                <div class="toolbar-right">
+                                    <span id="transcription-status" class="transcription-status">
+                                        Ready to transcribe
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="transcription-content">
+                                <div id="transcription-loading" class="loading-state hidden">
+                                    <div class="spinner"></div>
+                                    <p>Transcribing audio...</p>
+                                </div>
+                                <div id="find-replace-panel" class="find-replace-panel hidden">
+                                    <div class="find-replace-row">
+                                        <input type="text" id="find-input" placeholder="Find..." class="find-input">
+                                        <button id="find-prev-btn" class="btn btn-small" title="Previous">↑</button>
+                                        <button id="find-next-btn" class="btn btn-small" title="Next">↓</button>
+                                        <button id="close-find-btn" class="btn btn-small" title="Close">✕</button>
+                                    </div>
+                                    <div class="find-replace-row">
+                                        <input type="text" id="replace-input" placeholder="Replace..." class="find-input">
+                                        <button id="replace-btn" class="btn btn-small">Replace</button>
+                                        <button id="replace-all-btn" class="btn btn-small">Replace All</button>
+                                        <span id="find-results" class="find-results"></span>
+                                    </div>
+                                </div>
+                                <div id="transcription-editor" class="transcription-editor">
+                                    <!-- Timestamped transcription display -->
+                                    <div id="transcription-segments" class="transcription-segments hidden">
+                                        <!-- Segments will be dynamically populated here -->
+                                    </div>
+                                    
+                                    <!-- Fallback textarea for plain text editing -->
+                                    <textarea 
+                                        id="transcription-text" 
+                                        rows="15"
+                                        spellcheck="true"
+                                        class="hidden"
+                                    ></textarea>
+                                </div>
+                                <div id="transcription-empty" class="empty-state">
+                                    <div class="empty-icon">📝</div>
+                                    <h4>No transcription yet</h4>
+                                    <p>Upload a file or record audio to get started</p>
+                                    <div class="empty-features">
+                                        <h5>Features available:</h5>
+                                        <ul>
+                                            <li>✨ Auto-save as you type</li>
+                                            <li>↶ Undo/Redo support</li>
+                                            <li>🔍 Find & Replace</li>
+                                            <li>💾 Multiple export formats</li>
+                                            <li>⌨️ Keyboard shortcuts</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="app-footer">
+            <div class="footer-content">
+                <div class="status-info">
+                    <span id="status-text">Ready</span>
+                </div>
+                <div class="app-info">
+                    <span>Powered by OpenAI Whisper</span>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Settings</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label for="whisper-status">Local Whisper Status:</label>
+                    <div id="whisper-status" class="status-indicator">
+                        <span id="whisper-status-text">Checking...</span>
+                        <button id="setup-whisper-btn" class="btn btn-secondary" style="display: none;">Setup Whisper</button>
+                    </div>
+                    <small>Local Whisper processing - no internet connection required.</small>
+                </div>
+                <div class="setting-group">
+                    <label for="model-select">Whisper Model:</label>
+                    <select id="model-select">
+                        <option value="tiny">Tiny (39M params, ~1GB VRAM, ~10x speed)</option>
+                        <option value="tiny.en">Tiny English-only (39M params, ~1GB VRAM, ~10x speed)</option>
+                        <option value="base">Base (74M params, ~1GB VRAM, ~7x speed)</option>
+                        <option value="base.en">Base English-only (74M params, ~1GB VRAM, ~7x speed)</option>
+                        <option value="small">Small (244M params, ~2GB VRAM, ~4x speed)</option>
+                        <option value="small.en">Small English-only (244M params, ~2GB VRAM, ~4x speed)</option>
+                        <option value="medium">Medium (769M params, ~5GB VRAM, ~2x speed)</option>
+                        <option value="medium.en">Medium English-only (769M params, ~5GB VRAM, ~2x speed)</option>
+                        <option value="large">Large (1550M params, ~10GB VRAM, 1x speed)</option>
+                        <option value="turbo">Turbo (809M params, ~6GB VRAM, ~8x speed)</option>
+                    </select>
+                    <div class="model-info">
+                        <small id="model-description">Select a model to see detailed information.</small>
+                        <button type="button" id="model-info-btn" class="btn btn-small btn-info">ℹ️ Model Comparison</button>
+                    </div>
+                </div>
+                <div class="setting-group">
+                    <label for="language-select">Language (optional):</label>
+                    <select id="language-select">
+                        <option value="">Auto-detect</option>
+                        <option value="en">English</option>
+                        <option value="es">Spanish</option>
+                        <option value="fr">French</option>
+                        <option value="de">German</option>
+                        <option value="it">Italian</option>
+                        <option value="pt">Portuguese</option>
+                        <option value="ru">Russian</option>
+                        <option value="ja">Japanese</option>
+                        <option value="ko">Korean</option>
+                        <option value="zh">Chinese</option>
+                    </select>
+                </div>
+                <div class="setting-group">
+                    <label for="threads-select">Processing Threads:</label>
+                    <select id="threads-select">
+                        <option value="1">1 Thread</option>
+                        <option value="2">2 Threads</option>
+                        <option value="4" selected>4 Threads</option>
+                        <option value="8">8 Threads</option>
+                    </select>
+                    <small>More threads can speed up processing on multi-core systems.</small>
+                </div>
+                <div class="setting-group">
+                    <label>
+                        <input type="checkbox" id="translate-checkbox">
+                        Translate to English
+                    </label>
+                    <small>Automatically translate non-English audio to English.</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>
+                <button id="cancel-settings-btn" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Model Comparison Modal -->
+    <div id="model-comparison-modal" class="modal hidden">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3>Whisper Model Comparison</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="model-comparison-intro">
+                    <p>Choose the right Whisper model based on your needs. Larger models provide better accuracy but require more processing time and memory.</p>
+                </div>
+                
+                <div class="model-comparison-table">
+                    <table class="comparison-table">
+                        <thead>
+                            <tr>
+                                <th>Model</th>
+                                <th>Parameters</th>
+                                <th>VRAM Required</th>
+                                <th>Relative Speed</th>
+                                <th>Best For</th>
+                                <th>Languages</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="model-row" data-model="tiny">
+                                <td><strong>Tiny</strong></td>
+                                <td>39M</td>
+                                <td>~1 GB</td>
+                                <td>~10x faster</td>
+                                <td>Quick transcription, low-resource devices</td>
+                                <td>Multilingual</td>
+                            </tr>
+                            <tr class="model-row" data-model="tiny.en">
+                                <td><strong>Tiny English-only</strong></td>
+                                <td>39M</td>
+                                <td>~1 GB</td>
+                                <td>~10x faster</td>
+                                <td>Fast English transcription, better accuracy than multilingual tiny</td>
+                                <td>English only</td>
+                            </tr>
+                            <tr class="model-row" data-model="base">
+                                <td><strong>Base</strong></td>
+                                <td>74M</td>
+                                <td>~1 GB</td>
+                                <td>~7x faster</td>
+                                <td>Good balance of speed and accuracy</td>
+                                <td>Multilingual</td>
+                            </tr>
+                            <tr class="model-row" data-model="base.en">
+                                <td><strong>Base English-only</strong></td>
+                                <td>74M</td>
+                                <td>~1 GB</td>
+                                <td>~7x faster</td>
+                                <td>Better English accuracy than multilingual base</td>
+                                <td>English only</td>
+                            </tr>
+                            <tr class="model-row" data-model="small">
+                                <td><strong>Small</strong></td>
+                                <td>244M</td>
+                                <td>~2 GB</td>
+                                <td>~4x faster</td>
+                                <td>Good accuracy for most use cases</td>
+                                <td>Multilingual</td>
+                            </tr>
+                            <tr class="model-row" data-model="small.en">
+                                <td><strong>Small English-only</strong></td>
+                                <td>244M</td>
+                                <td>~2 GB</td>
+                                <td>~4x faster</td>
+                                <td>Improved English accuracy</td>
+                                <td>English only</td>
+                            </tr>
+                            <tr class="model-row" data-model="medium">
+                                <td><strong>Medium</strong></td>
+                                <td>769M</td>
+                                <td>~5 GB</td>
+                                <td>~2x faster</td>
+                                <td>High accuracy for professional use</td>
+                                <td>Multilingual</td>
+                            </tr>
+                            <tr class="model-row" data-model="medium.en">
+                                <td><strong>Medium English-only</strong></td>
+                                <td>769M</td>
+                                <td>~5 GB</td>
+                                <td>~2x faster</td>
+                                <td>High English accuracy</td>
+                                <td>English only</td>
+                            </tr>
+                            <tr class="model-row" data-model="large">
+                                <td><strong>Large</strong></td>
+                                <td>1550M</td>
+                                <td>~10 GB</td>
+                                <td>1x (baseline)</td>
+                                <td>Highest accuracy, research and production</td>
+                                <td>Multilingual</td>
+                            </tr>
+                            <tr class="model-row" data-model="turbo">
+                                <td><strong>Turbo</strong></td>
+                                <td>809M</td>
+                                <td>~6 GB</td>
+                                <td>~8x faster</td>
+                                <td>Optimized large model with minimal accuracy loss</td>
+                                <td>Multilingual</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="model-recommendations">
+                    <h4>Recommendations:</h4>
+                    <div class="recommendation-grid">
+                        <div class="recommendation-card">
+                            <h5>🚀 For Speed</h5>
+                            <p><strong>Tiny.en</strong> or <strong>Base.en</strong> for English content</p>
+                            <p><strong>Tiny</strong> or <strong>Base</strong> for multilingual content</p>
+                        </div>
+                        <div class="recommendation-card">
+                            <h5>⚖️ Balanced</h5>
+                            <p><strong>Small.en</strong> for English content</p>
+                            <p><strong>Small</strong> for multilingual content</p>
+                        </div>
+                        <div class="recommendation-card">
+                            <h5>🎯 For Accuracy</h5>
+                            <p><strong>Medium</strong> or <strong>Large</strong> for best results</p>
+                            <p><strong>Turbo</strong> for fast high-quality transcription</p>
+                        </div>
+                        <div class="recommendation-card">
+                            <h5>💻 Low Resources</h5>
+                            <p><strong>Tiny</strong> models for devices with limited memory</p>
+                            <p>Require only ~1GB VRAM</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="model-notes">
+                    <h4>Important Notes:</h4>
+                    <ul>
+                        <li><strong>English-only models</strong> (.en) perform better for English content, especially for tiny and base sizes</li>
+                        <li><strong>Speed measurements</strong> are relative to the large model on A100 GPU - actual speed varies by hardware</li>
+                        <li><strong>Turbo model</strong> is an optimized version of large-v3 with faster processing and minimal accuracy loss</li>
+                        <li><strong>VRAM requirements</strong> are approximate and may vary based on audio length and processing settings</li>
+                        <li><strong>Multilingual models</strong> support 99+ languages with varying accuracy levels</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="close-model-comparison-btn" class="btn btn-primary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="index.js"></script>
+</body>
+</html>

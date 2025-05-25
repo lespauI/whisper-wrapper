@@ -1,6 +1,8 @@
 const { app, BrowserWindow, Menu } = require('electron');
 const path = require('path');
-const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+// Check if we're in development mode
+// Force production mode if NODE_ENV is explicitly set to production
+const isDev = process.env.NODE_ENV === 'production' ? false : (process.env.NODE_ENV === 'development' || !app.isPackaged);
 const IPCHandlers = require('./ipcHandlers');
 
 // Keep a global reference of the window object
@@ -28,6 +30,9 @@ function createWindow() {
     const startUrl = isDev 
         ? 'http://localhost:3000' 
         : `file://${path.join(__dirname, '../renderer/dist/index.html')}`;
+    
+    console.log(`🔧 Environment: NODE_ENV=${process.env.NODE_ENV}, isDev=${isDev}, isPackaged=${app.isPackaged}`);
+    console.log(`🌐 Loading URL: ${startUrl}`);
   
     mainWindow.loadURL(startUrl);
 

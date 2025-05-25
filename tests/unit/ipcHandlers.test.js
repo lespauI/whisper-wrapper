@@ -58,7 +58,8 @@ describe('IPCHandlers', () => {
             transcribeAudio: jest.fn(),
             transcribeBuffer: jest.fn(),
             testConnection: jest.fn(),
-            getAvailableModels: jest.fn()
+            getAvailableModels: jest.fn(),
+            updateSettings: jest.fn()
         };
 
         mockFileService = {
@@ -264,7 +265,7 @@ describe('IPCHandlers', () => {
     });
 
     describe('handleSetConfig', () => {
-        it('should set simplified configuration', async () => {
+        it('should set simplified configuration when model exists locally', async () => {
             const newConfig = {
                 model: 'small',
                 language: 'en',
@@ -282,15 +283,91 @@ describe('IPCHandlers', () => {
             const result = await handlers.handleSetConfig(null, newConfig);
 
             expect(config.setSimplified).toHaveBeenCalledWith(newConfig);
+            expect(mockTranscriptionService.updateSettings).toHaveBeenCalledWith(newConfig);
             expect(result).toEqual({ success: true });
         });
 
+        it('should return needsDownload when model is valid but not available locally', async () => {
+            const newConfig = {
+                model: 'tiny',
+                language: 'en',
+                threads: 4,
+                translate: false
+            };
+
+            // Mock test connection success but model not available locally
+            mockTranscriptionService.testConnection.mockResolvedValue({ success: true });
+            mockTranscriptionService.getAvailableModels.mockReturnValue([
+                { name: 'base' },
+                { name: 'small' }
+            ]);
+
+            const result = await handlers.handleSetConfig(null, newConfig);
+
+            expect(result).toEqual({
+                success: false,
+                needsDownload: true,
+                modelName: 'tiny',
+                message: "Model 'tiny' needs to be downloaded before use."
+            });
+            expect(config.setSimplified).not.toHaveBeenCalled();
+            expect(mockTranscriptionService.updateSettings).not.toHaveBeenCalled();
+        });
+
+        it('should throw error for invalid model name', async () => {
+            const newConfig = {
+                model: 'invalid-model',
+                language: 'en',
+                threads: 4,
+                translate: false
+            };
+
+            // Mock test connection success but model not available locally
+            mockTranscriptionService.testConnection.mockResolvedValue({ success: true });
+            mockTranscriptionService.getAvailableModels.mockReturnValue([
+                { name: 'base' },
+                { name: 'small' }
+            ]);
+
+            await expect(handlers.handleSetConfig(null, newConfig))
+                .rejects.toThrow('Unknown model \'invalid-model\'. Valid models: tiny, tiny.en, base, base.en, small, small.en, medium, medium.en, large, turbo');
+        });
+
         it('should handle configuration errors', async () => {
+            const newConfig = {
+                model: 'base',
+                language: 'en',
+                threads: 4,
+                translate: false
+            };
+
+            mockTranscriptionService.testConnection.mockResolvedValue({ success: true });
+            mockTranscriptionService.getAvailableModels.mockReturnValue([
+                { name: 'base' }
+            ]);
+
             config.setSimplified.mockImplementation(() => {
                 throw new Error('Config error');
             });
 
-            await expect(handlers.handleSetConfig(null, {}))
+            await expect(handlers.handleSetConfig(null, newConfig))
+                .rejects.toThrow('Failed to save configuration');
+        });
+
+        it('should handle transcription service test failure', async () => {
+            const newConfig = {
+                model: 'base',
+                language: 'en',
+                threads: 4,
+                translate: false
+            };
+
+            mockTranscriptionService.testConnection.mockResolvedValue({ 
+                success: false, 
+                error: 'Service unavailable' 
+            });
+
+            await expect(handlers.handleSetConfig(null, newConfig))
                 .rejects.toThrow('Failed to save configuration');
         });
     });

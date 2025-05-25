@@ -385,7 +385,10 @@ class LocalWhisperService {
                             const result = JSON.parse(fs.readFileSync(jsonOutputFile, 'utf8'));
                             console.log('📊 Parsed JSON result:', {
                                 transcriptionSegments: result.transcription?.length || 0,
-                                hasTranscription: !!result.transcription
+                                hasTranscription: !!result.transcription,
+                                firstSegment: result.transcription?.[0],
+                                resultKeys: Object.keys(result),
+                                fullResult: result
                             });
                             
                             // Clean up temp file
@@ -404,11 +407,25 @@ class LocalWhisperService {
                             const detectedLanguage = this.detectLanguageFromOutput(stderr) || language;
                             console.log(`🌍 Detected language: ${detectedLanguage}`);
 
+                            // Check for segments in different possible properties
+                            const rawSegments = result.transcription || result.segments || [];
+                            console.log('🎬 Found segments:', rawSegments.length, 'segments');
+                            if (rawSegments.length > 0) {
+                                console.log('🎬 First segment structure:', rawSegments[0]);
+                            }
+
+                            // Normalize segments to expected format
+                            const segments = this.normalizeSegments(rawSegments);
+                            console.log('🎬 Normalized segments:', segments.length, 'segments');
+                            if (segments.length > 0) {
+                                console.log('🎬 First normalized segment:', segments[0]);
+                            }
+
                             const finalResult = {
                                 success: true,
                                 text: text,
                                 language: detectedLanguage,
-                                segments: result.transcription,
+                                segments: segments,
                                 model: model,
                                 duration: this.extractDuration(stderr)
                             };
@@ -587,6 +604,164 @@ class LocalWhisperService {
     }
 
     /**
+     * Download a Whisper model
+     * @param {string} modelName - Name of the model to download
+     * @param {Function} progressCallback - Callback for progress updates
+     * @returns {Promise<Object>} - Download result
+     */
+    async downloadModel(modelName, progressCallback = null) {
+        const https = require('https');
+        const url = require('url');
+        
+        // Model download URLs (Hugging Face)
+        const modelUrls = {
+            'tiny': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin',
+            'tiny.en': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin',
+            'base': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
+            'base.en': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin',
+            'small': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
+            'small.en': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin',
+            'medium': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin',
+            'medium.en': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en.bin',
+            'large': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v1.bin',
+            'turbo': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin'
+        };
+
+        const downloadUrl = modelUrls[modelName];
+        if (!downloadUrl) {
+            throw new Error(`Unknown model: ${modelName}`);
+        }
+
+        // Ensure models directory exists
+        if (!fs.existsSync(this.modelsPath)) {
+            fs.mkdirSync(this.modelsPath, { recursive: true });
+        }
+
+        const fileName = `ggml-${modelName}.bin`;
+        const filePath = path.join(this.modelsPath, fileName);
+
+        // Check if model already exists
+        if (fs.existsSync(filePath)) {
+            return {
+                success: true,
+                message: `Model ${modelName} already exists`,
+                path: filePath
+            };
+        }
+
+        return new Promise((resolve, reject) => {
+            console.log(`📥 Downloading model ${modelName} from ${downloadUrl}`);
+            
+            const request = https.get(downloadUrl, (response) => {
+                if (response.statusCode === 302 || response.statusCode === 301) {
+                    // Handle redirect
+                    const redirectUrl = response.headers.location;
+                    console.log(`🔄 Redirecting to: ${redirectUrl}`);
+                    
+                    https.get(redirectUrl, (redirectResponse) => {
+                        if (redirectResponse.statusCode !== 200) {
+                            reject(new Error(`Download failed with status: ${redirectResponse.statusCode}`));
+                            return;
+                        }
+                        
+                        this.handleDownloadResponse(redirectResponse, filePath, modelName, progressCallback, resolve, reject);
+                    }).on('error', reject);
+                    
+                } else if (response.statusCode === 200) {
+                    this.handleDownloadResponse(response, filePath, modelName, progressCallback, resolve, reject);
+                } else {
+                    reject(new Error(`Download failed with status: ${response.statusCode}`));
+                }
+            });
+
+            request.on('error', reject);
+            request.setTimeout(300000); // 5 minute timeout
+        });
+    }
+
+    /**
+     * Handle the download response stream
+     */
+    handleDownloadResponse(response, filePath, modelName, progressCallback, resolve, reject) {
+        const totalSize = parseInt(response.headers['content-length'], 10);
+        let downloadedSize = 0;
+        
+        const writeStream = fs.createWriteStream(filePath);
+        
+        response.on('data', (chunk) => {
+            downloadedSize += chunk.length;
+            writeStream.write(chunk);
+            
+            if (progressCallback && totalSize) {
+                const progress = Math.round((downloadedSize / totalSize) * 100);
+                progressCallback({
+                    modelName,
+                    progress,
+                    downloadedSize,
+                    totalSize
+                });
+            }
+        });
+        
+        response.on('end', () => {
+            writeStream.end();
+            console.log(`✅ Model ${modelName} downloaded successfully`);
+            resolve({
+                success: true,
+                message: `Model ${modelName} downloaded successfully`,
+                path: filePath,
+                size: downloadedSize
+            });
+        });
+        
+        response.on('error', (error) => {
+            writeStream.destroy();
+            // Clean up partial file
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+            reject(error);
+        });
+        
+        writeStream.on('error', (error) => {
+            // Clean up partial file
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+            reject(error);
+        });
+    }
+
+    /**
+     * Get model download info
+     * @param {string} modelName - Name of the model
+     * @returns {Object} - Model info including download status
+     */
+    getModelInfo(modelName) {
+        const fileName = `ggml-${modelName}.bin`;
+        const filePath = path.join(this.modelsPath, fileName);
+        const exists = fs.existsSync(filePath);
+        
+        let size = null;
+        if (exists) {
+            try {
+                const stats = fs.statSync(filePath);
+                size = this.getFileSize(filePath);
+            } catch (error) {
+                console.warn(`Error getting file stats for ${filePath}:`, error);
+            }
+        }
+        
+        return {
+            name: modelName,
+            fileName,
+            path: filePath,
+            exists,
+            size
+        };
+    }
+
+    /**
      * Clean up temporary files
      */
     cleanup() {
@@ -602,6 +777,97 @@ class LocalWhisperService {
             }
         } catch (error) {
             console.warn('Failed to cleanup temp files:', error.message);
+        }
+    }
+
+    /**
+     * Normalize segments from Whisper output to expected format
+     * @param {Array} rawSegments - Raw segments from Whisper JSON output
+     * @returns {Array} Normalized segments with start/end properties in seconds
+     */
+    normalizeSegments(rawSegments) {
+        if (!Array.isArray(rawSegments)) {
+            console.warn('🎬 normalizeSegments: Input is not an array:', rawSegments);
+            return [];
+        }
+
+        return rawSegments.map((segment, index) => {
+            try {
+                // Handle different possible segment formats
+                let start = 0;
+                let end = 0;
+                let text = '';
+
+                if (segment.offsets) {
+                    // Whisper.cpp format: offsets in milliseconds
+                    start = segment.offsets.from / 1000; // Convert ms to seconds
+                    end = segment.offsets.to / 1000;     // Convert ms to seconds
+                    text = segment.text || '';
+                } else if (segment.timestamps) {
+                    // Alternative format: parse timestamp strings
+                    start = this.parseTimestampString(segment.timestamps.from);
+                    end = this.parseTimestampString(segment.timestamps.to);
+                    text = segment.text || '';
+                } else if (typeof segment.start === 'number' && typeof segment.end === 'number') {
+                    // Already in expected format
+                    start = segment.start;
+                    end = segment.end;
+                    text = segment.text || '';
+                } else {
+                    console.warn(`🎬 normalizeSegments: Unknown segment format at index ${index}:`, segment);
+                    // Fallback: try to extract what we can
+                    start = segment.start || 0;
+                    end = segment.end || 0;
+                    text = segment.text || '';
+                }
+
+                const normalizedSegment = {
+                    start: start,
+                    end: end,
+                    text: text.trim()
+                };
+
+                console.log(`🎬 Segment ${index}: ${start}s - ${end}s: "${text.trim().substring(0, 50)}..."`);
+                return normalizedSegment;
+
+            } catch (error) {
+                console.error(`🎬 Error normalizing segment ${index}:`, error, segment);
+                return {
+                    start: 0,
+                    end: 0,
+                    text: segment.text || ''
+                };
+            }
+        });
+    }
+
+    /**
+     * Parse timestamp string in format "HH:MM:SS,mmm" to seconds
+     * @param {string} timestampStr - Timestamp string
+     * @returns {number} Time in seconds
+     */
+    parseTimestampString(timestampStr) {
+        if (!timestampStr || typeof timestampStr !== 'string') {
+            return 0;
+        }
+
+        try {
+            // Format: "00:00:07,560" -> 7.56 seconds
+            const parts = timestampStr.split(':');
+            if (parts.length !== 3) {
+                return 0;
+            }
+
+            const hours = parseInt(parts[0], 10) || 0;
+            const minutes = parseInt(parts[1], 10) || 0;
+            const secondsParts = parts[2].split(',');
+            const seconds = parseInt(secondsParts[0], 10) || 0;
+            const milliseconds = parseInt(secondsParts[1], 10) || 0;
+
+            return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
+        } catch (error) {
+            console.warn('🎬 Failed to parse timestamp string:', timestampStr, error);
+            return 0;
         }
     }
 }

@@ -28,7 +28,9 @@ class WhisperWrapperApp {
             lastSaved: null,
             autoSaveTimer: null,
             history: [],
-            historyIndex: -1
+            historyIndex: -1,
+            segments: [], // Store original segments with timestamps
+            viewMode: 'timestamped' // 'timestamped' or 'plain'
         };
         
         this.init();
@@ -43,6 +45,7 @@ class WhisperWrapperApp {
         this.setupSettings();
         this.loadSettings();
         this.updateStatus('Ready');
+        this.updateToggleButton(); // Initialize toggle button state
     }
 
     setupEventListeners() {
@@ -80,6 +83,32 @@ class WhisperWrapperApp {
             if (e.target === e.currentTarget) {
                 this.closeSettings();
             }
+        });
+
+        // Model comparison modal
+        document.getElementById('model-info-btn').addEventListener('click', () => {
+            this.openModelComparison();
+        });
+
+        document.getElementById('close-model-comparison-btn').addEventListener('click', () => {
+            this.closeModelComparison();
+        });
+
+        // Close model comparison modal on backdrop click
+        document.getElementById('model-comparison-modal').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) {
+                this.closeModelComparison();
+            }
+        });
+
+        // Close model comparison modal on close button click
+        document.querySelector('#model-comparison-modal .modal-close').addEventListener('click', () => {
+            this.closeModelComparison();
+        });
+
+        // Model selection change handler
+        document.getElementById('model-select').addEventListener('change', (e) => {
+            this.updateModelDescription(e.target.value);
         });
     }
 
@@ -218,6 +247,11 @@ class WhisperWrapperApp {
             this.clearDraft();
         });
 
+        // Toggle view mode
+        document.getElementById('toggle-view-btn').addEventListener('click', () => {
+            this.toggleViewMode();
+        });
+
         // Find input events
         document.getElementById('find-input').addEventListener('input', () => {
             this.updateFindResults();
@@ -307,9 +341,10 @@ class WhisperWrapperApp {
 
             // Start transcription
             const result = await window.electronAPI.transcribeFile(filePath);
+            console.log('🎬 Transcription result from IPC:', result);
             
             if (result.success) {
-                this.showTranscriptionResult(result.text);
+                this.showTranscriptionResult(result.text, result.segments);
                 this.updateStatus(`Transcription completed (Language: ${result.language || 'unknown'})`);
                 this.switchTab('transcription');
             } else {
@@ -536,9 +571,10 @@ class WhisperWrapperApp {
 
                 // Start transcription
                 const result = await window.electronAPI.transcribeAudio(arrayBuffer);
+                console.log('🎬 Audio transcription result from IPC:', result);
                 
                 if (result.success) {
-                    this.showTranscriptionResult(result.text);
+                    this.showTranscriptionResult(result.text, result.segments);
                     this.updateStatus(`Recording transcribed (Language: ${result.language || 'unknown'})`);
                     this.switchTab('transcription');
                 } else {
@@ -560,12 +596,19 @@ class WhisperWrapperApp {
         }
     }
 
-    showTranscriptionResult(text) {
+    showTranscriptionResult(text, segments = null) {
+        console.log('🎬 showTranscriptionResult called with:', { 
+            textLength: text?.length, 
+            segmentsCount: segments?.length,
+            segments: segments 
+        });
+        
         const transcriptionText = document.getElementById('transcription-text');
+        const transcriptionSegments = document.getElementById('transcription-segments');
         const emptyState = document.getElementById('transcription-empty');
         const loadingState = document.getElementById('transcription-loading');
         
-        transcriptionText.value = text;
+        // Hide loading and empty states
         emptyState.classList.add('hidden');
         loadingState.classList.add('hidden');
         
@@ -576,16 +619,377 @@ class WhisperWrapperApp {
         this.transcriptionState.lastSaved = new Date();
         this.transcriptionState.history = [text];
         this.transcriptionState.historyIndex = 0;
+        this.transcriptionState.segments = segments || [];
+        
+        // Set up both views
+        transcriptionText.value = text;
+        
+        if (segments && segments.length > 0) {
+            this.renderTimestampedSegments(segments);
+            this.transcriptionState.viewMode = 'timestamped';
+            this.showTimestampedView();
+        } else {
+            // Fallback to plain text view if no segments
+            this.transcriptionState.viewMode = 'plain';
+            this.showPlainTextView();
+        }
         
         // Update UI indicators
         this.updateTranscriptionStatus();
+        this.updateToggleButton();
+    }
+
+    renderTimestampedSegments(segments) {
+        console.log('🎬 Rendering timestamped segments:', segments);
+        console.log('🎬 First segment example:', segments[0]);
+        
+        const container = document.getElementById('transcription-segments');
+        container.innerHTML = '';
+        
+        // Group segments into paragraphs based on pauses or content breaks
+        const paragraphs = this.groupSegmentsIntoParagraphs(segments);
+        
+        paragraphs.forEach((paragraph, paragraphIndex) => {
+            paragraph.forEach((segment, segmentIndex) => {
+                const segmentDiv = document.createElement('div');
+                segmentDiv.className = 'transcription-segment';
+                segmentDiv.dataset.segmentId = segment.id || `${paragraphIndex}-${segmentIndex}`;
+                
+                // Check if this is a speaker block (various dash formats)
+                const text = segment.text.trim();
+                const isSpeakerBlock = this.detectSpeakerChange(text);
+                if (isSpeakerBlock) {
+                    segmentDiv.classList.add('speaker-block');
+                }
+                
+                // Create timestamp with duration info for merged blocks
+                const timestampDiv = document.createElement('div');
+                timestampDiv.className = 'segment-timestamp';
+                const duration = segment.end - segment.start;
+                const timestampText = segment.originalSegments 
+                    ? `${this.formatTimestamp(segment.start)} - ${this.formatTimestamp(segment.end)} (${segment.originalSegments.length} parts)`
+                    : this.formatTimestamp(segment.start);
+                timestampDiv.textContent = timestampText;
+                
+                // Create text content
+                const textDiv = document.createElement('div');
+                textDiv.className = 'segment-text';
+                textDiv.textContent = text;
+                
+                segmentDiv.appendChild(timestampDiv);
+                segmentDiv.appendChild(textDiv);
+                container.appendChild(segmentDiv);
+            });
+            
+            // Add paragraph break if not the last paragraph
+            if (paragraphIndex < paragraphs.length - 1) {
+                const breakDiv = document.createElement('div');
+                breakDiv.className = 'segment-paragraph-break';
+                container.appendChild(breakDiv);
+            }
+        });
+        
+        console.log('🎬 Rendered', segments.length, 'segments in', paragraphs.length, 'paragraphs');
+        
+        // Debug container dimensions
+        setTimeout(() => {
+            const containerHeight = container.offsetHeight;
+            const containerScrollHeight = container.scrollHeight;
+            const containerClientHeight = container.clientHeight;
+            console.log('🎬 Container dimensions:', {
+                offsetHeight: containerHeight,
+                scrollHeight: containerScrollHeight,
+                clientHeight: containerClientHeight,
+                hasScroll: containerScrollHeight > containerClientHeight
+            });
+        }, 100);
+    }
+    
+    groupSegmentsIntoParagraphs(segments) {
+        if (!segments || segments.length === 0) return [];
+        
+        console.log('🎭 Grouping segments by speaker...');
+        
+        // First, split segments that contain multiple speakers
+        const expandedSegments = this.splitMultiSpeakerSegments(segments);
+        console.log(`🎭 Expanded ${segments.length} segments into ${expandedSegments.length} segments after splitting multi-speaker segments`);
+        
+        const speakerBlocks = [];
+        let currentBlock = [];
+        
+        for (let i = 0; i < expandedSegments.length; i++) {
+            const segment = expandedSegments[i];
+            const text = segment.text.trim();
+            
+            // Check if this segment indicates a new speaker (various dash formats)
+            const isNewSpeaker = this.detectSpeakerChange(text);
+            
+            if (isNewSpeaker && currentBlock.length > 0) {
+                // We hit a new speaker, so finish the current block
+                const mergedBlock = this.mergeSegmentsIntoBlock(currentBlock);
+                speakerBlocks.push([mergedBlock]);
+                console.log(`🎭 Completed speaker block: ${mergedBlock.start}s-${mergedBlock.end}s (${currentBlock.length} segments)`);
+                currentBlock = [];
+            }
+            
+            // Add current segment to the block
+            currentBlock.push(segment);
+            
+            // If this is the last segment, finish the current block
+            if (i === expandedSegments.length - 1 && currentBlock.length > 0) {
+                const mergedBlock = this.mergeSegmentsIntoBlock(currentBlock);
+                speakerBlocks.push([mergedBlock]);
+                console.log(`🎭 Completed final speaker block: ${mergedBlock.start}s-${mergedBlock.end}s (${currentBlock.length} segments)`);
+            }
+        }
+        
+        console.log(`🎭 Created ${speakerBlocks.length} speaker blocks from ${expandedSegments.length} expanded segments`);
+        return speakerBlocks;
+    }
+
+    /**
+     * Split segments that contain multiple speakers within the same segment
+     */
+    splitMultiSpeakerSegments(segments) {
+        const expandedSegments = [];
+        
+        for (const segment of segments) {
+            const text = segment.text.trim();
+            
+            // Find all speaker indicators within the text
+            const speakerSplits = this.findSpeakerSplitsInText(text);
+            
+            if (speakerSplits.length <= 1) {
+                // No splits needed, keep original segment
+                expandedSegments.push(segment);
+            } else {
+                // Split the segment into multiple parts
+                console.log(`🎭 Splitting segment with ${speakerSplits.length} speakers: "${text.substring(0, 50)}..."`);
+                
+                const duration = segment.end - segment.start;
+                const segmentDuration = duration / speakerSplits.length;
+                
+                speakerSplits.forEach((splitText, index) => {
+                    const startTime = segment.start + (index * segmentDuration);
+                    const endTime = segment.start + ((index + 1) * segmentDuration);
+                    
+                    const newSegment = {
+                        start: startTime,
+                        end: endTime,
+                        text: splitText.trim(),
+                        id: segment.id ? `${segment.id}-split-${index}` : `split-${index}`,
+                        originalSegment: segment // Keep reference to original
+                    };
+                    
+                    expandedSegments.push(newSegment);
+                    console.log(`🎭   Split ${index + 1}: ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s "${splitText.trim().substring(0, 30)}..."`);
+                });
+            }
+        }
+        
+        return expandedSegments;
+    }
+
+    /**
+     * Find speaker splits within a text segment
+     */
+    findSpeakerSplitsInText(text) {
+        if (!text || typeof text !== 'string') {
+            return [text];
+        }
+        
+        // Pattern to match speaker indicators (em dash, en dash, regular dash)
+        const speakerPattern = /(?:^|\s)(—|–|-)\s*/g;
+        
+        const splits = [];
+        let lastIndex = 0;
+        let match;
+        
+        // Find all speaker indicators
+        while ((match = speakerPattern.exec(text)) !== null) {
+            const matchStart = match.index;
+            const matchEnd = speakerPattern.lastIndex;
+            
+            // If this isn't the first match, add the previous text as a split
+            if (matchStart > lastIndex) {
+                const previousText = text.substring(lastIndex, matchStart).trim();
+                if (previousText) {
+                    splits.push(previousText);
+                }
+            }
+            
+            // Start the next split from this speaker indicator
+            lastIndex = matchStart;
+        }
+        
+        // Add the remaining text as the final split
+        if (lastIndex < text.length) {
+            const remainingText = text.substring(lastIndex).trim();
+            if (remainingText) {
+                splits.push(remainingText);
+            }
+        }
+        
+        // If no splits were found, return the original text
+        if (splits.length === 0) {
+            return [text];
+        }
+        
+        return splits;
+    }
+
+    /**
+     * Merge multiple segments into a single block with combined text and span timestamps
+     */
+    mergeSegmentsIntoBlock(segments) {
+        if (!segments || segments.length === 0) {
+            return { start: 0, end: 0, text: '' };
+        }
+           if (segments.length === 1) {
+            return segments[0];
+        }
+        
+        // Combine all text, preserving spaces
+        const combinedText = segments
+            .map(segment => segment.text.trim())
+            .join(' ')
+            .replace(/\s+/g, ' ') // Normalize multiple spaces
+     
+            .trim();
+        
+        // Use start time of first segment and end time of last segment
+        const startTime = segments[0].start;
+        const endTime = segments[segments.length - 1].end;
+        
+        console.log(`🎭 Merged ${segments.length} segments: ${startTime}s-${endTime}s "${combinedText.substring(0, 50)}..."`);
+        
+        return {
+            start: startTime,
+            end: endTime,
+            text: combinedText,
+            originalSegments: segments // Keep reference to original segments for debugging
+        };
+    }
+
+    /**
+     * Detect if text indicates a speaker change (various dash formats)
+     */
+    detectSpeakerChange(text) {
+        if (!text || typeof text !== 'string') {
+            return false;
+        }
+        
+        // Normalize the text by trimming whitespace
+        const normalizedText = text.trim();
+        
+        // Check for various speaker indicators:
+        // "-", "- ", " -", " - ", "—", "— ", " —", " — ", etc.
+        const speakerPatterns = [
+            /^-\s*/, // Starts with regular dash, optionally followed by spaces
+            /^\s*-\s*/, // Starts with optional spaces, regular dash, optional spaces
+            /^—\s*/, // Starts with em dash, optionally followed by spaces
+            /^\s*—\s*/, // Starts with optional spaces, em dash, optional spaces
+            /^–\s*/, // Starts with en dash, optionally followed by spaces
+            /^\s*–\s*/, // Starts with optional spaces, en dash, optional spaces
+        ];
+        
+        const isNewSpeaker = speakerPatterns.some(pattern => pattern.test(normalizedText));
+        
+        if (isNewSpeaker) {
+            console.log(`🎭 Detected speaker change in: "${normalizedText.substring(0, 30)}..."`);
+        }
+        
+        return isNewSpeaker;
+    }
+    
+    formatTimestamp(seconds) {
+        // Handle invalid or missing values
+        if (seconds === null || seconds === undefined || isNaN(seconds) || seconds < 0) {
+            console.warn('Invalid timestamp value:', seconds);
+            return '00:00.00';
+        }
+        
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.floor(seconds % 60);
+        const milliseconds = Math.floor((seconds % 1) * 100);
+        
+        return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(2, '0')}`;
+    }
+    
+    toggleViewMode() {
+        if (this.transcriptionState.viewMode === 'timestamped') {
+            this.transcriptionState.viewMode = 'plain';
+            this.showPlainTextView();
+        } else {
+            this.transcriptionState.viewMode = 'timestamped';
+            this.showTimestampedView();
+        }
+        this.updateToggleButton();
+    }
+    
+    showTimestampedView() {
+        const transcriptionText = document.getElementById('transcription-text');
+        const transcriptionSegments = document.getElementById('transcription-segments');
+        
+        transcriptionText.classList.add('hidden');
+        transcriptionSegments.classList.remove('hidden');
+    }
+    
+    showPlainTextView() {
+        const transcriptionText = document.getElementById('transcription-text');
+        const transcriptionSegments = document.getElementById('transcription-segments');
+        
+        transcriptionSegments.classList.add('hidden');
+        transcriptionText.classList.remove('hidden');
+    }
+    
+    updateToggleButton() {
+        const toggleBtn = document.getElementById('toggle-view-btn');
+        
+        if (this.transcriptionState.segments.length === 0) {
+            // No segments available, disable timestamped view
+            toggleBtn.disabled = true;
+            toggleBtn.textContent = '📝 Plain Text Only';
+            toggleBtn.title = 'No timestamp data available';
+            return;
+        }
+        
+        toggleBtn.disabled = false;
+        
+        if (this.transcriptionState.viewMode === 'timestamped') {
+            toggleBtn.textContent = '📝 Plain Text View';
+            toggleBtn.title = 'Switch to plain text editing view';
+        } else {
+            toggleBtn.textContent = '🕒 Timestamped View';
+            toggleBtn.title = 'Switch to timestamped segments view';
+        }
     }
 
     copyTranscription() {
-        const transcriptionText = document.getElementById('transcription-text');
+        let textToCopy = '';
         
-        if (transcriptionText.value) {
-            navigator.clipboard.writeText(transcriptionText.value).then(() => {
+        if (this.transcriptionState.viewMode === 'timestamped' && this.transcriptionState.segments.length > 0) {
+            // Copy with timestamps in the format [timestamp] text
+            const paragraphs = this.groupSegmentsIntoParagraphs(this.transcriptionState.segments);
+            
+            paragraphs.forEach((paragraph, paragraphIndex) => {
+                paragraph.forEach(segment => {
+                    textToCopy += `[${this.formatTimestamp(segment.start)}] ${segment.text.trim()}\n`;
+                });
+                
+                // Add paragraph break
+                if (paragraphIndex < paragraphs.length - 1) {
+                    textToCopy += '\n';
+                }
+            });
+        } else {
+            // Copy plain text
+            const transcriptionText = document.getElementById('transcription-text');
+            textToCopy = transcriptionText.value;
+        }
+        
+        if (textToCopy) {
+            navigator.clipboard.writeText(textToCopy).then(() => {
                 this.updateStatus('Transcription copied to clipboard');
             }).catch(() => {
                 this.showError('Failed to copy to clipboard');
@@ -1113,7 +1517,11 @@ ${text}
     clearDraft() {
         if (confirm('Are you sure you want to clear the current transcription? This action cannot be undone.')) {
             const transcriptionText = document.getElementById('transcription-text');
+            const transcriptionSegments = document.getElementById('transcription-segments');
+            
+            // Clear both text and segments
             transcriptionText.value = '';
+            transcriptionSegments.innerHTML = '';
             
             // Reset state
             this.transcriptionState = {
@@ -1123,16 +1531,24 @@ ${text}
                 lastSaved: null,
                 autoSaveTimer: null,
                 history: [''],
-                historyIndex: 0
+                historyIndex: 0,
+                viewMode: this.transcriptionState.viewMode || 'plain' // Preserve view mode
             };
+            
+            // Clear stored segments
+            this.currentSegments = [];
             
             this.clearTranscriptionDraft();
             this.updateTranscriptionStatus();
             this.updateUndoRedoButtons();
             
-            // Show empty state
+            // Show empty state and hide both views
             const emptyState = document.getElementById('transcription-empty');
             emptyState.classList.remove('hidden');
+            transcriptionText.classList.add('hidden');
+            transcriptionSegments.classList.add('hidden');
+            
+            console.log('🧹 Cleared transcription in both plain text and timestamped views');
             
             this.updateStatus('Transcription cleared');
         }
@@ -1140,12 +1556,18 @@ ${text}
 
     async openSettings() {
         document.getElementById('settings-modal').classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        
+        // Ensure model options are populated
+        await this.updateModelOptions();
+        
         await this.checkWhisperStatus();
         await this.loadSettings();
     }
 
     closeSettings() {
         document.getElementById('settings-modal').classList.add('hidden');
+        document.body.style.overflow = 'auto';
     }
 
     async saveSettings() {
@@ -1163,7 +1585,23 @@ ${text}
             };
             
             // Save settings via IPC
-            await window.electronAPI.setConfig(settings);
+            const result = await window.electronAPI.setConfig(settings);
+            
+            // Check if model needs to be downloaded
+            if (result.needsDownload) {
+                const shouldDownload = await this.showModelDownloadDialog(result.modelName);
+                if (shouldDownload) {
+                    await this.downloadModel(result.modelName);
+                    // Try saving settings again after download
+                    const retryResult = await window.electronAPI.setConfig(settings);
+                    if (!retryResult.success) {
+                        throw new Error('Failed to save configuration after model download');
+                    }
+                } else {
+                    // User cancelled download, don't save settings
+                    return;
+                }
+            }
             
             this.closeSettings();
             this.updateStatus('Settings saved');
@@ -1180,6 +1618,7 @@ ${text}
             
             if (settings.model) {
                 document.getElementById('model-select').value = settings.model;
+                this.updateModelDescription(settings.model);
             }
             if (settings.language) {
                 document.getElementById('language-select').value = settings.language;
@@ -1193,6 +1632,59 @@ ${text}
             
         } catch (error) {
             console.error('Error loading settings:', error);
+        }
+    }
+
+    openModelComparison() {
+        document.getElementById('model-comparison-modal').classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        
+        // Add click handlers for model rows
+        document.querySelectorAll('.model-row[data-model]').forEach(row => {
+            row.addEventListener('click', (e) => {
+                const modelName = e.currentTarget.dataset.model;
+                this.selectModelFromComparison(modelName);
+            });
+        });
+    }
+
+    closeModelComparison() {
+        document.getElementById('model-comparison-modal').classList.add('hidden');
+        document.body.style.overflow = 'auto';
+    }
+
+    selectModelFromComparison(modelName) {
+        // Set the model in the settings dropdown
+        const modelSelect = document.getElementById('model-select');
+        if (modelSelect) {
+            modelSelect.value = modelName;
+            this.updateModelDescription(modelName);
+        }
+        
+        // Close the comparison modal
+        this.closeModelComparison();
+        
+        // Show a confirmation message
+        this.updateStatus(`Selected model: ${modelName}`);
+    }
+
+    updateModelDescription(modelName) {
+        const descriptions = {
+            'tiny': 'Fastest model with basic accuracy. Best for quick transcription on low-resource devices.',
+            'tiny.en': 'Fastest English-only model with improved accuracy over multilingual tiny. Ideal for English content.',
+            'base': 'Good balance of speed and accuracy. Recommended for most general use cases.',
+            'base.en': 'English-only base model with better accuracy than multilingual base for English content.',
+            'small': 'Higher accuracy with moderate speed. Good for professional transcription needs.',
+            'small.en': 'English-only small model with enhanced accuracy for English content.',
+            'medium': 'High accuracy model suitable for professional and production use.',
+            'medium.en': 'English-only medium model with excellent accuracy for English content.',
+            'large': 'Highest accuracy model. Best for research, production, and critical applications.',
+            'turbo': 'Optimized large model with 8x faster processing and minimal accuracy loss. Best overall choice for most users.'
+        };
+
+        const descriptionElement = document.getElementById('model-description');
+        if (descriptionElement && descriptions[modelName]) {
+            descriptionElement.textContent = descriptions[modelName];
         }
     }
 
@@ -1510,35 +2002,198 @@ ${text}
         }
     }
 
-    updateModelOptions(availableModels) {
+    async updateModelOptions(availableModels) {
         const modelSelect = document.getElementById('model-select');
         
         // Clear existing options
         modelSelect.innerHTML = '';
         
-        if (availableModels && availableModels.length > 0) {
+        // Always use the full list of models from configuration, not just the ones physically present
+        let modelsToUse;
+        try {
+            const config = await window.electronAPI.getConfig();
+            modelsToUse = config.whisper?.availableModels || this.getDefaultModels();
+        } catch (error) {
+            console.warn('Could not load models from config, using defaults:', error);
+            modelsToUse = this.getDefaultModels();
+        }
+        
+        // Create a set of available model names for marking which ones are downloaded
+        const downloadedModels = new Set();
+        if (availableModels && Array.isArray(availableModels)) {
             availableModels.forEach(model => {
-                const option = document.createElement('option');
-                option.value = model.name;
-                option.textContent = `${model.name.charAt(0).toUpperCase() + model.name.slice(1)} (${model.size})`;
-                modelSelect.appendChild(option);
-            });
-        } else {
-            // Fallback options
-            const defaultModels = [
-                { name: 'base', size: '39 MB' },
-                { name: 'small', size: '244 MB' },
-                { name: 'medium', size: '769 MB' },
-                { name: 'large', size: '1550 MB' }
-            ];
-            
-            defaultModels.forEach(model => {
-                const option = document.createElement('option');
-                option.value = model.name;
-                option.textContent = `${model.name.charAt(0).toUpperCase() + model.name.slice(1)} (${model.size})`;
-                modelSelect.appendChild(option);
+                downloadedModels.add(model.name);
             });
         }
+        
+        modelsToUse.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model.name;
+            
+            // Create display text based on model data
+            let displayText;
+            if (model.display) {
+                displayText = model.display;
+            } else {
+                const displayName = model.name.includes('.en') 
+                    ? `${model.name.replace('.en', '')} English-only`.replace(/^\w/, c => c.toUpperCase())
+                    : model.name.charAt(0).toUpperCase() + model.name.slice(1);
+                displayText = `${displayName} (${model.size}, ${model.vram}, ${model.speed} speed)`;
+            }
+            
+            // Add download status indicator
+            const isDownloaded = downloadedModels.has(model.name);
+            if (isDownloaded) {
+                option.textContent = `✓ ${displayText}`;
+                option.style.color = '#22c55e'; // Green color for downloaded models
+            } else {
+                option.textContent = `⬇ ${displayText}`;
+                option.style.color = '#6b7280'; // Gray color for not downloaded models
+                option.disabled = true; // Disable models that aren't downloaded
+            }
+            
+            modelSelect.appendChild(option);
+        });
+    }
+
+    getDefaultModels() {
+        return [
+            { name: 'tiny', size: '39M params', vram: '~1GB', speed: '~10x', type: 'multilingual' },
+            { name: 'tiny.en', size: '39M params', vram: '~1GB', speed: '~10x', type: 'english-only' },
+            { name: 'base', size: '74M params', vram: '~1GB', speed: '~7x', type: 'multilingual' },
+            { name: 'base.en', size: '74M params', vram: '~1GB', speed: '~7x', type: 'english-only' },
+            { name: 'small', size: '244M params', vram: '~2GB', speed: '~4x', type: 'multilingual' },
+            { name: 'small.en', size: '244M params', vram: '~2GB', speed: '~4x', type: 'english-only' },
+            { name: 'medium', size: '769M params', vram: '~5GB', speed: '~2x', type: 'multilingual' },
+            { name: 'medium.en', size: '769M params', vram: '~5GB', speed: '~2x', type: 'english-only' },
+            { name: 'large', size: '1550M params', vram: '~10GB', speed: '1x', type: 'multilingual' },
+            { name: 'turbo', size: '809M params', vram: '~6GB', speed: '~8x', type: 'multilingual' }
+        ];
+    }
+
+    async showModelDownloadDialog(modelName) {
+        return new Promise((resolve) => {
+            // Create modal dialog
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Download Model</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p>The model <strong>${modelName}</strong> is not downloaded yet.</p>
+                        <p>Would you like to download it now?</p>
+                        <div class="model-info">
+                            <small>This will download the model file from Hugging Face.</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary cancel-btn">Cancel</button>
+                        <button class="btn btn-primary download-btn">Download</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+            document.body.style.overflow = 'hidden';
+
+            // Event handlers
+            const closeModal = (result) => {
+                document.body.removeChild(modal);
+                document.body.style.overflow = 'auto';
+                resolve(result);
+            };
+
+            modal.querySelector('.modal-close').addEventListener('click', () => closeModal(false));
+            modal.querySelector('.cancel-btn').addEventListener('click', () => closeModal(false));
+            modal.querySelector('.download-btn').addEventListener('click', () => closeModal(true));
+
+            // Close on overlay click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal(false);
+            });
+        });
+    }
+
+    async downloadModel(modelName) {
+        return new Promise((resolve, reject) => {
+            // Create download progress modal
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Downloading Model</h3>
+                    </div>
+                    <div class="modal-body">
+                        <p>Downloading <strong>${modelName}</strong>...</p>
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 0%"></div>
+                            </div>
+                            <div class="progress-text">0%</div>
+                        </div>
+                        <div class="download-details">
+                            <small id="download-size">Preparing download...</small>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+            document.body.style.overflow = 'hidden';
+
+            const progressFill = modal.querySelector('.progress-fill');
+            const progressText = modal.querySelector('.progress-text');
+            const downloadSize = modal.querySelector('#download-size');
+
+            // Listen for progress updates
+            const progressHandler = (event, progress) => {
+                if (progress.modelName === modelName) {
+                    progressFill.style.width = `${progress.progress}%`;
+                    progressText.textContent = `${progress.progress}%`;
+                    
+                    if (progress.totalSize) {
+                        const downloaded = this.formatBytes(progress.downloadedSize);
+                        const total = this.formatBytes(progress.totalSize);
+                        downloadSize.textContent = `${downloaded} / ${total}`;
+                    }
+                }
+            };
+
+            window.electronAPI.onModelDownloadProgress(progressHandler);
+
+            // Start download
+            window.electronAPI.downloadModel(modelName)
+                .then((result) => {
+                    // Clean up
+                    window.electronAPI.removeAllListeners('model:download:progress');
+                    document.body.removeChild(modal);
+                    document.body.style.overflow = 'auto';
+                    
+                    this.updateStatus(`Model ${modelName} downloaded successfully`);
+                    resolve(result);
+                })
+                .catch((error) => {
+                    // Clean up
+                    window.electronAPI.removeAllListeners('model:download:progress');
+                    document.body.removeChild(modal);
+                    document.body.style.overflow = 'auto';
+                    
+                    this.showError(`Failed to download model: ${error.message}`);
+                    reject(error);
+                });
+        });
+    }
+
+    formatBytes(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
     async setupWhisper() {
@@ -1566,6 +2221,11 @@ Would you like to open the project directory?`;
             this.showError('Failed to setup Whisper');
         }
     }
+}
+
+// Export for testing
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = WhisperWrapperApp;
 }
 
 // Initialize the app when DOM is loaded

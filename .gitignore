@@ -1,29 +1,69 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
+# Dependencies
 /node_modules
 /.pnp
 .pnp.js
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# testing
+# Testing
 /coverage
 
-# production
+# Production & Build outputs
 /build
+/dist
+/out
+/release
+app/
+src/renderer/dist/
+*.dmg
+*.exe
+*.deb
+*.rpm
+*.AppImage
+*.snap
 
-# misc
-.DS_Store
+# Electron specific
+.electron/
+.electron-builder/
+electron-builder-effective-config.yaml
+
+# Environment variables
+.env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+Desktop.ini
 
+# IDE
 .idea
+.vscode/
 
+# Logs
+*.log
+logs/
+
+# Cache
+.npm
+.eslintcache
+.webpack/
+.cache/
+.parcel-cache/
+
+# Temporary
+tmp/
+temp/
+
+# YOUR CUSTOM STUFF (оставил как было!)
 test-config.js
 test-whisper.js
 /whisper.cpp

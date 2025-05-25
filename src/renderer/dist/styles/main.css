@@ -1138,49 +1138,7 @@ body {
     border-radius: 0 0 8px 8px;
 }
 
-/* Find & Replace Panel */
-.find-replace-panel {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 1rem;
-    margin-bottom: 1rem;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-}
 
-.find-replace-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-}
-
-.find-replace-row:last-child {
-    margin-bottom: 0;
-}
-
-.find-input {
-    flex: 1;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    outline: none;
-    transition: border-color 0.2s ease;
-}
-
-.find-input:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
-}
-
-.find-results {
-    font-size: 0.8rem;
-    color: #6b7280;
-    font-weight: 500;
-    min-width: 80px;
-    text-align: right;
-}
 
 /* Enhanced empty state */
 .empty-features {

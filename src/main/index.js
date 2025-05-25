@@ -65,7 +65,7 @@ app.whenReady().then(() => {
     createWindow();
 
     // Initialize IPC handlers
-    new IPCHandlers();
+    new IPCHandlers(mainWindow);
 
     // Set up application menu
     const menu = require('./menu');

@@ -51,6 +51,7 @@
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch --selectProjects unit",
     "test:ci": "jest --ci --coverage --watchAll=false",
+    "test:transcription": "node scripts/test-transcription.js",
     "lint": "eslint src/**/*.js",
     "format": "prettier --write src/**/*.js",
     "package": "npm run build && electron-builder --publish=never",

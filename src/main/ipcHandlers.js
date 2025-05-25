@@ -11,7 +11,8 @@ const RecordingService = require('../services/recordingService');
 const config = require('../config');
 
 class IPCHandlers {
-    constructor() {
+    constructor(mainWindow = null) {
+        this.mainWindow = mainWindow;
         this.fileService = new FileService();
         this.transcriptionService = new TranscriptionService();
         this.recordingService = new RecordingService();
@@ -54,7 +55,7 @@ class IPCHandlers {
 
     async handleOpenFile() {
         try {
-            const result = await dialog.showOpenDialog({
+            const dialogOptions = {
                 title: 'Select Audio or Video File',
                 filters: [
                     {
@@ -75,7 +76,12 @@ class IPCHandlers {
                     }
                 ],
                 properties: ['openFile']
-            });
+            };
+
+            // Add parent window if available to ensure proper modal behavior on macOS
+            const result = this.mainWindow 
+                ? await dialog.showOpenDialog(this.mainWindow, dialogOptions)
+                : await dialog.showOpenDialog(dialogOptions);
 
             if (result.canceled) {
                 return { canceled: true };
@@ -124,11 +130,16 @@ class IPCHandlers {
                 }
             ];
 
-            const result = await dialog.showSaveDialog({
+            const dialogOptions = {
                 title: isAudioFile ? 'Save Recording' : 'Save Transcription',
                 defaultPath: defaultFilename,
                 filters
-            });
+            };
+
+            // Add parent window if available to ensure proper modal behavior on macOS
+            const result = this.mainWindow 
+                ? await dialog.showSaveDialog(this.mainWindow, dialogOptions)
+                : await dialog.showSaveDialog(dialogOptions);
 
             if (result.canceled) {
                 return { canceled: true };

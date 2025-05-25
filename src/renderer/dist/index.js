@@ -33,6 +33,8 @@ class WhisperWrapperApp {
             viewMode: 'timestamped' // 'timestamped' or 'plain'
         };
         
+
+        
         this.init();
     }
 
@@ -217,30 +219,7 @@ class WhisperWrapperApp {
             this.redoTranscription();
         });
 
-        // Find & Replace
-        document.getElementById('find-replace-btn').addEventListener('click', () => {
-            this.toggleFindReplace();
-        });
 
-        document.getElementById('close-find-btn').addEventListener('click', () => {
-            this.closeFindReplace();
-        });
-
-        document.getElementById('find-next-btn').addEventListener('click', () => {
-            this.findNext();
-        });
-
-        document.getElementById('find-prev-btn').addEventListener('click', () => {
-            this.findPrevious();
-        });
-
-        document.getElementById('replace-btn').addEventListener('click', () => {
-            this.replaceNext();
-        });
-
-        document.getElementById('replace-all-btn').addEventListener('click', () => {
-            this.replaceAll();
-        });
 
         // Clear draft
         document.getElementById('clear-draft-btn').addEventListener('click', () => {
@@ -252,23 +231,7 @@ class WhisperWrapperApp {
             this.toggleViewMode();
         });
 
-        // Find input events
-        document.getElementById('find-input').addEventListener('input', () => {
-            this.updateFindResults();
-        });
 
-        document.getElementById('find-input').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                if (e.shiftKey) {
-                    this.findPrevious();
-                } else {
-                    this.findNext();
-                }
-            } else if (e.key === 'Escape') {
-                this.closeFindReplace();
-            }
-        });
 
         // Auto-save functionality
         transcriptionText.addEventListener('input', (e) => {
@@ -572,8 +535,17 @@ class WhisperWrapperApp {
                 // Start transcription
                 const result = await window.electronAPI.transcribeAudio(arrayBuffer);
                 console.log('🎬 Audio transcription result from IPC:', result);
+                console.log('🎬 Result text:', result.text);
+                console.log('🎬 Result segments:', result.segments);
+                console.log('🎬 Result segments length:', result.segments?.length);
                 
                 if (result.success) {
+                    console.log('🎬 Calling showTranscriptionResult with:', {
+                        text: result.text,
+                        segments: result.segments,
+                        textLength: result.text?.length,
+                        segmentsLength: result.segments?.length
+                    });
                     this.showTranscriptionResult(result.text, result.segments);
                     this.updateStatus(`Recording transcribed (Language: ${result.language || 'unknown'})`);
                     this.switchTab('transcription');
@@ -607,10 +579,21 @@ class WhisperWrapperApp {
         const transcriptionSegments = document.getElementById('transcription-segments');
         const emptyState = document.getElementById('transcription-empty');
         const loadingState = document.getElementById('transcription-loading');
+        const editor = document.getElementById('transcription-editor');
         
-        // Hide loading and empty states
+        console.log('🎬 DOM elements found:', {
+            transcriptionText: !!transcriptionText,
+            transcriptionSegments: !!transcriptionSegments,
+            emptyState: !!emptyState,
+            loadingState: !!loadingState,
+            editor: !!editor
+        });
+        
+        // Hide loading and empty states, show editor
         emptyState.classList.add('hidden');
         loadingState.classList.add('hidden');
+        editor.classList.remove('hidden');
+        console.log('🎬 Hidden loading and empty states, shown editor');
         
         // Initialize transcription state
         this.transcriptionState.originalText = text;
@@ -620,15 +603,19 @@ class WhisperWrapperApp {
         this.transcriptionState.history = [text];
         this.transcriptionState.historyIndex = 0;
         this.transcriptionState.segments = segments || [];
+        console.log('🎬 Updated transcription state');
         
         // Set up both views
         transcriptionText.value = text;
+        console.log('🎬 Set transcription text value:', text?.substring(0, 50) + '...');
         
         if (segments && segments.length > 0) {
+            console.log('🎬 Has segments, rendering timestamped view');
             this.renderTimestampedSegments(segments);
             this.transcriptionState.viewMode = 'timestamped';
             this.showTimestampedView();
         } else {
+            console.log('🎬 No segments, showing plain text view');
             // Fallback to plain text view if no segments
             this.transcriptionState.viewMode = 'plain';
             this.showPlainTextView();
@@ -644,10 +631,18 @@ class WhisperWrapperApp {
         console.log('🎬 First segment example:', segments[0]);
         
         const container = document.getElementById('transcription-segments');
+        if (!container) {
+            console.error('🎬 ERROR: transcription-segments container not found!');
+            return;
+        }
+        
+        console.log('🎬 Container found, clearing content');
         container.innerHTML = '';
         
         // Group segments into paragraphs based on pauses or content breaks
+        console.log('🎬 Grouping segments into paragraphs...');
         const paragraphs = this.groupSegmentsIntoParagraphs(segments);
+        console.log('🎬 Grouped into', paragraphs.length, 'paragraphs');
         
         paragraphs.forEach((paragraph, paragraphIndex) => {
             paragraph.forEach((segment, segmentIndex) => {
@@ -690,6 +685,8 @@ class WhisperWrapperApp {
         });
         
         console.log('🎬 Rendered', segments.length, 'segments in', paragraphs.length, 'paragraphs');
+        console.log('🎬 Container innerHTML length:', container.innerHTML.length);
+        console.log('🎬 Container children count:', container.children.length);
         
         // Debug container dimensions
         setTimeout(() => {
@@ -700,7 +697,9 @@ class WhisperWrapperApp {
                 offsetHeight: containerHeight,
                 scrollHeight: containerScrollHeight,
                 clientHeight: containerClientHeight,
-                hasScroll: containerScrollHeight > containerClientHeight
+                hasScroll: containerScrollHeight > containerClientHeight,
+                isVisible: !container.classList.contains('hidden'),
+                innerHTML: container.innerHTML.substring(0, 200) + '...'
             });
         }, 100);
     }
@@ -798,8 +797,8 @@ class WhisperWrapperApp {
             return [text];
         }
         
-        // Pattern to match speaker indicators (em dash, en dash, regular dash)
-        const speakerPattern = /(?:^|\s)(—|–|-)\s*/g;
+        // Pattern to match speaker indicators (em dash, en dash, regular dash, double angle brackets)
+        const speakerPattern = /(?:^|\s)(—|–|-|>>)\s*/g;
         
         const splits = [];
         let lastIndex = 0;
@@ -883,7 +882,7 @@ class WhisperWrapperApp {
         const normalizedText = text.trim();
         
         // Check for various speaker indicators:
-        // "-", "- ", " -", " - ", "—", "— ", " —", " — ", etc.
+        // "-", "- ", " -", " - ", "—", "— ", " —", " — ", ">>", ">> ", " >>", " >> ", etc.
         const speakerPatterns = [
             /^-\s*/, // Starts with regular dash, optionally followed by spaces
             /^\s*-\s*/, // Starts with optional spaces, regular dash, optional spaces
@@ -891,6 +890,8 @@ class WhisperWrapperApp {
             /^\s*—\s*/, // Starts with optional spaces, em dash, optional spaces
             /^–\s*/, // Starts with en dash, optionally followed by spaces
             /^\s*–\s*/, // Starts with optional spaces, en dash, optional spaces
+            /^>>\s*/, // Starts with double angle brackets, optionally followed by spaces
+            /^\s*>>\s*/, // Starts with optional spaces, double angle brackets, optional spaces
         ];
         
         const isNewSpeaker = speakerPatterns.some(pattern => pattern.test(normalizedText));
@@ -928,19 +929,42 @@ class WhisperWrapperApp {
     }
     
     showTimestampedView() {
+        console.log('🎬 showTimestampedView called');
         const transcriptionText = document.getElementById('transcription-text');
         const transcriptionSegments = document.getElementById('transcription-segments');
+        
+        console.log('🎬 showTimestampedView elements:', {
+            transcriptionText: !!transcriptionText,
+            transcriptionSegments: !!transcriptionSegments,
+            segmentsContent: transcriptionSegments?.innerHTML?.length
+        });
         
         transcriptionText.classList.add('hidden');
         transcriptionSegments.classList.remove('hidden');
+        console.log('🎬 Switched to timestamped view');
     }
     
     showPlainTextView() {
+        console.log('🎬 showPlainTextView called');
         const transcriptionText = document.getElementById('transcription-text');
         const transcriptionSegments = document.getElementById('transcription-segments');
         
+        console.log('🎬 showPlainTextView elements:', {
+            transcriptionText: !!transcriptionText,
+            transcriptionSegments: !!transcriptionSegments,
+            textValue: transcriptionText?.value?.length,
+            stateText: this.transcriptionState?.currentText?.length
+        });
+        
+        // Ensure the textarea has the current text from the transcription state
+        if (transcriptionText && this.transcriptionState.currentText) {
+            transcriptionText.value = this.transcriptionState.currentText;
+            console.log('🎬 Synced textarea with current text:', this.transcriptionState.currentText.substring(0, 50) + '...');
+        }
+        
         transcriptionSegments.classList.add('hidden');
         transcriptionText.classList.remove('hidden');
+        console.log('🎬 Switched to plain text view');
     }
     
     updateToggleButton() {
@@ -1136,16 +1160,7 @@ class WhisperWrapperApp {
             this.downloadTranscription();
         }
         
-        // Ctrl/Cmd + F for find
-        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-            e.preventDefault();
-            this.toggleFindReplace();
-        }
-        
-        // Escape to close find/replace
-        if (e.key === 'Escape') {
-            this.closeFindReplace();
-        }
+
         
         // Ctrl/Cmd + A for select all
         if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
@@ -1350,169 +1365,7 @@ ${text}
         return JSON.stringify(data, null, 2);
     }
 
-    // Find & Replace functionality
-    toggleFindReplace() {
-        const panel = document.getElementById('find-replace-panel');
-        const findInput = document.getElementById('find-input');
-        
-        if (panel.classList.contains('hidden')) {
-            panel.classList.remove('hidden');
-            findInput.focus();
-            
-            // Pre-fill with selected text if any
-            const transcriptionText = document.getElementById('transcription-text');
-            const selectedText = transcriptionText.value.substring(
-                transcriptionText.selectionStart,
-                transcriptionText.selectionEnd
-            );
-            
-            if (selectedText) {
-                findInput.value = selectedText;
-                this.updateFindResults();
-            }
-        } else {
-            this.closeFindReplace();
-        }
-    }
 
-    closeFindReplace() {
-        const panel = document.getElementById('find-replace-panel');
-        panel.classList.add('hidden');
-        
-        // Clear highlights
-        this.clearFindHighlights();
-        
-        // Focus back to textarea
-        document.getElementById('transcription-text').focus();
-    }
-
-    updateFindResults() {
-        const findInput = document.getElementById('find-input');
-        const findResults = document.getElementById('find-results');
-        const transcriptionText = document.getElementById('transcription-text');
-        
-        const searchTerm = findInput.value;
-        if (!searchTerm) {
-            findResults.textContent = '';
-            this.clearFindHighlights();
-            return;
-        }
-        
-        const text = transcriptionText.value;
-        const matches = this.findMatches(text, searchTerm);
-        
-        if (matches.length === 0) {
-            findResults.textContent = 'No matches';
-        } else {
-            findResults.textContent = `${matches.length} matches`;
-        }
-        
-        this.currentFindIndex = -1;
-        this.findMatches = matches;
-    }
-
-    findMatches(text, searchTerm) {
-        const matches = [];
-        const regex = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-        let match;
-        
-        while ((match = regex.exec(text)) !== null) {
-            matches.push({
-                start: match.index,
-                end: match.index + match[0].length,
-                text: match[0]
-            });
-        }
-        
-        return matches;
-    }
-
-    findNext() {
-        if (!this.findMatches || this.findMatches.length === 0) {
-            return;
-        }
-        
-        this.currentFindIndex = (this.currentFindIndex + 1) % this.findMatches.length;
-        this.highlightMatch(this.currentFindIndex);
-    }
-
-    findPrevious() {
-        if (!this.findMatches || this.findMatches.length === 0) {
-            return;
-        }
-        
-        this.currentFindIndex = this.currentFindIndex <= 0 ? 
-            this.findMatches.length - 1 : 
-            this.currentFindIndex - 1;
-        this.highlightMatch(this.currentFindIndex);
-    }
-
-    highlightMatch(index) {
-        if (!this.findMatches || index < 0 || index >= this.findMatches.length) {
-            return;
-        }
-        
-        const transcriptionText = document.getElementById('transcription-text');
-        const match = this.findMatches[index];
-        
-        transcriptionText.focus();
-        transcriptionText.setSelectionRange(match.start, match.end);
-        
-        // Update results text
-        const findResults = document.getElementById('find-results');
-        findResults.textContent = `${index + 1} of ${this.findMatches.length}`;
-    }
-
-    replaceNext() {
-        if (!this.findMatches || this.currentFindIndex < 0) {
-            return;
-        }
-        
-        const replaceInput = document.getElementById('replace-input');
-        const replaceText = replaceInput.value;
-        const transcriptionText = document.getElementById('transcription-text');
-        
-        const match = this.findMatches[this.currentFindIndex];
-        const newText = transcriptionText.value.substring(0, match.start) + 
-                       replaceText + 
-                       transcriptionText.value.substring(match.end);
-        
-        transcriptionText.value = newText;
-        this.handleTranscriptionEdit(newText);
-        
-        // Update find results
-        this.updateFindResults();
-    }
-
-    replaceAll() {
-        const findInput = document.getElementById('find-input');
-        const replaceInput = document.getElementById('replace-input');
-        const transcriptionText = document.getElementById('transcription-text');
-        
-        const searchTerm = findInput.value;
-        const replaceText = replaceInput.value;
-        
-        if (!searchTerm) {
-            return;
-        }
-        
-        const regex = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-        const newText = transcriptionText.value.replace(regex, replaceText);
-        
-        transcriptionText.value = newText;
-        this.handleTranscriptionEdit(newText);
-        
-        // Update find results
-        this.updateFindResults();
-        
-        this.updateStatus(`Replaced all occurrences of "${searchTerm}"`);
-    }
-
-    clearFindHighlights() {
-        // Clear any highlighting (if we implement visual highlighting later)
-        this.findMatches = [];
-        this.currentFindIndex = -1;
-    }
 
     clearDraft() {
         if (confirm('Are you sure you want to clear the current transcription? This action cannot be undone.')) {

@@ -331,9 +331,12 @@ class LocalWhisperService {
             '-of', outputFile.replace('.json', '') // whisper.cpp adds .json automatically
         ];
 
-        // Add language if specified
+        // Add language parameter
         if (language && language !== 'auto') {
             args.push('-l', language);
+        } else if (language === 'auto') {
+            // Enable automatic language detection
+            args.push('-l', 'auto');
         }
 
         // Add translate flag if needed
@@ -508,17 +511,47 @@ class LocalWhisperService {
      * Transcribe audio buffer
      */
     async transcribeBuffer(audioBuffer, options = {}) {
-        // Save buffer to temporary file
-        const tempFile = path.join(this.tempDir, `temp_audio_${Date.now()}.wav`);
+        console.log('🎤 LocalWhisperService: Processing audio buffer...');
+        console.log(`📊 Buffer size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+        
+        // Save buffer to temporary file with original format (likely WebM from MediaRecorder)
+        const tempInputFile = path.join(this.tempDir, `temp_audio_input_${Date.now()}.webm`);
+        const tempWavFile = path.join(this.tempDir, `temp_audio_${Date.now()}.wav`);
         
         try {
-            fs.writeFileSync(tempFile, audioBuffer);
-            const result = await this.transcribeFile(tempFile, options);
+            // Write the original audio buffer to temp file
+            fs.writeFileSync(tempInputFile, audioBuffer);
+            console.log(`📁 Saved audio buffer to: ${tempInputFile}`);
+            
+            // Convert to WAV format using FFmpeg
+            console.log('🔄 Converting audio to WAV format...');
+            await this.extractAudioFromVideo(tempInputFile, tempWavFile);
+            console.log(`✅ Audio converted to WAV: ${tempWavFile}`);
+            
+            // Verify the WAV file was created and has content
+            if (!fs.existsSync(tempWavFile)) {
+                throw new Error('Failed to convert audio to WAV format');
+            }
+            
+            const wavStats = fs.statSync(tempWavFile);
+            console.log(`📊 WAV file size: ${(wavStats.size / 1024).toFixed(2)} KB`);
+            
+            if (wavStats.size === 0) {
+                throw new Error('Converted WAV file is empty');
+            }
+            
+            // Transcribe the converted WAV file
+            const result = await this.transcribeFile(tempWavFile, options);
             return result;
         } finally {
-            // Clean up temp file
-            if (fs.existsSync(tempFile)) {
-                fs.unlinkSync(tempFile);
+            // Clean up temp files
+            if (fs.existsSync(tempInputFile)) {
+                fs.unlinkSync(tempInputFile);
+                console.log(`🗑️ Cleaned up input file: ${tempInputFile}`);
+            }
+            if (fs.existsSync(tempWavFile)) {
+                fs.unlinkSync(tempWavFile);
+                console.log(`🗑️ Cleaned up WAV file: ${tempWavFile}`);
             }
         }
     }

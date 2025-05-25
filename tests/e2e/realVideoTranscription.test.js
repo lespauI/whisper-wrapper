@@ -11,7 +11,7 @@ const FileService = require('../../src/services/fileService');
 describe('Real Video Transcription E2E', () => {
     let transcriptionService;
     let fileService;
-    const testVideoPath = path.join(process.cwd(), 'test_data', 'TWO MEN TALKING.mp4');
+    const testVideoPath = path.join(process.cwd(), 'test/data', 'TWO MEN TALKING.mp4');
 
     beforeAll(() => {
         console.log('🧪 E2E Test: Setting up real video transcription test...');
@@ -43,15 +43,16 @@ describe('Real Video Transcription E2E', () => {
             expect(isAvailable).toBe(true);
         });
 
+
         test('should have models available', () => {
             console.log('🔍 E2E Test: Checking available models...');
             const models = transcriptionService.getAvailableModels();
             console.log(`🤖 E2E Test: Available models:`, models.map(m => m.name));
             expect(models.length).toBeGreaterThan(0);
             
-            // Check if base model is available (our default)
-            const hasBaseModel = models.some(m => m.name === 'base');
-            expect(hasBaseModel).toBe(true);
+            // Check if tiny model is available (our default)
+            const hastinyModel = models.some(m => m.name === 'tiny');
+            expect(hastinyModel).toBe(true);
         });
 
         test('should be able to test whisper connection', async () => {
@@ -99,11 +100,11 @@ describe('Real Video Transcription E2E', () => {
     });
 
     describe('Transcription Pipeline', () => {
-        test('should transcribe the real video file with base model', async () => {
-            console.log('🎤 E2E Test: Starting real video transcription with base model...');
+        test('should transcribe the real video file with tiny model', async () => {
+            console.log('🎤 E2E Test: Starting real video transcription with tiny model...');
             
             // Set up transcription service
-            transcriptionService.setModel('base');
+            transcriptionService.setModel('tiny');
             transcriptionService.setLanguage('auto');
             
             const startTime = Date.now();
@@ -136,7 +137,7 @@ describe('Real Video Transcription E2E', () => {
                 expect(typeof result.text).toBe('string');
                 expect(result.text.length).toBeGreaterThan(0);
                 expect(result.language).toBeDefined();
-                expect(result.model).toBe('base');
+                expect(result.model).toBe('tiny');
                 
                 // Log first 200 characters of transcription
                 const preview = result.text.substring(0, 200);
@@ -205,7 +206,7 @@ describe('Real Video Transcription E2E', () => {
             console.log('🎤 E2E Test: Testing transcription with translation...');
             
             // Set up transcription service
-            transcriptionService.setModel('base');
+            transcriptionService.setModel('tiny');
             transcriptionService.setLanguage('auto');
             
             const startTime = Date.now();
@@ -272,7 +273,7 @@ describe('Real Video Transcription E2E', () => {
             expect(errorThrown).toBe(true);
             
             // Reset to a valid model for subsequent tests
-            transcriptionService.setModel('base');
+            transcriptionService.setModel('tiny');
             console.log('🔄 E2E Test: Reset to valid model for subsequent tests');
         });
 
@@ -310,8 +311,8 @@ describe('Real Video Transcription E2E', () => {
             console.log('🔍 E2E Test: Testing transcription performance...');
             
             // Ensure we're using a valid model for performance testing
-            transcriptionService.setModel('base');
-            console.log('🔧 E2E Test: Using base model for performance test');
+            transcriptionService.setModel('tiny');
+            console.log('🔧 E2E Test: Using tiny model for performance test');
             
             const tempFilePath = await fileService.copyToTemp(testVideoPath);
             const startTime = Date.now();

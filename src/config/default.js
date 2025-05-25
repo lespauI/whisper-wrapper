@@ -27,7 +27,19 @@ module.exports = {
         threads: 4,
         translate: false,
         modelsPath: './models',
-        binaryPath: './whisper.cpp/main'
+        binaryPath: './whisper.cpp/main',
+        availableModels: [
+            { name: 'tiny', size: '39M params', vram: '~1GB', speed: '~10x', type: 'multilingual' },
+            { name: 'tiny.en', size: '39M params', vram: '~1GB', speed: '~10x', type: 'english-only' },
+            { name: 'base', size: '74M params', vram: '~1GB', speed: '~7x', type: 'multilingual' },
+            { name: 'base.en', size: '74M params', vram: '~1GB', speed: '~7x', type: 'english-only' },
+            { name: 'small', size: '244M params', vram: '~2GB', speed: '~4x', type: 'multilingual' },
+            { name: 'small.en', size: '244M params', vram: '~2GB', speed: '~4x', type: 'english-only' },
+            { name: 'medium', size: '769M params', vram: '~5GB', speed: '~2x', type: 'multilingual' },
+            { name: 'medium.en', size: '769M params', vram: '~5GB', speed: '~2x', type: 'english-only' },
+            { name: 'large', size: '1550M params', vram: '~10GB', speed: '1x', type: 'multilingual' },
+            { name: 'turbo', size: '809M params', vram: '~6GB', speed: '~8x', type: 'multilingual' }
+        ]
     },
 
     // File handling settings

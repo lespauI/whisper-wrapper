@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
     // Local Whisper
     testWhisper: () => ipcRenderer.invoke('whisper:test'),
+
+    // Model management
+    downloadModel: (modelName) => ipcRenderer.invoke('model:download', modelName),
+    getModelInfo: (modelName) => ipcRenderer.invoke('model:info', modelName),
   
     // Event listeners
     onTranscriptionProgress: (callback) => {
@@ -39,6 +43,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     onRecordingUpdate: (callback) => {
         ipcRenderer.on('recording:update', callback);
+    },
+    onModelDownloadProgress: (callback) => {
+        ipcRenderer.on('model:download:progress', callback);
     },
   
     // Remove listeners

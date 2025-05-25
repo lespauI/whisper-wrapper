@@ -220,6 +220,25 @@ class TranscriptionService {
     }
 
     /**
+     * Download a Whisper model
+     * @param {string} modelName - Name of the model to download
+     * @param {Function} progressCallback - Callback for progress updates
+     * @returns {Promise<Object>} - Download result
+     */
+    async downloadModel(modelName, progressCallback = null) {
+        return await this.localWhisper.downloadModel(modelName, progressCallback);
+    }
+
+    /**
+     * Get model download info
+     * @param {string} modelName - Name of the model
+     * @returns {Object} - Model info including download status
+     */
+    getModelInfo(modelName) {
+        return this.localWhisper.getModelInfo(modelName);
+    }
+
+    /**
      * Get formatter settings
      * @returns {Object} - Current formatter settings
      */

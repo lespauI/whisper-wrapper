@@ -185,4 +185,50 @@ describe('TranscriptionService', () => {
             });
         });
     });
+
+    describe('updateSettings', () => {
+        it('should update model and language settings', () => {
+            const newSettings = {
+                model: 'large',
+                language: 'es',
+                threads: 8,
+                translate: true
+            };
+
+            service.updateSettings(newSettings);
+
+            expect(service.model).toBe('large');
+            expect(service.language).toBe('es');
+            expect(mockLocalWhisper.setModel).toHaveBeenCalledWith('large');
+            expect(mockLocalWhisper.setLanguage).toHaveBeenCalledWith('es');
+            // Note: threads are not handled by updateSettings, they're set directly on LocalWhisperService
+        });
+
+        it('should handle partial settings updates', () => {
+            const newSettings = {
+                model: 'tiny'
+            };
+
+            service.updateSettings(newSettings);
+
+            expect(service.model).toBe('tiny');
+            expect(service.language).toBe('auto'); // Should remain unchanged
+            expect(mockLocalWhisper.setModel).toHaveBeenCalledWith('tiny');
+            expect(mockLocalWhisper.setLanguage).not.toHaveBeenCalled();
+            expect(mockLocalWhisper.setThreads).not.toHaveBeenCalled();
+        });
+
+        it('should handle empty settings object', () => {
+            const originalModel = service.model;
+            const originalLanguage = service.language;
+
+            service.updateSettings({});
+
+            expect(service.model).toBe(originalModel);
+            expect(service.language).toBe(originalLanguage);
+            expect(mockLocalWhisper.setModel).not.toHaveBeenCalled();
+            expect(mockLocalWhisper.setLanguage).not.toHaveBeenCalled();
+            expect(mockLocalWhisper.setThreads).not.toHaveBeenCalled();
+        });
+    });
 });

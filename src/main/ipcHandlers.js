@@ -11,7 +11,8 @@ const RecordingService = require('../services/recordingService');
 const config = require('../config');
 
 class IPCHandlers {
-    constructor() {
+    constructor(mainWindow = null) {
+        this.mainWindow = mainWindow;
         this.fileService = new FileService();
         this.transcriptionService = new TranscriptionService();
         this.recordingService = new RecordingService();
@@ -46,11 +47,15 @@ class IPCHandlers {
         ipcMain.handle('app:getPath', this.handleGetAppPath.bind(this));
         ipcMain.handle('whisper:test', this.handleTestWhisper.bind(this));
         ipcMain.handle('app:openProjectDirectory', this.handleOpenProjectDirectory.bind(this));
+
+        // Model download handlers
+        ipcMain.handle('model:download', this.handleDownloadModel.bind(this));
+        ipcMain.handle('model:info', this.handleGetModelInfo.bind(this));
     }
 
     async handleOpenFile() {
         try {
-            const result = await dialog.showOpenDialog({
+            const dialogOptions = {
                 title: 'Select Audio or Video File',
                 filters: [
                     {
@@ -71,7 +76,12 @@ class IPCHandlers {
                     }
                 ],
                 properties: ['openFile']
-            });
+            };
+
+            // Add parent window if available to ensure proper modal behavior on macOS
+            const result = this.mainWindow 
+                ? await dialog.showOpenDialog(this.mainWindow, dialogOptions)
+                : await dialog.showOpenDialog(dialogOptions);
 
             if (result.canceled) {
                 return { canceled: true };
@@ -120,11 +130,16 @@ class IPCHandlers {
                 }
             ];
 
-            const result = await dialog.showSaveDialog({
+            const dialogOptions = {
                 title: isAudioFile ? 'Save Recording' : 'Save Transcription',
                 defaultPath: defaultFilename,
                 filters
-            });
+            };
+
+            // Add parent window if available to ensure proper modal behavior on macOS
+            const result = this.mainWindow 
+                ? await dialog.showSaveDialog(this.mainWindow, dialogOptions)
+                : await dialog.showSaveDialog(dialogOptions);
 
             if (result.canceled) {
                 return { canceled: true };
@@ -227,7 +242,8 @@ class IPCHandlers {
                     success: true,
                     text: result.text,
                     language: result.language,
-                    duration: result.duration
+                    duration: result.duration,
+                    segments: result.segments || []
                 };
 
                 console.log('🎉 IPC: handleTranscribeFile completed successfully!');
@@ -308,7 +324,8 @@ class IPCHandlers {
                 success: true,
                 text: result.text,
                 language: result.language,
-                duration: result.duration
+                duration: result.duration,
+                segments: result.segments || []
             };
 
         } catch (error) {
@@ -349,12 +366,30 @@ class IPCHandlers {
                 const modelExists = availableModels.some(m => m.name === newConfig.model);
                 
                 if (!modelExists) {
-                    throw new Error(`Model '${newConfig.model}' not found. Available models: ${availableModels.map(m => m.name).join(', ')}`);
+                    // Check if it's a valid model name from the default configuration
+                    const defaultConfig = require('../config/default');
+                    const allModels = defaultConfig.whisper.availableModels || [];
+                    const isValidModel = allModels.some(m => m.name === newConfig.model);
+                    
+                    if (!isValidModel) {
+                        throw new Error(`Unknown model '${newConfig.model}'. Valid models: ${allModels.map(m => m.name).join(', ')}`);
+                    }
+                    
+                    // Model is valid but not downloaded - return a special response
+                    return {
+                        success: false,
+                        needsDownload: true,
+                        modelName: newConfig.model,
+                        message: `Model '${newConfig.model}' needs to be downloaded before use.`
+                    };
                 }
             }
 
             // Save configuration
             config.setSimplified(newConfig);
+
+            // Update TranscriptionService with new settings
+            this.transcriptionService.updateSettings(newConfig);
 
             return { success: true };
         } catch (error) {
@@ -491,6 +526,39 @@ class IPCHandlers {
         } catch (error) {
             console.error('Error getting recording constraints:', error);
             throw new Error(`Failed to get recording constraints: ${error.message}`);
+        }
+    }
+
+    // Model Download Handlers
+
+    async handleDownloadModel(event, modelName) {
+        try {
+            console.log(`📥 Starting download for model: ${modelName}`);
+            
+            const result = await this.transcriptionService.downloadModel(modelName, (progress) => {
+                // Send progress updates to the renderer
+                event.sender.send('model:download:progress', {
+                    modelName: progress.modelName,
+                    progress: progress.progress,
+                    downloadedSize: progress.downloadedSize,
+                    totalSize: progress.totalSize
+                });
+            });
+            
+            console.log(`✅ Model download completed: ${modelName}`);
+            return result;
+        } catch (error) {
+            console.error('Error downloading model:', error);
+            throw new Error(`Failed to download model: ${error.message}`);
+        }
+    }
+
+    async handleGetModelInfo(event, modelName) {
+        try {
+            return this.transcriptionService.getModelInfo(modelName);
+        } catch (error) {
+            console.error('Error getting model info:', error);
+            throw new Error(`Failed to get model info: ${error.message}`);
         }
     }
 }

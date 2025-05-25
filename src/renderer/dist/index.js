@@ -159,6 +159,7 @@ class WhisperWrapperApp {
         const resumeBtn = document.getElementById('resume-record-btn');
         const stopBtn = document.getElementById('stop-record-btn');
         const saveBtn = document.getElementById('save-record-btn');
+        const transcribeBtn = document.getElementById('transcribe-record-btn');
 
         // Recording controls
         startBtn.addEventListener('click', () => {
@@ -181,6 +182,10 @@ class WhisperWrapperApp {
             this.saveRecording();
         });
 
+        transcribeBtn.addEventListener('click', () => {
+            this.transcribeRecording();
+        });
+
         // Recording settings
         document.getElementById('quality-select').addEventListener('change', (e) => {
             this.recordingSettings.quality = e.target.value;
@@ -192,6 +197,8 @@ class WhisperWrapperApp {
 
         document.getElementById('auto-transcribe').addEventListener('change', (e) => {
             this.recordingSettings.autoTranscribe = e.target.checked;
+            // Update UI to show/hide transcribe button if recording is completed
+            this.updateRecordingUI();
         });
 
         // Initialize canvas for visualization
@@ -451,6 +458,7 @@ class WhisperWrapperApp {
         const resumeBtn = document.getElementById('resume-record-btn');
         const stopBtn = document.getElementById('stop-record-btn');
         const saveBtn = document.getElementById('save-record-btn');
+        const transcribeBtn = document.getElementById('transcribe-record-btn');
 
         if (this.isRecording && !this.isPaused) {
             // Currently recording
@@ -462,6 +470,7 @@ class WhisperWrapperApp {
             resumeBtn.classList.add('hidden');
             stopBtn.classList.remove('hidden');
             saveBtn.classList.add('hidden');
+            transcribeBtn.classList.add('hidden');
         } else if (this.isPaused) {
             // Recording paused
             indicator.classList.remove('recording');
@@ -472,6 +481,7 @@ class WhisperWrapperApp {
             resumeBtn.classList.remove('hidden');
             stopBtn.classList.remove('hidden');
             saveBtn.classList.add('hidden');
+            transcribeBtn.classList.add('hidden');
         } else if (this.recordingBlob) {
             // Recording completed
             indicator.classList.remove('recording', 'paused');
@@ -481,6 +491,13 @@ class WhisperWrapperApp {
             resumeBtn.classList.add('hidden');
             stopBtn.classList.add('hidden');
             saveBtn.classList.remove('hidden');
+            
+            // Show transcribe button only if auto-transcribe is disabled
+            if (!this.recordingSettings.autoTranscribe) {
+                transcribeBtn.classList.remove('hidden');
+            } else {
+                transcribeBtn.classList.add('hidden');
+            }
         } else {
             // Ready to record
             indicator.classList.remove('recording', 'paused');
@@ -490,6 +507,7 @@ class WhisperWrapperApp {
             resumeBtn.classList.add('hidden');
             stopBtn.classList.add('hidden');
             saveBtn.classList.add('hidden');
+            transcribeBtn.classList.add('hidden');
         }
     }
 
@@ -1813,6 +1831,55 @@ ${text}
         } catch (error) {
             console.error('Error saving recording:', error);
             this.showError('Failed to save recording');
+        }
+    }
+
+    async transcribeRecording() {
+        if (!this.recordingBlob) {
+            this.showError('No recording to transcribe');
+            return;
+        }
+        
+        try {
+            this.showTranscriptionLoading(true);
+            this.updateStatus('Processing recording...');
+            
+            // Convert blob to array buffer
+            const arrayBuffer = await this.recordingBlob.arrayBuffer();
+            
+            // Set up progress listener
+            window.electronAPI.onTranscriptionProgress((event, progress) => {
+                this.updateTranscriptionProgress(progress);
+            });
+
+            // Start transcription
+            const result = await window.electronAPI.transcribeAudio(arrayBuffer);
+            console.log('🎬 Manual transcription result from IPC:', result);
+            
+            if (result.success) {
+                this.showTranscriptionResult(result.text, result.segments);
+                this.updateStatus(`Recording transcribed (Language: ${result.language || 'unknown'})`);
+                this.switchTab('transcription');
+                
+                // Reset recording state after successful transcription
+                this.recordingBlob = null;
+                this.updateRecordingUI();
+                document.getElementById('recording-info').classList.add('hidden');
+                document.getElementById('record-time').textContent = '00:00';
+                document.getElementById('record-size').textContent = '0 KB';
+            } else {
+                throw new Error('Transcription failed');
+            }
+            
+        } catch (error) {
+            console.error('Error transcribing recording:', error);
+            this.showError('Failed to transcribe recording');
+            this.showTranscriptionLoading(false);
+        } finally {
+            // Clean up progress listener
+            if (window.electronAPI) {
+                window.electronAPI.removeAllListeners('transcription:progress');
+            }
         }
     }
 

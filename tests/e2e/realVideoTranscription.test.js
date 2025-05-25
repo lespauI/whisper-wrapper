@@ -11,7 +11,7 @@ const FileService = require('../../src/services/fileService');
 describe('Real Video Transcription E2E', () => {
     let transcriptionService;
     let fileService;
-    const testVideoPath = path.join(process.cwd(), 'test/data', 'TWO MEN TALKING.mp4');
+    const testVideoPath = path.join(process.cwd(), 'tests/data', 'TWO MEN TALKING.mp4');
 
     beforeAll(() => {
         console.log('🧪 E2E Test: Setting up real video transcription test...');

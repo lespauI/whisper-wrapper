@@ -120,7 +120,10 @@ class LocalWhisperService {
      * Set the model to use for transcription
      */
     setModel(model) {
-        const validModels = ['tiny', 'base', 'small', 'medium', 'large', 'large-v1', 'large-v2', 'large-v3'];
+        const validModels = [
+            'tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en', 
+            'medium', 'medium.en', 'large', 'turbo'
+        ];
         if (!validModels.includes(model)) {
             throw new Error(`Invalid model: ${model}. Valid models are: ${validModels.join(', ')}`);
         }

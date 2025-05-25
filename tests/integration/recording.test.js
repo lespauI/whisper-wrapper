@@ -172,7 +172,7 @@ describe('Recording Integration Tests', () => {
             const invalidSettings = { quality: 'invalid' };
             
             await expect(ipcHandlers.handleUpdateRecordingSettings(mockEvent, invalidSettings))
-                .rejects.toThrow('Invalid quality setting');
+                .rejects.toThrow('Invalid quality setting. Must be one of: low, medium, high');
         });
 
         test('should prevent settings update during recording', async () => {
@@ -182,7 +182,7 @@ describe('Recording Integration Tests', () => {
             // Try to update settings
             const newSettings = { quality: 'high' };
             await expect(ipcHandlers.handleUpdateRecordingSettings(mockEvent, newSettings))
-                .rejects.toThrow('Cannot update settings during recording');
+                .rejects.toThrow('Failed to update recording settings: Cannot update settings during recording');
         });
     });
 
@@ -244,30 +244,30 @@ describe('Recording Integration Tests', () => {
 
             // Try to start another recording
             await expect(ipcHandlers.handleStartRecording(mockEvent))
-                .rejects.toThrow('Recording already in progress');
+                .rejects.toThrow('Failed to start recording: Recording already in progress');
         });
 
         test('should handle pause recording errors', async () => {
             // Try to pause without recording
             await expect(ipcHandlers.handlePauseRecording())
-                .rejects.toThrow('No active recording to pause');
+                .rejects.toThrow('Failed to pause recording: No active recording to pause');
         });
 
         test('should handle resume recording errors', async () => {
             // Try to resume without paused recording
             await expect(ipcHandlers.handleResumeRecording())
-                .rejects.toThrow('No paused recording to resume');
+                .rejects.toThrow('Failed to resume recording: No paused recording to resume');
 
             // Start recording and try to resume without pausing
             await ipcHandlers.handleStartRecording(mockEvent);
             await expect(ipcHandlers.handleResumeRecording())
-                .rejects.toThrow('No paused recording to resume');
+                .rejects.toThrow('Failed to resume recording: No paused recording to resume');
         });
 
         test('should handle stop recording errors', async () => {
             // Try to stop without recording
             await expect(ipcHandlers.handleStopRecording(mockEvent))
-                .rejects.toThrow('No active recording to stop');
+                .rejects.toThrow('Failed to stop recording: No active recording to stop');
         });
     });
 

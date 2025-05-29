@@ -1331,3 +1331,46 @@ body {
 .btn:hover::before {
     left: 100%;
 }
+
+/* Recovery Dialog Styles */
+.recovery-session {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.recovery-session h4 {
+    color: #495057;
+    margin-bottom: 0.5rem;
+    font-size: 1.1rem;
+}
+
+.recovery-session p {
+    color: #6c757d;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+}
+
+.recovery-session .btn {
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.recovery-actions {
+    border-top: 1px solid #dee2e6;
+    padding-top: 1rem;
+    margin-top: 1rem;
+    text-align: right;
+}
+
+.recovery-actions .btn {
+    margin-left: 0.5rem;
+}
+
+#recovery-sessions {
+    max-height: 400px;
+    overflow-y: auto;
+    margin-bottom: 1rem;
+}

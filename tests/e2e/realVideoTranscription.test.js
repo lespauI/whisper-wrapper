@@ -11,7 +11,7 @@ const FileService = require('../../src/services/fileService');
 describe('Real Video Transcription E2E', () => {
     let transcriptionService;
     let fileService;
-    const testVideoPath = path.join(process.cwd(), 'tests/data', 'TWO MEN TALKING.mp4');
+    const testVideoPath = path.join(process.cwd(), 'tests/data', 'Thank you for contac.wav');
 
     beforeAll(() => {
         console.log('🧪 E2E Test: Setting up real video transcription test...');
@@ -75,8 +75,8 @@ describe('Real Video Transcription E2E', () => {
             console.log(`📹 E2E Test: File info:`, fileInfo);
             
             expect(fileInfo).toBeDefined();
-            expect(fileInfo.name).toBe('TWO MEN TALKING.mp4');
-            expect(fileInfo.extension).toBe('.mp4');
+            expect(fileInfo.name).toBe('Thank you for contac.wav');
+            expect(fileInfo.extension).toBe('.wav');
             expect(fileInfo.size).toBeGreaterThan(0);
         });
 

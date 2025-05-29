@@ -45,8 +45,15 @@ class IPCHandlers {
 
         // App handlers
         ipcMain.handle('app:getPath', this.handleGetAppPath.bind(this));
+        ipcMain.handle('app:getPaths', this.handleGetAppPaths.bind(this));
         ipcMain.handle('whisper:test', this.handleTestWhisper.bind(this));
         ipcMain.handle('app:openProjectDirectory', this.handleOpenProjectDirectory.bind(this));
+
+        // Recording auto-save handlers
+        ipcMain.handle('recording:saveChunk', this.handleSaveRecordingChunk.bind(this));
+        ipcMain.handle('recording:loadChunk', this.handleLoadRecordingChunk.bind(this));
+        ipcMain.handle('recording:deleteChunk', this.handleDeleteRecordingChunk.bind(this));
+        ipcMain.handle('recording:findChunks', this.handleFindRecordingChunks.bind(this));
 
         // Model download handlers
         ipcMain.handle('model:download', this.handleDownloadModel.bind(this));
@@ -559,6 +566,114 @@ class IPCHandlers {
         } catch (error) {
             console.error('Error getting model info:', error);
             throw new Error(`Failed to get model info: ${error.message}`);
+        }
+    }
+
+    async handleGetAppPaths() {
+        try {
+            const { app } = require('electron');
+            return {
+                userData: app.getPath('userData'),
+                temp: app.getPath('temp'),
+                documents: app.getPath('documents')
+            };
+        } catch (error) {
+            console.error('Error getting app paths:', error);
+            return {};
+        }
+    }
+
+    async handleSaveRecordingChunk(event, audioData, filename) {
+        try {
+            const { app } = require('electron');
+            const tempDir = app.getPath('temp');
+            const chunkPath = path.join(tempDir, 'whisper-wrapper-recordings', filename);
+            
+            // Ensure directory exists
+            const dir = path.dirname(chunkPath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+
+            // Convert ArrayBuffer to Buffer if needed
+            let buffer;
+            if (audioData instanceof ArrayBuffer) {
+                buffer = Buffer.from(audioData);
+            } else if (Buffer.isBuffer(audioData)) {
+                buffer = audioData;
+            } else {
+                throw new Error('Invalid audio data format');
+            }
+
+            // Write file
+            fs.writeFileSync(chunkPath, buffer);
+            const stats = fs.statSync(chunkPath);
+            
+            console.log(`Saved recording chunk: ${filename} (${stats.size} bytes)`);
+            
+            return {
+                success: true,
+                filePath: chunkPath,
+                size: stats.size,
+                savedAt: new Date().toISOString()
+            };
+        } catch (error) {
+            console.error('Error saving recording chunk:', error);
+            throw new Error(`Failed to save recording chunk: ${error.message}`);
+        }
+    }
+
+    async handleLoadRecordingChunk(event, filePath) {
+        try {
+            if (!fs.existsSync(filePath)) {
+                throw new Error('Recording chunk file not found');
+            }
+
+            const buffer = fs.readFileSync(filePath);
+            console.log(`Loaded recording chunk: ${path.basename(filePath)} (${buffer.length} bytes)`);
+            
+            return buffer;
+        } catch (error) {
+            console.error('Error loading recording chunk:', error);
+            throw new Error(`Failed to load recording chunk: ${error.message}`);
+        }
+    }
+
+    async handleDeleteRecordingChunk(event, filePath) {
+        try {
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                console.log(`Deleted recording chunk: ${path.basename(filePath)}`);
+            }
+            
+            return { success: true };
+        } catch (error) {
+            console.error('Error deleting recording chunk:', error);
+            throw new Error(`Failed to delete recording chunk: ${error.message}`);
+        }
+    }
+
+    async handleFindRecordingChunks(event, sessionId) {
+        try {
+            const { app } = require('electron');
+            const tempDir = app.getPath('temp');
+            const recordingsDir = path.join(tempDir, 'whisper-wrapper-recordings');
+            
+            if (!fs.existsSync(recordingsDir)) {
+                return [];
+            }
+
+            const files = fs.readdirSync(recordingsDir);
+            const sessionChunks = files
+                .filter(file => file.startsWith(sessionId) && file.includes('_chunk_'))
+                .sort() // Sort to maintain chunk order
+                .map(file => path.join(recordingsDir, file));
+            
+            console.log(`Found ${sessionChunks.length} chunks for session ${sessionId}`);
+            return sessionChunks;
+        } catch (error) {
+            console.error('Error finding recording chunks:', error);
+            return [];
         }
     }
 }

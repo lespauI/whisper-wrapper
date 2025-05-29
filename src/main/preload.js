@@ -28,7 +28,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
     // File system
     getAppPath: () => ipcRenderer.invoke('app:getPath'),
+    getAppPaths: () => ipcRenderer.invoke('app:getPaths'),
     openProjectDirectory: () => ipcRenderer.invoke('app:openProjectDirectory'),
+
+    // Recording auto-save
+    saveRecordingChunk: (audioData, filename) => ipcRenderer.invoke('recording:saveChunk', audioData, filename),
+    loadRecordingChunk: (filePath) => ipcRenderer.invoke('recording:loadChunk', filePath),
+    deleteRecordingChunk: (filePath) => ipcRenderer.invoke('recording:deleteChunk', filePath),
+    findRecordingChunks: (sessionId) => ipcRenderer.invoke('recording:findChunks', sessionId),
   
     // Local Whisper
     testWhisper: () => ipcRenderer.invoke('whisper:test'),

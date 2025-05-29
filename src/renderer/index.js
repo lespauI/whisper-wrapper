@@ -17,7 +17,18 @@ class WhisperWrapperApp {
         this.recordingSettings = {
             quality: 'medium',
             format: 'wav',
-            autoTranscribe: true
+            autoTranscribe: true,
+            autoSaveInterval: 60000, // Save chunks every 60 seconds (1 minute)
+            enableAutoSave: true
+        };
+        
+        // Auto-save recording state
+        this.recordingAutoSave = {
+            sessionId: null,
+            chunkIndex: 0,
+            savedChunks: [],
+            autoSaveTimer: null,
+            tempDirectory: null
         };
         
         // Transcription editing state
@@ -46,6 +57,7 @@ class WhisperWrapperApp {
         this.setupTranscription();
         this.setupSettings();
         this.loadSettings();
+        this.checkForOrphanedRecordings();
         this.updateStatus('Ready');
         this.updateToggleButton(); // Initialize toggle button state
     }
@@ -402,10 +414,14 @@ class WhisperWrapperApp {
             this.isPaused = false;
             this.recordingStartTime = Date.now();
             
+            // Initialize auto-save session
+            await this.initializeAutoSaveSession();
+            
             this.updateRecordingUI();
             this.startRecordingTimer();
             this.startVisualization();
-            this.updateStatus('Recording...');
+            this.startAutoSaveTimer();
+            this.updateStatus('Recording... (Auto-save enabled)');
             
         } catch (error) {
             console.error('Error starting recording:', error);
@@ -435,8 +451,11 @@ class WhisperWrapperApp {
         }
     }
 
-    stopRecording() {
+    async stopRecording() {
         if (this.mediaRecorder) {
+            // Save final chunk before stopping
+            await this.saveCurrentRecordingChunk();
+            
             this.mediaRecorder.stop();
             this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
             
@@ -448,6 +467,7 @@ class WhisperWrapperApp {
             
             this.isRecording = false;
             this.isPaused = false;
+            this.stopAutoSaveTimer();
             this.updateRecordingUI();
             this.stopRecordingTimer();
             this.stopVisualization();
@@ -541,8 +561,12 @@ class WhisperWrapperApp {
 
     async handleRecordingComplete(audioBlob) {
         try {
+            // Combine all saved chunks with the final recording
+            const finalAudioBlob = await this.combineRecordingChunks(audioBlob);
+            this.recordingBlob = finalAudioBlob;
+            
             // Show recording info
-            this.showRecordingInfo(audioBlob);
+            this.showRecordingInfo(finalAudioBlob);
             
             // Update UI to show the recording buttons now that recordingBlob is set
             this.updateRecordingUI();
@@ -553,7 +577,7 @@ class WhisperWrapperApp {
                 this.updateStatus('Processing recording...');
                 
                 // Convert blob to array buffer
-                const arrayBuffer = await audioBlob.arrayBuffer();
+                const arrayBuffer = await finalAudioBlob.arrayBuffer();
                 
                 // Set up progress listener
                 window.electronAPI.onTranscriptionProgress((event, progress) => {
@@ -2152,6 +2176,342 @@ Would you like to open the project directory?`;
             console.error('Error setting up Whisper:', error);
             this.showError('Failed to setup Whisper');
         }
+    }
+    // Auto-save recording functionality
+    async initializeAutoSaveSession() {
+        if (!this.recordingSettings.enableAutoSave) {
+            return;
+        }
+
+        try {
+            // Generate unique session ID
+            this.recordingAutoSave.sessionId = `recording_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            this.recordingAutoSave.chunkIndex = 0;
+            this.recordingAutoSave.savedChunks = [];
+
+            // Get temp directory from main process
+            const paths = await window.electronAPI.getAppPaths();
+            this.recordingAutoSave.tempDirectory = paths.temp;
+
+            console.log(`Auto-save session initialized: ${this.recordingAutoSave.sessionId}`);
+        } catch (error) {
+            console.error('Failed to initialize auto-save session:', error);
+            this.recordingSettings.enableAutoSave = false;
+        }
+    }
+
+    startAutoSaveTimer() {
+        if (!this.recordingSettings.enableAutoSave) {
+            return;
+        }
+
+        this.recordingAutoSave.autoSaveTimer = setInterval(async () => {
+            if (this.isRecording && !this.isPaused) {
+                await this.saveCurrentRecordingChunk();
+            }
+        }, this.recordingSettings.autoSaveInterval);
+
+        console.log(`Auto-save timer started (interval: ${this.recordingSettings.autoSaveInterval}ms)`);
+    }
+
+    stopAutoSaveTimer() {
+        if (this.recordingAutoSave.autoSaveTimer) {
+            clearInterval(this.recordingAutoSave.autoSaveTimer);
+            this.recordingAutoSave.autoSaveTimer = null;
+            console.log('Auto-save timer stopped');
+        }
+    }
+
+    async saveCurrentRecordingChunk() {
+        if (!this.recordingSettings.enableAutoSave || !this.audioChunks.length) {
+            return;
+        }
+
+        try {
+            // Create blob from current audio chunks
+            const mimeType = this.getMimeType();
+            const chunkBlob = new Blob([...this.audioChunks], { type: mimeType });
+            
+            if (chunkBlob.size === 0) {
+                return; // No data to save
+            }
+
+            // Convert to array buffer
+            const arrayBuffer = await chunkBlob.arrayBuffer();
+            
+            // Generate chunk filename
+            const chunkFilename = `${this.recordingAutoSave.sessionId}_chunk_${this.recordingAutoSave.chunkIndex.toString().padStart(3, '0')}.webm`;
+            
+            // Save chunk via IPC
+            const result = await window.electronAPI.saveRecordingChunk(arrayBuffer, chunkFilename);
+            
+            if (result.success) {
+                this.recordingAutoSave.savedChunks.push({
+                    filename: chunkFilename,
+                    filePath: result.filePath,
+                    size: result.size,
+                    chunkIndex: this.recordingAutoSave.chunkIndex,
+                    timestamp: Date.now()
+                });
+                
+                this.recordingAutoSave.chunkIndex++;
+                
+                // Clear saved chunks from memory to prevent memory buildup
+                this.audioChunks = [];
+                
+                console.log(`Saved recording chunk: ${chunkFilename} (${result.size} bytes)`);
+                this.updateStatus(`Recording... (Auto-saved ${this.recordingAutoSave.savedChunks.length} chunks)`);
+            }
+        } catch (error) {
+            console.error('Failed to save recording chunk:', error);
+            // Don't disable auto-save on single failure, just log it
+        }
+    }
+
+    async combineRecordingChunks(finalBlob) {
+        if (!this.recordingSettings.enableAutoSave || this.recordingAutoSave.savedChunks.length === 0) {
+            return finalBlob;
+        }
+
+        try {
+            console.log(`Combining ${this.recordingAutoSave.savedChunks.length} saved chunks with final recording`);
+            
+            // Load all saved chunks
+            const chunkBlobs = [];
+            
+            for (const chunkInfo of this.recordingAutoSave.savedChunks) {
+                try {
+                    const chunkData = await window.electronAPI.loadRecordingChunk(chunkInfo.filePath);
+                    if (chunkData) {
+                        chunkBlobs.push(new Blob([chunkData], { type: this.getMimeType() }));
+                    }
+                } catch (error) {
+                    console.error(`Failed to load chunk ${chunkInfo.filename}:`, error);
+                    // Continue with other chunks
+                }
+            }
+            
+            // Add final recording blob
+            chunkBlobs.push(finalBlob);
+            
+            // Combine all blobs
+            const combinedBlob = new Blob(chunkBlobs, { type: this.getMimeType() });
+            
+            // Clean up temporary files
+            await this.cleanupAutoSaveFiles();
+            
+            console.log(`Combined recording: ${combinedBlob.size} bytes total`);
+            return combinedBlob;
+            
+        } catch (error) {
+            console.error('Failed to combine recording chunks:', error);
+            // Return final blob as fallback
+            return finalBlob;
+        }
+    }
+
+    async cleanupAutoSaveFiles() {
+        if (this.recordingAutoSave.savedChunks.length === 0) {
+            return;
+        }
+
+        const failedChunks = [];
+        
+        for (const chunkInfo of this.recordingAutoSave.savedChunks) {
+            try {
+                await window.electronAPI.deleteRecordingChunk(chunkInfo.filePath);
+            } catch (error) {
+                console.error(`Failed to delete chunk ${chunkInfo.filePath}:`, error);
+                failedChunks.push(chunkInfo);
+            }
+        }
+        
+        const deletedCount = this.recordingAutoSave.savedChunks.length - failedChunks.length;
+        if (deletedCount > 0) {
+            console.log(`Cleaned up ${deletedCount} temporary recording files`);
+        }
+        
+        if (failedChunks.length > 0) {
+            console.warn(`Failed to delete ${failedChunks.length} temporary files, will retry later`);
+            this.recordingAutoSave.savedChunks = failedChunks;
+        } else {
+            // Only reset state if all chunks were successfully deleted
+            this.recordingAutoSave.savedChunks = [];
+            this.recordingAutoSave.chunkIndex = 0;
+            this.recordingAutoSave.sessionId = null;
+        }
+    }
+
+    async recoverRecordingFromChunks(sessionId) {
+        try {
+            // This function can be called to recover a recording from a previous session
+            // if the app crashed before completion
+            const recoveredChunks = await window.electronAPI.findRecordingChunks(sessionId);
+            
+            if (recoveredChunks.length > 0) {
+                console.log(`Found ${recoveredChunks.length} chunks for session ${sessionId}`);
+                
+                const chunkBlobs = [];
+                for (const chunkPath of recoveredChunks) {
+                    const chunkData = await window.electronAPI.loadRecordingChunk(chunkPath);
+                    if (chunkData) {
+                        chunkBlobs.push(new Blob([chunkData], { type: this.getMimeType() }));
+                    }
+                }
+                
+                if (chunkBlobs.length > 0) {
+                    const recoveredBlob = new Blob(chunkBlobs, { type: this.getMimeType() });
+                    this.recordingBlob = recoveredBlob;
+                    this.showRecordingInfo(recoveredBlob);
+                    this.updateRecordingUI();
+                    this.updateStatus(`Recovered recording from ${chunkBlobs.length} chunks`);
+                    return true;
+                }
+            }
+            
+            return false;
+        } catch (error) {
+            console.error('Failed to recover recording from chunks:', error);
+            return false;
+        }
+    }
+
+    async checkForOrphanedRecordings() {
+        try {
+            // Look for any recording chunks that might be left from a previous session
+            const { app } = require('electron');
+            const tempDir = await window.electronAPI.getAppPaths();
+            
+            // Get all files in the recordings temp directory
+            const allChunks = await window.electronAPI.findRecordingChunks('recording_');
+            
+            if (allChunks.length > 0) {
+                console.log(`Found ${allChunks.length} orphaned recording chunks`);
+                
+                // Group chunks by session ID
+                const sessionGroups = {};
+                allChunks.forEach(chunkPath => {
+                    const filename = chunkPath.split('/').pop();
+                    const sessionMatch = filename.match(/^(recording_\d+_[a-z0-9]+)_chunk_/);
+                    if (sessionMatch) {
+                        const sessionId = sessionMatch[1];
+                        if (!sessionGroups[sessionId]) {
+                            sessionGroups[sessionId] = [];
+                        }
+                        sessionGroups[sessionId].push(chunkPath);
+                    }
+                });
+                
+                // Show recovery dialog for sessions with multiple chunks
+                const recoverableSessions = Object.entries(sessionGroups)
+                    .filter(([sessionId, chunks]) => chunks.length > 0)
+                    .sort(([, a], [, b]) => b.length - a.length); // Sort by chunk count
+                
+                if (recoverableSessions.length > 0) {
+                    this.showRecoveryDialog(recoverableSessions);
+                }
+            }
+        } catch (error) {
+            console.error('Error checking for orphaned recordings:', error);
+        }
+    }
+
+    showRecoveryDialog(recoverableSessions) {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'block';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>🔄 Recover Previous Recordings</h2>
+                    <span class="modal-close">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <p>Found ${recoverableSessions.length} incomplete recording(s) from previous sessions:</p>
+                    <div id="recovery-sessions">
+                        ${recoverableSessions.map(([sessionId, chunks], index) => `
+                            <div class="recovery-session" data-session-id="${sessionId}">
+                                <h4>Session ${index + 1}</h4>
+                                <p>${chunks.length} chunks found</p>
+                                <button class="btn btn-primary recover-btn" data-session-id="${sessionId}">
+                                    Recover This Recording
+                                </button>
+                                <button class="btn btn-secondary delete-btn" data-session-id="${sessionId}">
+                                    Delete Chunks
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="recovery-actions">
+                        <button class="btn btn-secondary" id="delete-all-chunks">Delete All</button>
+                        <button class="btn btn-secondary" id="cancel-recovery">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Add event listeners
+        modal.querySelector('.modal-close').addEventListener('click', () => {
+            document.body.removeChild(modal);
+        });
+        
+        modal.querySelector('#cancel-recovery').addEventListener('click', () => {
+            document.body.removeChild(modal);
+        });
+        
+        modal.querySelector('#delete-all-chunks').addEventListener('click', async () => {
+            try {
+                for (const [sessionId, chunks] of recoverableSessions) {
+                    for (const chunkPath of chunks) {
+                        await window.electronAPI.deleteRecordingChunk(chunkPath);
+                    }
+                }
+                this.updateStatus('All orphaned recording chunks deleted');
+                document.body.removeChild(modal);
+            } catch (error) {
+                console.error('Error deleting chunks:', error);
+                this.showError('Failed to delete some chunks');
+            }
+        });
+        
+        // Add recover button listeners
+        modal.querySelectorAll('.recover-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const sessionId = e.target.dataset.sessionId;
+                try {
+                    const recovered = await this.recoverRecordingFromChunks(sessionId);
+                    if (recovered) {
+                        this.switchTab('record');
+                        document.body.removeChild(modal);
+                    } else {
+                        this.showError('Failed to recover recording');
+                    }
+                } catch (error) {
+                    console.error('Error recovering recording:', error);
+                    this.showError('Failed to recover recording');
+                }
+            });
+        });
+        
+        // Add delete button listeners
+        modal.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const sessionId = e.target.dataset.sessionId;
+                try {
+                    const chunks = recoverableSessions.find(([id]) => id === sessionId)[1];
+                    for (const chunkPath of chunks) {
+                        await window.electronAPI.deleteRecordingChunk(chunkPath);
+                    }
+                    e.target.closest('.recovery-session').remove();
+                    this.updateStatus(`Deleted chunks for session ${sessionId}`);
+                } catch (error) {
+                    console.error('Error deleting chunks:', error);
+                    this.showError('Failed to delete chunks');
+                }
+            });
+        });
     }
 }
 

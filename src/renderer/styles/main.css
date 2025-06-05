@@ -1197,6 +1197,14 @@ body {
     box-shadow: none !important;
 }
 
+/* Disabled textarea */
+textarea:disabled,
+textarea.disabled {
+    background-color: #f1f5f9;
+    cursor: not-allowed;
+    border-color: #e2e8f0;
+}
+
 .btn:disabled:hover {
     background: inherit;
     transform: none;

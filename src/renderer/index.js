@@ -1568,8 +1568,43 @@ ${text}
         const useInitialPrompt = document.getElementById('use-initial-prompt-checkbox').checked;
         const initialPromptTextarea = document.getElementById('initial-prompt');
         
+        // Enable/disable the textarea based on checkbox state
         initialPromptTextarea.disabled = !useInitialPrompt;
-        initialPromptTextarea.style.opacity = useInitialPrompt ? '1' : '0.5';
+        
+        // Visual feedback - make it look disabled/enabled
+        if (useInitialPrompt) {
+            initialPromptTextarea.classList.remove('disabled');
+            initialPromptTextarea.style.opacity = '1';
+        } else {
+            initialPromptTextarea.classList.add('disabled');
+            initialPromptTextarea.style.opacity = '0.5';
+        }
+        
+        console.log(`🔄 Initial prompt checkbox toggled: ${useInitialPrompt ? 'ENABLED ✅' : 'DISABLED ❌'}`);
+        
+        // Immediately update the setting in the main process
+        this.updateInitialPromptSetting(useInitialPrompt);
+    }
+    
+    async updateInitialPromptSetting(useInitialPrompt) {
+        try {
+            // Get current settings first
+            const currentSettings = await window.electronAPI.getConfig();
+            
+            // Update just the useInitialPrompt setting
+            const updatedSettings = {
+                ...currentSettings,
+                useInitialPrompt: useInitialPrompt
+            };
+            
+            console.log('🔄 Updating initial prompt setting:', { useInitialPrompt });
+            
+            // Save the updated settings
+            const result = await window.electronAPI.setConfig(updatedSettings);
+            console.log('🔄 Initial prompt setting updated:', result);
+        } catch (error) {
+            console.error('❌ Error updating initial prompt setting:', error);
+        }
     }
 
     openModelComparison() {

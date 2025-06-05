@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const LocalWhisperService = require('../../src/services/localWhisperService');
+const { LocalWhisperService } = require('../../src/services/localWhisperService');
 const config = require('../../src/config');
 
 describe('End-to-End Transcription Test', () => {

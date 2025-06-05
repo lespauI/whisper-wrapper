@@ -1,4 +1,4 @@
-const LocalWhisperService = require('../../src/services/localWhisperService');
+const { LocalWhisperService } = require('../../src/services/localWhisperService');
 const TranscriptionService = require('../../src/services/transcriptionService');
 const fs = require('fs');
 const path = require('path');

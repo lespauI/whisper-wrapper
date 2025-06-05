@@ -19,7 +19,7 @@ jest.mock('../../src/services/localWhisperService', () => {
     };
 });
 
-const LocalWhisperService = require('../../src/services/localWhisperService');
+const { LocalWhisperService } = require('../../src/services/localWhisperService');
 
 describe('TranscriptionService', () => {
     let service;

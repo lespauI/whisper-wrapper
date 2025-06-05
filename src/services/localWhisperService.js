@@ -7,6 +7,10 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+/**
+ * LocalWhisperService class provides an interface to the whisper.cpp library
+ * for transcribing audio and video files using OpenAI's Whisper model locally.
+ */
 class LocalWhisperService {
     constructor() {
         console.log('🔧 LocalWhisperService: Initializing...');
@@ -25,6 +29,7 @@ class LocalWhisperService {
         this.language = 'auto';
         this.threads = 4;
         this.translate = false;
+        this.initialPrompt = ''; // Initialize initial prompt as empty string
         
         console.log('⚙️ LocalWhisperService: Default settings:');
         console.log(`   - Model: ${this.model}`);
@@ -152,6 +157,34 @@ class LocalWhisperService {
      */
     setTranslate(translate) {
         this.translate = translate;
+    }
+
+    /**
+     * Set the initial prompt for transcription
+     * @param {string} prompt - Text to use as initial context for the decoder
+     */
+    setInitialPrompt(prompt) {
+        if (typeof prompt !== 'string') {
+            throw new Error('Initial prompt must be a string');
+        }
+        this.initialPrompt = prompt;
+        console.log(`🔤 LocalWhisperService: Initial prompt set (${prompt.length} chars)`);
+    }
+    
+    /**
+     * Get the current initial prompt
+     * @returns {string} The current initial prompt
+     */
+    getInitialPrompt() {
+        return this.initialPrompt;
+    }
+    
+    /**
+     * Clear the initial prompt
+     */
+    clearInitialPrompt() {
+        this.initialPrompt = '';
+        console.log('🧹 LocalWhisperService: Initial prompt cleared');
     }
 
     /**
@@ -303,13 +336,19 @@ class LocalWhisperService {
             language = 'auto',
             translate = false,
             outputFormat = 'json',
-            threads = 4
+            threads = 4,
+            initialPrompt = this.initialPrompt // Use the value from options or from class property
         } = options;
 
         console.log(`🤖 Using model: ${model}`);
         console.log(`🌍 Language: ${language}`);
         console.log(`🔄 Translate: ${translate}`);
         console.log(`🧵 Threads: ${threads}`);
+        
+        // Log initial prompt if set
+        if (initialPrompt) {
+            console.log(`🔤 Using initial prompt (${initialPrompt.length} chars): "${initialPrompt.substring(0, 50)}${initialPrompt.length > 50 ? '...' : ''}"`);
+        }
 
         // Find model file
         const modelPath = this.findModelPath(model);
@@ -345,6 +384,11 @@ class LocalWhisperService {
         // Add translate flag if needed
         if (translate) {
             args.push('-tr');
+        }
+
+        // Add initial prompt if provided
+        if (initialPrompt && initialPrompt.trim().length > 0) {
+            args.push('--prompt', initialPrompt);
         }
 
         // Add other options
@@ -543,8 +587,16 @@ class LocalWhisperService {
                 throw new Error('Converted WAV file is empty');
             }
             
+            // Make sure initialPrompt is passed to transcribeFile if it exists in options
+            const transcribeOptions = { ...options };
+            
+            // If initialPrompt is not in options but set in the class, use it
+            if (!transcribeOptions.initialPrompt && this.initialPrompt) {
+                transcribeOptions.initialPrompt = this.initialPrompt;
+            }
+            
             // Transcribe the converted WAV file
-            const result = await this.transcribeFile(tempWavFile, options);
+            const result = await this.transcribeFile(tempWavFile, transcribeOptions);
             return result;
         } finally {
             // Clean up temp files
@@ -908,4 +960,5 @@ class LocalWhisperService {
     }
 }
 
-module.exports = LocalWhisperService;
+// Export the class for use in other modules
+module.exports = { LocalWhisperService };

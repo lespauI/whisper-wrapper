@@ -2,7 +2,7 @@
  * Transcription Service - Handles local Whisper transcription
  */
 
-const LocalWhisperService = require('./localWhisperService');
+const { LocalWhisperService } = require('./localWhisperService');
 const TranscriptionFormatter = require('./transcriptionFormatter');
 
 class TranscriptionService {
@@ -12,10 +12,12 @@ class TranscriptionService {
         this.formatter = new TranscriptionFormatter();
         this.model = 'base'; // Default local model
         this.language = 'auto'; // Auto-detect by default
+        this.initialPrompt = ''; // Default empty initial prompt
         
         console.log('🎯 TranscriptionService: Configuration:');
         console.log(`   - Default model: ${this.model}`);
         console.log(`   - Default language: ${this.language}`);
+        console.log(`   - Initial prompt: ${this.initialPrompt ? 'Set' : 'Not set'}`);
         console.log(`   - Local Whisper available: ${this.isAvailable()}`);
         console.log('✅ TranscriptionService: Initialization complete');
     }
@@ -59,6 +61,31 @@ class TranscriptionService {
     setThreads(threads) {
         this.localWhisper.setThreads(threads);
     }
+    
+    /**
+     * Set initial prompt for transcription
+     * @param {string} prompt - Text to use as initial context for the decoder
+     */
+    setInitialPrompt(prompt) {
+        this.initialPrompt = prompt;
+        this.localWhisper.setInitialPrompt(prompt);
+    }
+    
+    /**
+     * Get current initial prompt
+     * @returns {string} The current initial prompt
+     */
+    getInitialPrompt() {
+        return this.initialPrompt;
+    }
+    
+    /**
+     * Clear initial prompt
+     */
+    clearInitialPrompt() {
+        this.initialPrompt = '';
+        this.localWhisper.clearInitialPrompt();
+    }
 
     /**
      * Transcribe audio file
@@ -81,10 +108,16 @@ class TranscriptionService {
                 model: options.model || this.model,
                 language: options.language || this.language,
                 translate: options.translate || false,
-                threads: options.threads || 4
+                threads: options.threads || 4,
+                initialPrompt: options.initialPrompt || this.initialPrompt
             };
 
             console.log('🎯 TranscriptionService: Calling LocalWhisperService with options:', whisperOptions);
+            
+            // Log if initial prompt is being used
+            if (whisperOptions.initialPrompt) {
+                console.log(`🔤 TranscriptionService: Using initial prompt (${whisperOptions.initialPrompt.length} chars)`);
+            }
             const result = await this.localWhisper.transcribeFile(filePath, whisperOptions);
             
             console.log('🎯 TranscriptionService: Received result from LocalWhisperService:', {
@@ -141,8 +174,14 @@ class TranscriptionService {
                 model: options.model || this.model,
                 language: options.language || this.language,
                 translate: options.translate || false,
-                threads: options.threads || 4
+                threads: options.threads || 4,
+                initialPrompt: options.initialPrompt || this.initialPrompt
             };
+            
+            // Log if initial prompt is being used
+            if (whisperOptions.initialPrompt) {
+                console.log(`🔤 TranscriptionService: Using initial prompt (${whisperOptions.initialPrompt.length} chars)`);
+            }
 
             const result = await this.localWhisper.transcribeBuffer(audioBuffer, whisperOptions);
             
@@ -201,6 +240,7 @@ class TranscriptionService {
         return {
             model: this.model,
             language: this.language,
+            initialPrompt: this.initialPrompt,
             availableModels: this.getAvailableModels(),
             isAvailable: this.isAvailable()
         };
@@ -216,6 +256,9 @@ class TranscriptionService {
         }
         if (settings.language) {
             this.setLanguage(settings.language);
+        }
+        if (settings.initialPrompt !== undefined) {
+            this.setInitialPrompt(settings.initialPrompt);
         }
     }
 

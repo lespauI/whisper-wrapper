@@ -1,4 +1,4 @@
-const LocalWhisperService = require('../../src/services/localWhisperService');
+const { LocalWhisperService } = require('../../src/services/localWhisperService');
 
 // Mock fs module
 jest.mock('fs', () => ({
@@ -37,6 +37,7 @@ describe('LocalWhisperService', () => {
             expect(service.language).toBe('auto');
             expect(service.threads).toBe(4);
             expect(service.translate).toBe(false);
+            expect(service.initialPrompt).toBe('');
         });
     });
 
@@ -98,6 +99,37 @@ describe('LocalWhisperService', () => {
 
         it('should throw error for invalid thread count', () => {
             expect(() => service.setThreads(0)).toThrow('Thread count must be between 1 and 16');
+        });
+    });
+    
+    describe('setInitialPrompt', () => {
+        it('should set initial prompt', () => {
+            const prompt = 'Technical terms: JavaScript, Node.js, React';
+            service.setInitialPrompt(prompt);
+            expect(service.initialPrompt).toBe(prompt);
+        });
+        
+        it('should throw error for non-string prompt', () => {
+            expect(() => service.setInitialPrompt(123)).toThrow('Initial prompt must be a string');
+            expect(() => service.setInitialPrompt(null)).toThrow('Initial prompt must be a string');
+            expect(() => service.setInitialPrompt(undefined)).toThrow('Initial prompt must be a string');
+            expect(() => service.setInitialPrompt({})).toThrow('Initial prompt must be a string');
+        });
+    });
+    
+    describe('getInitialPrompt', () => {
+        it('should return the current initial prompt', () => {
+            const prompt = 'Test prompt';
+            service.initialPrompt = prompt;
+            expect(service.getInitialPrompt()).toBe(prompt);
+        });
+    });
+    
+    describe('clearInitialPrompt', () => {
+        it('should clear the initial prompt', () => {
+            service.initialPrompt = 'Test prompt';
+            service.clearInitialPrompt();
+            expect(service.initialPrompt).toBe('');
         });
     });
 

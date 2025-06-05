@@ -10,6 +10,7 @@ A Node.js desktop application that provides a user-friendly interface for OpenAI
 - **Markdown Formatting**: View and edit transcriptions with Markdown formatting
 - **Export Options**: Download transcriptions in various formats
 - **Local Processing**: Runs entirely on your local machine
+- **Initial Prompt**: Provide custom vocabulary or context to improve transcription accuracy
 
 ## Getting Started
 
@@ -60,6 +61,21 @@ A Node.js desktop application that provides a user-friendly interface for OpenAI
 4. Wait for the transcription to complete
 5. View and edit the transcription in the editor
 6. Download the transcription using the "Download" button
+
+### Using Initial Prompt for Better Accuracy
+
+You can provide an initial prompt to help the transcription model better recognize specific terms, names, or context:
+
+1. Open the Settings panel
+2. Enter your custom vocabulary or context in the "Initial Prompt" field
+3. Save the settings
+4. Transcribe your audio or video file
+
+The initial prompt will guide the model to better recognize specialized terminology, proper names, or domain-specific vocabulary. For example:
+
+- For medical transcriptions: "Patient John Smith, diagnosis hypertension, medication lisinopril"
+- For technical discussions: "JavaScript, React, Node.js, API, frontend, backend, database"
+- For business meetings: "Acme Corporation, quarterly report, fiscal year, shareholders, CEO Jane Doe"
 
 ## Supported File Formats
 
@@ -149,6 +165,39 @@ whisper-wrapper/
 │   └── config/         # Configuration
 ├── tests/              # Test files
 └── ...
+```
+
+### API Usage
+
+You can use the LocalWhisperService programmatically in your own code:
+
+```javascript
+const { LocalWhisperService } = require('./src/services/localWhisperService');
+
+// Initialize the service
+const whisperService = new LocalWhisperService();
+
+// Set an initial prompt with specialized vocabulary
+whisperService.setInitialPrompt("Technical terms: Node.js, JavaScript, React, Redux, TypeScript, API");
+
+// Transcribe a file
+async function transcribeMyFile() {
+  try {
+    const result = await whisperService.transcribeFile('/path/to/audio.mp3', {
+      model: 'medium',
+      language: 'en',
+      translate: false,
+      threads: 4
+    });
+    
+    console.log('Transcription:', result.text);
+    console.log('Segments:', result.segments);
+  } catch (error) {
+    console.error('Transcription failed:', error);
+  }
+}
+
+transcribeMyFile();
 ```
 
 ### Available Scripts

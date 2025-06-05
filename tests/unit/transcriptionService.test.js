@@ -2,15 +2,21 @@ const TranscriptionService = require('../../src/services/transcriptionService');
 
 // Mock LocalWhisperService
 jest.mock('../../src/services/localWhisperService', () => {
-    return jest.fn().mockImplementation(() => ({
-        isAvailable: jest.fn(),
-        getAvailableModels: jest.fn(),
-        transcribeFile: jest.fn(),
-        testInstallation: jest.fn(),
-        setModel: jest.fn(),
-        setLanguage: jest.fn(),
-        setThreads: jest.fn()
-    }));
+    return {
+        LocalWhisperService: jest.fn().mockImplementation(() => ({
+            isAvailable: jest.fn(),
+            getAvailableModels: jest.fn(),
+            transcribeFile: jest.fn(),
+            transcribeBuffer: jest.fn(),
+            testInstallation: jest.fn(),
+            setModel: jest.fn(),
+            setLanguage: jest.fn(),
+            setThreads: jest.fn(),
+            setInitialPrompt: jest.fn(),
+            getInitialPrompt: jest.fn(),
+            clearInitialPrompt: jest.fn()
+        }))
+    };
 });
 
 const LocalWhisperService = require('../../src/services/localWhisperService');
@@ -31,6 +37,7 @@ describe('TranscriptionService', () => {
         it('should initialize with default settings', () => {
             expect(service.model).toBe('base');
             expect(service.language).toBe('auto');
+            expect(service.initialPrompt).toBe('');
             expect(service.localWhisper).toBeDefined();
         });
     });
@@ -83,6 +90,31 @@ describe('TranscriptionService', () => {
             expect(mockLocalWhisper.setThreads).toHaveBeenCalledWith(8);
         });
     });
+    
+    describe('setInitialPrompt', () => {
+        it('should set initial prompt on service and delegate to local whisper', () => {
+            const prompt = 'Test prompt with technical terms';
+            service.setInitialPrompt(prompt);
+            expect(service.initialPrompt).toBe(prompt);
+            expect(mockLocalWhisper.setInitialPrompt).toHaveBeenCalledWith(prompt);
+        });
+    });
+    
+    describe('getInitialPrompt', () => {
+        it('should return the current initial prompt', () => {
+            service.initialPrompt = 'Test prompt';
+            expect(service.getInitialPrompt()).toBe('Test prompt');
+        });
+    });
+    
+    describe('clearInitialPrompt', () => {
+        it('should clear initial prompt and delegate to local whisper', () => {
+            service.initialPrompt = 'Test prompt';
+            service.clearInitialPrompt();
+            expect(service.initialPrompt).toBe('');
+            expect(mockLocalWhisper.clearInitialPrompt).toHaveBeenCalled();
+        });
+    });
 
     describe('transcribeFile', () => {
         it('should transcribe file using local whisper', async () => {
@@ -117,7 +149,8 @@ describe('TranscriptionService', () => {
                 model: 'base',
                 language: 'auto',
                 translate: false,
-                threads: 4
+                threads: 4,
+                initialPrompt: ''
             });
         });
 
@@ -130,6 +163,35 @@ describe('TranscriptionService', () => {
 
             await expect(service.transcribeFile('/path/to/file.wav'))
                 .rejects.toThrow('Transcription failed: Transcription failed');
+        });
+        
+        it('should transcribe file with custom initial prompt', async () => {
+            // Mock isAvailable to return true
+            mockLocalWhisper.isAvailable.mockReturnValue(true);
+            
+            const mockResult = {
+                text: 'Hello world with technical terms',
+                language: 'en',
+                segments: [],
+                model: 'base',
+                duration: 10.5
+            };
+            mockLocalWhisper.transcribeFile.mockResolvedValue(mockResult);
+            
+            const customPrompt = 'Technical terms: JavaScript, Node.js, React';
+            
+            const result = await service.transcribeFile('/path/to/file.wav', {
+                initialPrompt: customPrompt
+            });
+            
+            expect(result.success).toBe(true);
+            expect(mockLocalWhisper.transcribeFile).toHaveBeenCalledWith('/path/to/file.wav', {
+                model: 'base',
+                language: 'auto',
+                translate: false,
+                threads: 4,
+                initialPrompt: customPrompt
+            });
         });
     });
 
@@ -186,11 +248,39 @@ describe('TranscriptionService', () => {
         });
     });
 
+    describe('getSettings', () => {
+        it('should return current settings including initialPrompt', () => {
+            service.model = 'medium';
+            service.language = 'fr';
+            service.initialPrompt = 'Test prompt';
+            
+            mockLocalWhisper.getAvailableModels.mockReturnValue([
+                { name: 'base', size: '141 MB' },
+                { name: 'medium', size: '1.5 GB' }
+            ]);
+            mockLocalWhisper.isAvailable.mockReturnValue(true);
+            
+            const settings = service.getSettings();
+            
+            expect(settings).toEqual({
+                model: 'medium',
+                language: 'fr',
+                initialPrompt: 'Test prompt',
+                availableModels: [
+                    { name: 'base', size: '141 MB' },
+                    { name: 'medium', size: '1.5 GB' }
+                ],
+                isAvailable: true
+            });
+        });
+    });
+    
     describe('updateSettings', () => {
-        it('should update model and language settings', () => {
+        it('should update model, language and initialPrompt settings', () => {
             const newSettings = {
                 model: 'large',
                 language: 'es',
+                initialPrompt: 'Technical terms: JavaScript, Node.js',
                 threads: 8,
                 translate: true
             };
@@ -199,8 +289,10 @@ describe('TranscriptionService', () => {
 
             expect(service.model).toBe('large');
             expect(service.language).toBe('es');
+            expect(service.initialPrompt).toBe('Technical terms: JavaScript, Node.js');
             expect(mockLocalWhisper.setModel).toHaveBeenCalledWith('large');
             expect(mockLocalWhisper.setLanguage).toHaveBeenCalledWith('es');
+            expect(mockLocalWhisper.setInitialPrompt).toHaveBeenCalledWith('Technical terms: JavaScript, Node.js');
             // Note: threads are not handled by updateSettings, they're set directly on LocalWhisperService
         });
 
@@ -213,22 +305,55 @@ describe('TranscriptionService', () => {
 
             expect(service.model).toBe('tiny');
             expect(service.language).toBe('auto'); // Should remain unchanged
+            expect(service.initialPrompt).toBe(''); // Should remain unchanged
             expect(mockLocalWhisper.setModel).toHaveBeenCalledWith('tiny');
             expect(mockLocalWhisper.setLanguage).not.toHaveBeenCalled();
+            expect(mockLocalWhisper.setInitialPrompt).not.toHaveBeenCalled();
             expect(mockLocalWhisper.setThreads).not.toHaveBeenCalled();
         });
 
         it('should handle empty settings object', () => {
             const originalModel = service.model;
             const originalLanguage = service.language;
+            const originalPrompt = service.initialPrompt;
 
             service.updateSettings({});
 
             expect(service.model).toBe(originalModel);
             expect(service.language).toBe(originalLanguage);
+            expect(service.initialPrompt).toBe(originalPrompt);
             expect(mockLocalWhisper.setModel).not.toHaveBeenCalled();
             expect(mockLocalWhisper.setLanguage).not.toHaveBeenCalled();
+            expect(mockLocalWhisper.setInitialPrompt).not.toHaveBeenCalled();
             expect(mockLocalWhisper.setThreads).not.toHaveBeenCalled();
+        });
+        
+        it('should update only initialPrompt', () => {
+            const originalModel = service.model;
+            const originalLanguage = service.language;
+            const newPrompt = 'New technical terms: TypeScript, React, Redux';
+            
+            service.updateSettings({
+                initialPrompt: newPrompt
+            });
+            
+            expect(service.model).toBe(originalModel);
+            expect(service.language).toBe(originalLanguage);
+            expect(service.initialPrompt).toBe(newPrompt);
+            expect(mockLocalWhisper.setModel).not.toHaveBeenCalled();
+            expect(mockLocalWhisper.setLanguage).not.toHaveBeenCalled();
+            expect(mockLocalWhisper.setInitialPrompt).toHaveBeenCalledWith(newPrompt);
+        });
+        
+        it('should clear initialPrompt when empty string is provided', () => {
+            service.initialPrompt = 'Some prompt';
+            
+            service.updateSettings({
+                initialPrompt: ''
+            });
+            
+            expect(service.initialPrompt).toBe('');
+            expect(mockLocalWhisper.setInitialPrompt).toHaveBeenCalledWith('');
         });
     });
 });

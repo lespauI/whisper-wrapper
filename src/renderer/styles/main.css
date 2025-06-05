@@ -955,6 +955,31 @@ body {
     color: #4a5568;
 }
 
+.setting-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.setting-toggle {
+    display: flex;
+    align-items: center;
+}
+
+.setting-toggle label {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0;
+    font-size: 0.9rem;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+.setting-toggle input[type="checkbox"] {
+    margin-right: 0.5rem;
+}
+
 .setting-group input,
 .setting-group select {
     width: 100%;

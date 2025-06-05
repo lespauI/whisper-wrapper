@@ -66,7 +66,9 @@ module.exports = {
         language: 'auto', // Auto-detect
         model: 'base',
         threads: 4,
-        translate: false
+        translate: false,
+        useInitialPrompt: true, // Whether to use initial prompt
+        initialPrompt: '' // Initial prompt to guide transcription
     },
 
     // Export settings

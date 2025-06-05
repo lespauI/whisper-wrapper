@@ -49,7 +49,9 @@ class ConfigManager {
             model: this.get('transcription.model', 'base'),
             language: this.get('transcription.language', 'auto'),
             threads: this.get('transcription.threads', 4),
-            translate: this.get('transcription.translate', false)
+            translate: this.get('transcription.translate', false),
+            useInitialPrompt: this.get('transcription.useInitialPrompt', true),
+            initialPrompt: this.get('transcription.initialPrompt', '')
         };
     }
 
@@ -69,6 +71,12 @@ class ConfigManager {
         }
         if (config.translate !== undefined) {
             this.set('transcription.translate', config.translate);
+        }
+        if (config.useInitialPrompt !== undefined) {
+            this.set('transcription.useInitialPrompt', config.useInitialPrompt);
+        }
+        if (config.initialPrompt !== undefined) {
+            this.set('transcription.initialPrompt', config.initialPrompt);
         }
     }
 

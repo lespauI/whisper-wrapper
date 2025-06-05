@@ -315,6 +315,19 @@
                     </label>
                     <small>Automatically translate non-English audio to English.</small>
                 </div>
+                <div class="setting-group">
+                    <div class="setting-header">
+                        <label for="initial-prompt">Initial Prompt:</label>
+                        <div class="setting-toggle">
+                            <label>
+                                <input type="checkbox" id="use-initial-prompt-checkbox" checked>
+                                Use initial prompt
+                            </label>
+                        </div>
+                    </div>
+                    <textarea id="initial-prompt" rows="3" placeholder="Enter initial prompt to guide transcription (optional)"></textarea>
+                    <small>Guide the transcription with context or specific terms. Helps with technical terms, names, or specialized vocabulary.</small>
+                </div>
             </div>
             <div class="modal-footer">
                 <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>

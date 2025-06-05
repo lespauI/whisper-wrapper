@@ -124,6 +124,11 @@ class WhisperWrapperApp {
         document.getElementById('model-select').addEventListener('change', (e) => {
             this.updateModelDescription(e.target.value);
         });
+        
+        // Initial prompt checkbox handler
+        document.getElementById('use-initial-prompt-checkbox').addEventListener('change', () => {
+            this.updateInitialPromptState();
+        });
     }
 
     setupTabNavigation() {
@@ -1484,13 +1489,19 @@ ${text}
             const language = document.getElementById('language-select').value;
             const threads = parseInt(document.getElementById('threads-select').value);
             const translate = document.getElementById('translate-checkbox').checked;
+            const useInitialPrompt = document.getElementById('use-initial-prompt-checkbox').checked;
+            const initialPrompt = document.getElementById('initial-prompt').value;
             
             const settings = {
                 model,
                 language,
                 threads,
-                translate
+                translate,
+                useInitialPrompt,
+                initialPrompt
             };
+            
+            console.log('Saving settings:', settings);
             
             // Save settings via IPC
             const result = await window.electronAPI.setConfig(settings);
@@ -1523,6 +1534,7 @@ ${text}
     async loadSettings() {
         try {
             const settings = await window.electronAPI.getConfig();
+            console.log('Loaded settings:', settings);
             
             if (settings.model) {
                 document.getElementById('model-select').value = settings.model;
@@ -1537,10 +1549,27 @@ ${text}
             if (settings.translate !== undefined) {
                 document.getElementById('translate-checkbox').checked = settings.translate;
             }
+            if (settings.useInitialPrompt !== undefined) {
+                document.getElementById('use-initial-prompt-checkbox').checked = settings.useInitialPrompt;
+            }
+            if (settings.initialPrompt !== undefined) {
+                document.getElementById('initial-prompt').value = settings.initialPrompt;
+            }
+            
+            // Update initial prompt textarea state based on checkbox
+            this.updateInitialPromptState();
             
         } catch (error) {
             console.error('Error loading settings:', error);
         }
+    }
+    
+    updateInitialPromptState() {
+        const useInitialPrompt = document.getElementById('use-initial-prompt-checkbox').checked;
+        const initialPromptTextarea = document.getElementById('initial-prompt');
+        
+        initialPromptTextarea.disabled = !useInitialPrompt;
+        initialPromptTextarea.style.opacity = useInitialPrompt ? '1' : '0.5';
     }
 
     openModelComparison() {

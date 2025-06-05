@@ -223,6 +223,13 @@ class IPCHandlers {
                     threads: currentConfig.threads || 4,
                     translate: currentConfig.translate || false
                 };
+                
+                // Add initial prompt if enabled
+                if (currentConfig.useInitialPrompt && currentConfig.initialPrompt) {
+                    transcriptionOptions.initialPrompt = currentConfig.initialPrompt;
+                    console.log(`🔤 IPC: Using initial prompt (${currentConfig.initialPrompt.length} chars)`);
+                }
+                
                 console.log('🎤 IPC: Transcription options:', transcriptionOptions);
                 
                 const result = await this.transcriptionService.transcribeFile(tempFilePath, transcriptionOptions);
@@ -312,13 +319,22 @@ class IPCHandlers {
                 throw new Error('Invalid audio data format');
             }
 
+            // Prepare transcription options
+            const transcriptionOptions = {
+                threads: currentConfig.threads || 4,
+                translate: currentConfig.translate || false
+            };
+            
+            // Add initial prompt if enabled
+            if (currentConfig.useInitialPrompt && currentConfig.initialPrompt) {
+                transcriptionOptions.initialPrompt = currentConfig.initialPrompt;
+                console.log(`🔤 IPC: Using initial prompt (${currentConfig.initialPrompt.length} chars)`);
+            }
+            
             // Transcribe the audio buffer
             const result = await this.transcriptionService.transcribeBuffer(
                 audioBuffer,
-                {
-                    threads: currentConfig.threads || 4,
-                    translate: currentConfig.translate || false
-                }
+                transcriptionOptions
             );
 
             // Send completion update

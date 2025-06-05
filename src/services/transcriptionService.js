@@ -109,14 +109,21 @@ class TranscriptionService {
                 language: options.language || this.language,
                 translate: options.translate || false,
                 threads: options.threads || 4,
-                initialPrompt: options.initialPrompt || this.initialPrompt
+                useInitialPrompt: options.useInitialPrompt !== undefined ? options.useInitialPrompt : true
             };
+            
+            // Only add initialPrompt if useInitialPrompt is true
+            if (whisperOptions.useInitialPrompt) {
+                whisperOptions.initialPrompt = options.initialPrompt || this.initialPrompt;
+            }
 
             console.log('🎯 TranscriptionService: Calling LocalWhisperService with options:', whisperOptions);
             
-            // Log if initial prompt is being used
-            if (whisperOptions.initialPrompt) {
+            // Log initial prompt status
+            if (whisperOptions.initialPrompt && whisperOptions.useInitialPrompt) {
                 console.log(`🔤 TranscriptionService: Using initial prompt (${whisperOptions.initialPrompt.length} chars)`);
+            } else {
+                console.log(`🔤 TranscriptionService: Initial prompt is DISABLED`);
             }
             const result = await this.localWhisper.transcribeFile(filePath, whisperOptions);
             
@@ -175,12 +182,19 @@ class TranscriptionService {
                 language: options.language || this.language,
                 translate: options.translate || false,
                 threads: options.threads || 4,
-                initialPrompt: options.initialPrompt || this.initialPrompt
+                useInitialPrompt: options.useInitialPrompt !== undefined ? options.useInitialPrompt : true
             };
             
-            // Log if initial prompt is being used
-            if (whisperOptions.initialPrompt) {
+            // Only add initialPrompt if useInitialPrompt is true
+            if (whisperOptions.useInitialPrompt) {
+                whisperOptions.initialPrompt = options.initialPrompt || this.initialPrompt;
+            }
+            
+            // Log initial prompt status
+            if (whisperOptions.initialPrompt && whisperOptions.useInitialPrompt) {
                 console.log(`🔤 TranscriptionService: Using initial prompt (${whisperOptions.initialPrompt.length} chars)`);
+            } else {
+                console.log(`🔤 TranscriptionService: Initial prompt is DISABLED`);
             }
 
             const result = await this.localWhisper.transcribeBuffer(audioBuffer, whisperOptions);

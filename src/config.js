@@ -14,6 +14,8 @@ const config = {
         defaultThreads: 4,
         modelsDirectory: path.join(process.cwd(), 'models'),
         tempDirectory: path.join(os.tmpdir(), 'whisper-wrapper'),
+        useInitialPrompt: true,  // Default to using initial prompt if provided
+        initialPrompt: '',       // Default empty initial prompt
     },
     
     // Application settings
@@ -29,7 +31,9 @@ const config = {
             model: this.whisper.defaultModel,
             language: this.whisper.defaultLanguage,
             threads: this.whisper.defaultThreads,
-            translate: false
+            translate: false,
+            useInitialPrompt: this.whisper.useInitialPrompt !== undefined ? this.whisper.useInitialPrompt : true,
+            initialPrompt: this.whisper.initialPrompt || ''
         };
     },
 
@@ -43,6 +47,13 @@ const config = {
         }
         if (newConfig.threads) {
             this.whisper.defaultThreads = newConfig.threads;
+        }
+        if (newConfig.useInitialPrompt !== undefined) {
+            this.whisper.useInitialPrompt = newConfig.useInitialPrompt;
+            console.log(`🔄 Config: Initial prompt ${newConfig.useInitialPrompt ? 'ENABLED' : 'DISABLED'}`);
+        }
+        if (newConfig.initialPrompt !== undefined) {
+            this.whisper.initialPrompt = newConfig.initialPrompt;
         }
     }
 };

@@ -224,10 +224,11 @@ class IPCHandlers {
                     translate: currentConfig.translate || false
                 };
                 
-                // Add initial prompt if enabled
-                if (currentConfig.useInitialPrompt && currentConfig.initialPrompt) {
+                // Always pass both the useInitialPrompt flag and initialPrompt
+                transcriptionOptions.useInitialPrompt = currentConfig.useInitialPrompt;
+                if (currentConfig.initialPrompt) {
                     transcriptionOptions.initialPrompt = currentConfig.initialPrompt;
-                    console.log(`🔤 IPC: Using initial prompt (${currentConfig.initialPrompt.length} chars)`);
+                    console.log(`🔤 IPC: Initial prompt ${currentConfig.useInitialPrompt ? 'ENABLED' : 'DISABLED'} (${currentConfig.initialPrompt.length} chars)`);
                 }
                 
                 console.log('🎤 IPC: Transcription options:', transcriptionOptions);
@@ -325,10 +326,11 @@ class IPCHandlers {
                 translate: currentConfig.translate || false
             };
             
-            // Add initial prompt if enabled
-            if (currentConfig.useInitialPrompt && currentConfig.initialPrompt) {
+            // Always pass both the useInitialPrompt flag and initialPrompt
+            transcriptionOptions.useInitialPrompt = currentConfig.useInitialPrompt;
+            if (currentConfig.initialPrompt) {
                 transcriptionOptions.initialPrompt = currentConfig.initialPrompt;
-                console.log(`🔤 IPC: Using initial prompt (${currentConfig.initialPrompt.length} chars)`);
+                console.log(`🔤 IPC: Initial prompt ${currentConfig.useInitialPrompt ? 'ENABLED' : 'DISABLED'} (${currentConfig.initialPrompt.length} chars)`);
             }
             
             // Transcribe the audio buffer

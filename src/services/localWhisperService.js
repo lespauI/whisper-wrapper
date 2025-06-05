@@ -337,17 +337,25 @@ class LocalWhisperService {
             translate = false,
             outputFormat = 'json',
             threads = 4,
-            initialPrompt = this.initialPrompt // Use the value from options or from class property
+            initialPrompt = undefined, // Don't default to this.initialPrompt
+            useInitialPrompt = true // Default to true for backward compatibility
         } = options;
+        
+        // Only use initialPrompt if explicitly provided in options or if useInitialPrompt is true
+        const effectiveInitialPrompt = initialPrompt !== undefined ? initialPrompt : 
+                                      (useInitialPrompt ? this.initialPrompt : '');
 
         console.log(`🤖 Using model: ${model}`);
         console.log(`🌍 Language: ${language}`);
         console.log(`🔄 Translate: ${translate}`);
         console.log(`🧵 Threads: ${threads}`);
+        console.log(`🔄 Use initial prompt: ${useInitialPrompt}`);
         
-        // Log initial prompt if set
-        if (initialPrompt) {
-            console.log(`🔤 Using initial prompt (${initialPrompt.length} chars): "${initialPrompt.substring(0, 50)}${initialPrompt.length > 50 ? '...' : ''}"`);
+        // Log initial prompt if set and enabled
+        if (effectiveInitialPrompt) {
+            console.log(`🔤 Using initial prompt (${effectiveInitialPrompt.length} chars): "${effectiveInitialPrompt.substring(0, 50)}${effectiveInitialPrompt.length > 50 ? '...' : ''}"`);
+        } else {
+            console.log(`🔤 Initial prompt is ${initialPrompt ? 'provided but disabled' : 'not provided'}`);
         }
 
         // Find model file
@@ -386,9 +394,9 @@ class LocalWhisperService {
             args.push('-tr');
         }
 
-        // Add initial prompt if provided
-        if (initialPrompt && initialPrompt.trim().length > 0) {
-            args.push('--prompt', initialPrompt);
+        // Add initial prompt if provided and enabled
+        if (effectiveInitialPrompt && effectiveInitialPrompt.trim().length > 0) {
+            args.push('--prompt', effectiveInitialPrompt);
         }
 
         // Add other options
@@ -587,13 +595,10 @@ class LocalWhisperService {
                 throw new Error('Converted WAV file is empty');
             }
             
-            // Make sure initialPrompt is passed to transcribeFile if it exists in options
+            // Pass all options directly to transcribeFile, including useInitialPrompt flag
             const transcribeOptions = { ...options };
             
-            // If initialPrompt is not in options but set in the class, use it
-            if (!transcribeOptions.initialPrompt && this.initialPrompt) {
-                transcribeOptions.initialPrompt = this.initialPrompt;
-            }
+            // Don't add initialPrompt here - let transcribeFile handle it with the useInitialPrompt flag
             
             // Transcribe the converted WAV file
             const result = await this.transcribeFile(tempWavFile, transcribeOptions);

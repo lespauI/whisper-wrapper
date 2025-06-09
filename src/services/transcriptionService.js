@@ -4,21 +4,25 @@
 
 const { LocalWhisperService } = require('./localWhisperService');
 const TranscriptionFormatter = require('./transcriptionFormatter');
+const RefinementService = require('./refinementService');
 
 class TranscriptionService {
     constructor() {
         console.log('🎯 TranscriptionService: Initializing...');
         this.localWhisper = new LocalWhisperService();
         this.formatter = new TranscriptionFormatter();
+        this.refinementService = new RefinementService();
         this.model = 'base'; // Default local model
         this.language = 'auto'; // Auto-detect by default
         this.initialPrompt = ''; // Default empty initial prompt
+        this.selectedTemplateId = null; // No refinement template selected by default
         
         console.log('🎯 TranscriptionService: Configuration:');
         console.log(`   - Default model: ${this.model}`);
         console.log(`   - Default language: ${this.language}`);
         console.log(`   - Initial prompt: ${this.initialPrompt ? 'Set' : 'Not set'}`);
         console.log(`   - Local Whisper available: ${this.isAvailable()}`);
+        console.log(`   - Refinement template: ${this.selectedTemplateId || 'None'}`);
         console.log('✅ TranscriptionService: Initialization complete');
     }
 
@@ -139,7 +143,8 @@ class TranscriptionService {
             console.log('📝 TranscriptionService: Formatting transcription...');
             const formattedResult = this.formatter.formatTranscription(result);
             
-            const finalResult = {
+            // Create the result object
+            let finalResult = {
                 success: true,
                 text: result.text,
                 markdown: formattedResult.markdown,
@@ -153,6 +158,70 @@ class TranscriptionService {
                 srt: this.formatter.generateSRT(result.segments),
                 vtt: this.formatter.generateVTT(result.segments)
             };
+            
+            // Apply AI refinement if a template is selected
+            const templateId = options.templateId || this.selectedTemplateId;
+            if (templateId) {
+                try {
+                    // Check if refinement is available
+                    const refinementAvailable = await this.refinementService.isAvailable();
+                    if (!refinementAvailable) {
+                        console.log('⚠️ TranscriptionService: Ollama is not available, skipping refinement');
+                        finalResult.refinementStatus = {
+                            success: false,
+                            message: 'Ollama is not available. Please ensure Ollama is installed and running.'
+                        };
+                    } else {
+                        console.log(`🔄 TranscriptionService: Applying refinement with template: ${templateId}`);
+                        
+                        // Get template details
+                        const template = await this.refinementService.getTemplate(templateId);
+                        if (!template) {
+                            throw new Error(`Template with ID ${templateId} not found`);
+                        }
+                        
+                        console.log(`🔄 TranscriptionService: Using template "${template.name}"`);
+                        
+                        // Apply refinement
+                        const refinementResult = await this.refinementService.refineTranscription(
+                            result.text,
+                            templateId,
+                            options.refinementOptions || {}
+                        );
+                        
+                        // Update result with refined text
+                        finalResult.originalText = result.text;
+                        finalResult.text = refinementResult.refined;
+                        
+                        // Format the refined text
+                        const refinedFormattedResult = this.formatter.formatTranscription({
+                            text: refinementResult.refined,
+                            segments: result.segments // Keep original segments
+                        });
+                        
+                        finalResult.markdown = refinedFormattedResult.markdown;
+                        finalResult.plainText = refinedFormattedResult.plainText;
+                        
+                        // Add refinement metadata
+                        finalResult.refinementStatus = {
+                            success: true,
+                            templateId: templateId,
+                            templateName: template.name,
+                            model: refinementResult.model
+                        };
+                        
+                        console.log('✅ TranscriptionService: Refinement applied successfully');
+                    }
+                } catch (refinementError) {
+                    console.error('❌ TranscriptionService: Refinement error:', refinementError);
+                    finalResult.refinementStatus = {
+                        success: false,
+                        message: `Refinement failed: ${refinementError.message}`
+                    };
+                }
+            } else {
+                console.log('📝 TranscriptionService: No refinement template selected, skipping refinement');
+            }
 
             console.log('🎉 TranscriptionService: File transcription completed successfully!');
             console.log('📊 TranscriptionService: Formatted result metadata:', finalResult.metadata);
@@ -199,17 +268,93 @@ class TranscriptionService {
 
             const result = await this.localWhisper.transcribeBuffer(audioBuffer, whisperOptions);
             
-            return {
+            // Format the transcription
+            const formattedResult = this.formatter.formatTranscription(result);
+            
+            // Create the result object
+            let finalResult = {
                 success: true,
                 text: result.text,
+                markdown: formattedResult.markdown,
+                plainText: formattedResult.plainText,
                 language: result.language,
                 segments: result.segments,
                 model: result.model,
-                duration: result.duration
+                duration: result.duration,
+                metadata: formattedResult.metadata,
+                // Additional formats
+                srt: this.formatter.generateSRT(result.segments),
+                vtt: this.formatter.generateVTT(result.segments)
             };
+            
+            // Apply AI refinement if a template is selected
+            const templateId = options.templateId || this.selectedTemplateId;
+            if (templateId) {
+                try {
+                    // Check if refinement is available
+                    const refinementAvailable = await this.refinementService.isAvailable();
+                    if (!refinementAvailable) {
+                        console.log('⚠️ TranscriptionService: Ollama is not available, skipping refinement');
+                        finalResult.refinementStatus = {
+                            success: false,
+                            message: 'Ollama is not available. Please ensure Ollama is installed and running.'
+                        };
+                    } else {
+                        console.log(`🔄 TranscriptionService: Applying refinement with template: ${templateId}`);
+                        
+                        // Get template details
+                        const template = await this.refinementService.getTemplate(templateId);
+                        if (!template) {
+                            throw new Error(`Template with ID ${templateId} not found`);
+                        }
+                        
+                        console.log(`🔄 TranscriptionService: Using template "${template.name}"`);
+                        
+                        // Apply refinement
+                        const refinementResult = await this.refinementService.refineTranscription(
+                            result.text,
+                            templateId,
+                            options.refinementOptions || {}
+                        );
+                        
+                        // Update result with refined text
+                        finalResult.originalText = result.text;
+                        finalResult.text = refinementResult.refined;
+                        
+                        // Format the refined text
+                        const refinedFormattedResult = this.formatter.formatTranscription({
+                            text: refinementResult.refined,
+                            segments: result.segments // Keep original segments
+                        });
+                        
+                        finalResult.markdown = refinedFormattedResult.markdown;
+                        finalResult.plainText = refinedFormattedResult.plainText;
+                        
+                        // Add refinement metadata
+                        finalResult.refinementStatus = {
+                            success: true,
+                            templateId: templateId,
+                            templateName: template.name,
+                            model: refinementResult.model
+                        };
+                        
+                        console.log('✅ TranscriptionService: Refinement applied successfully');
+                    }
+                } catch (refinementError) {
+                    console.error('❌ TranscriptionService: Refinement error:', refinementError);
+                    finalResult.refinementStatus = {
+                        success: false,
+                        message: `Refinement failed: ${refinementError.message}`
+                    };
+                }
+            } else {
+                console.log('📝 TranscriptionService: No refinement template selected, skipping refinement');
+            }
+            
+            return finalResult;
 
         } catch (error) {
-            console.error('Local transcription error:', error);
+            console.error('❌ TranscriptionService: Local transcription error:', error);
             throw new Error(`Transcription failed: ${error.message}`);
         }
     }
@@ -250,13 +395,22 @@ class TranscriptionService {
      * Get transcription settings
      * @returns {Object} - Current settings
      */
-    getSettings() {
+    async getSettings() {
+        const refinementSettings = await this.refinementService.getSettings();
+        const availableTemplates = await this.refinementService.getAvailableTemplates();
+        
         return {
             model: this.model,
             language: this.language,
             initialPrompt: this.initialPrompt,
             availableModels: this.getAvailableModels(),
-            isAvailable: this.isAvailable()
+            isAvailable: this.isAvailable(),
+            selectedTemplateId: this.selectedTemplateId,
+            refinement: {
+                isAvailable: await this.refinementService.isAvailable(),
+                availableTemplates,
+                ...refinementSettings
+            }
         };
     }
 
@@ -264,7 +418,7 @@ class TranscriptionService {
      * Update transcription settings
      * @param {Object} settings - New settings
      */
-    updateSettings(settings) {
+    async updateSettings(settings) {
         if (settings.model) {
             this.setModel(settings.model);
         }
@@ -274,6 +428,39 @@ class TranscriptionService {
         if (settings.initialPrompt !== undefined) {
             this.setInitialPrompt(settings.initialPrompt);
         }
+        if (settings.selectedTemplateId !== undefined) {
+            this.selectedTemplateId = settings.selectedTemplateId;
+        }
+        
+        // Update refinement settings if provided
+        if (settings.refinement) {
+            await this.refinementService.updateSettings(settings.refinement);
+        }
+    }
+    
+    /**
+     * Set refinement template
+     * @param {string} templateId - Template ID
+     */
+    setRefinementTemplate(templateId) {
+        this.selectedTemplateId = templateId;
+        console.log(`🔄 TranscriptionService: Refinement template set to ${templateId || 'None'}`);
+    }
+    
+    /**
+     * Get available refinement templates
+     * @returns {Promise<Array>} - List of available templates
+     */
+    async getAvailableTemplates() {
+        return await this.refinementService.getAvailableTemplates();
+    }
+    
+    /**
+     * Check if refinement is available
+     * @returns {Promise<boolean>} - Whether refinement is available
+     */
+    async isRefinementAvailable() {
+        return await this.refinementService.isAvailable();
     }
 
     /**

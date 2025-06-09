@@ -24,6 +24,13 @@ const config = {
         maxRecordingLength: 3600, // 1 hour in seconds
         autoSaveInterval: 5000,   // 5 seconds
     },
+    
+    // Ollama settings
+    ollama: {
+        endpoint: 'http://localhost:11434',
+        defaultModel: 'llama3:latest',
+        timeoutSeconds: 30,
+    },
 
     // Get simplified configuration for the UI
     getSimplified() {
@@ -33,7 +40,11 @@ const config = {
             threads: this.whisper.defaultThreads,
             translate: false,
             useInitialPrompt: this.whisper.useInitialPrompt !== undefined ? this.whisper.useInitialPrompt : true,
-            initialPrompt: this.whisper.initialPrompt || ''
+            initialPrompt: this.whisper.initialPrompt || '',
+            // Ollama settings
+            ollamaEndpoint: this.ollama.endpoint,
+            ollamaModel: this.ollama.defaultModel,
+            ollamaTimeout: this.ollama.timeoutSeconds
         };
     },
 
@@ -54,6 +65,16 @@ const config = {
         }
         if (newConfig.initialPrompt !== undefined) {
             this.whisper.initialPrompt = newConfig.initialPrompt;
+        }
+        // Ollama settings
+        if (newConfig.ollamaEndpoint) {
+            this.ollama.endpoint = newConfig.ollamaEndpoint;
+        }
+        if (newConfig.ollamaModel) {
+            this.ollama.defaultModel = newConfig.ollamaModel;
+        }
+        if (newConfig.ollamaTimeout) {
+            this.ollama.timeoutSeconds = newConfig.ollamaTimeout;
         }
     }
 };

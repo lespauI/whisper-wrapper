@@ -70,4 +70,4 @@ test-whisper.js
 
 # Whisper models (large binary files)
 /models/*.bin
-/data/config.json
+/data/*

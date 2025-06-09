@@ -44,7 +44,19 @@ class WhisperWrapperApp {
             viewMode: 'timestamped' // 'timestamped' or 'plain'
         };
         
-
+        // AI Refinement state
+        this.aiRefinementState = {
+            enabled: false,
+            connected: false,
+            ollamaEndpoint: 'http://localhost:11434',
+            ollamaModel: '',
+            availableModels: [],
+            timeout: 30,
+            templates: [],
+            currentTemplateId: null,
+            templateBeingEdited: null,
+            isTemplateModalOpen: false
+        };
         
         this.init();
     }
@@ -134,6 +146,80 @@ class WhisperWrapperApp {
         // Model selection change handler
         addListener('#model-select', 'change', (e) => {
             this.updateModelDescription(e.target.value);
+        });
+        
+        // AI Refinement - Ollama connection test
+        addListener('#test-ollama-btn', 'click', () => {
+            this.testOllamaConnection();
+        });
+        
+        // AI Refinement - Refresh models
+        addListener('#refresh-models-btn', 'click', () => {
+            this.refreshOllamaModels();
+        });
+        
+        // AI Refinement - Enable/disable checkbox
+        addListener('#ai-refinement-enabled-checkbox', 'change', (e) => {
+            this.aiRefinementState.enabled = e.target.checked;
+            this.updateAIRefinementUIState();
+        });
+        
+        // AI Refinement - Manage templates button
+        addListener('#manage-templates-btn', 'click', () => {
+            this.openTemplateModal();
+        });
+        
+        // Template modal - Close button
+        addListener('#close-template-modal-btn', 'click', () => {
+            this.closeTemplateModal();
+        });
+        
+        // Template modal - Create new template button
+        addListener('#create-template-btn', 'click', () => {
+            this.createNewTemplate();
+        });
+        
+        // Template modal - Save template button
+        addListener('#save-template-btn', 'click', () => {
+            this.saveTemplate();
+        });
+        
+        // Template modal - Cancel edit button
+        addListener('#cancel-template-edit-btn', 'click', () => {
+            this.cancelTemplateEdit();
+        });
+        
+        // Template modal - Delete template button
+        addListener('#delete-template-btn', 'click', () => {
+            this.confirmDeleteTemplate();
+        });
+        
+        // Delete confirmation modal - Close button
+        addListener('#close-delete-modal-btn', 'click', () => {
+            this.closeDeleteConfirmationModal();
+        });
+        
+        // Delete confirmation modal - Cancel button
+        addListener('#cancel-delete-btn', 'click', () => {
+            this.closeDeleteConfirmationModal();
+        });
+        
+        // Delete confirmation modal - Confirm button
+        addListener('#confirm-delete-btn', 'click', () => {
+            this.deleteTemplate();
+        });
+        
+        // Close modals on backdrop click
+        addListener('#template-modal', 'click', (e) => {
+            if (e.target === e.currentTarget) {
+                this.closeTemplateModal();
+            }
+        });
+        
+        addListener('#delete-template-modal', 'click', (e) => {
+            if (e.target === e.currentTarget) {
+                this.closeDeleteConfirmationModal();
+            }
         });
         
         // Initial prompt checkbox handler
@@ -1560,6 +1646,9 @@ ${text}
                 }
             }
             
+            // Save AI Refinement settings
+            await this.saveAIRefinementSettings();
+            
             this.closeSettings();
             this.updateStatus('Settings saved');
             
@@ -1596,6 +1685,16 @@ ${text}
             
             // Update initial prompt textarea state based on checkbox
             this.updateInitialPromptState();
+            
+            // Load AI Refinement settings
+            await this.loadAIRefinementSettings();
+            
+            // Test Ollama connection if AI Refinement is enabled
+            if (this.aiRefinementState.enabled) {
+                await this.testOllamaConnection();
+                await this.refreshOllamaModels();
+                await this.loadTemplates();
+            }
             
         } catch (error) {
             console.error('Error loading settings:', error);
@@ -2656,3 +2755,522 @@ document.addEventListener('keydown', (e) => {
         }
     }
 });
+
+// ============================
+// AI Refinement Methods
+// ============================
+
+// Save AI Refinement settings as part of the main settings
+async function saveAIRefinementSettings() {
+    try {
+        const enabled = document.getElementById('ai-refinement-enabled-checkbox').checked;
+        const ollamaEndpoint = document.getElementById('ollama-endpoint').value;
+        const ollamaModel = document.getElementById('ollama-model-select').value;
+        const timeout = parseInt(document.getElementById('ollama-timeout').value);
+        
+        const settings = {
+            enabled,
+            ollamaEndpoint,
+            ollamaModel,
+            timeout
+        };
+        
+        console.log('Saving AI Refinement settings:', settings);
+        const result = await window.electronAPI.saveAIRefinementSettings(settings);
+        
+        if (result.success) {
+            this.updateStatus('AI Refinement settings saved');
+            return true;
+        } else {
+            this.showError('Failed to save AI Refinement settings');
+            return false;
+        }
+    } catch (error) {
+        console.error('Error saving AI Refinement settings:', error);
+        this.showError(`Error saving AI Refinement settings: ${error.message}`);
+        return false;
+    }
+}
+
+// Load AI Refinement settings
+async function loadAIRefinementSettings() {
+    try {
+        const settings = await window.electronAPI.getAIRefinementSettings();
+        console.log('Loaded AI Refinement settings:', settings);
+        
+        if (settings) {
+            document.getElementById('ai-refinement-enabled-checkbox').checked = settings.enabled || false;
+            document.getElementById('ollama-endpoint').value = settings.ollamaEndpoint || 'http://localhost:11434';
+            document.getElementById('ollama-timeout').value = settings.timeout || 30;
+            
+            this.aiRefinementState.enabled = settings.enabled || false;
+            this.aiRefinementState.ollamaEndpoint = settings.ollamaEndpoint || 'http://localhost:11434';
+            this.aiRefinementState.ollamaModel = settings.ollamaModel || '';
+            this.aiRefinementState.timeout = settings.timeout || 30;
+            
+            // If we have a model selected, set it
+            if (settings.ollamaModel && this.aiRefinementState.availableModels.length > 0) {
+                document.getElementById('ollama-model-select').value = settings.ollamaModel;
+            }
+            
+            this.updateAIRefinementUIState();
+        }
+    } catch (error) {
+        console.error('Error loading AI Refinement settings:', error);
+    }
+}
+
+// Update UI elements based on the enabled state
+function updateAIRefinementUIState() {
+    const enabled = this.aiRefinementState.enabled;
+    const elements = [
+        document.getElementById('ollama-endpoint'),
+        document.getElementById('ollama-model-select'),
+        document.getElementById('ollama-timeout'),
+        document.getElementById('refresh-models-btn'),
+        document.getElementById('test-ollama-btn'),
+        document.getElementById('manage-templates-btn')
+    ];
+    
+    elements.forEach(el => {
+        if (el) {
+            el.disabled = !enabled;
+        }
+    });
+}
+
+// Test connection to Ollama
+async function testOllamaConnection() {
+    try {
+        const ollamaStatus = document.getElementById('ollama-status');
+        const ollamaStatusText = document.getElementById('ollama-status-text');
+        
+        ollamaStatusText.textContent = 'Testing connection...';
+        ollamaStatus.className = 'status-indicator loading';
+        
+        const endpoint = document.getElementById('ollama-endpoint').value;
+        
+        const result = await window.electronAPI.testOllamaConnection({
+            endpoint
+        });
+        
+        if (result.success) {
+            ollamaStatusText.textContent = 'Connected';
+            ollamaStatus.className = 'status-indicator success';
+            this.aiRefinementState.connected = true;
+            
+            // If we got models, update the dropdown
+            if (result.models && result.models.length > 0) {
+                this.updateOllamaModelDropdown(result.models);
+            }
+            
+            return true;
+        } else {
+            ollamaStatusText.textContent = 'Connection failed';
+            ollamaStatus.className = 'status-indicator error';
+            this.aiRefinementState.connected = false;
+            return false;
+        }
+    } catch (error) {
+        console.error('Error testing Ollama connection:', error);
+        const ollamaStatus = document.getElementById('ollama-status');
+        const ollamaStatusText = document.getElementById('ollama-status-text');
+        
+        ollamaStatusText.textContent = 'Connection error';
+        ollamaStatus.className = 'status-indicator error';
+        this.aiRefinementState.connected = false;
+        return false;
+    }
+}
+
+// Refresh available Ollama models
+async function refreshOllamaModels() {
+    try {
+        const endpoint = document.getElementById('ollama-endpoint').value;
+        const result = await window.electronAPI.getOllamaModels({
+            endpoint
+        });
+        
+        if (result.success && result.models) {
+            this.updateOllamaModelDropdown(result.models);
+            return true;
+        } else {
+            this.showError('Failed to get Ollama models');
+            return false;
+        }
+    } catch (error) {
+        console.error('Error refreshing Ollama models:', error);
+        this.showError(`Error refreshing Ollama models: ${error.message}`);
+        return false;
+    }
+}
+
+// Update the Ollama model dropdown with available models
+function updateOllamaModelDropdown(models) {
+    const modelSelect = document.getElementById('ollama-model-select');
+    const currentValue = modelSelect.value;
+    
+    // Clear existing options
+    modelSelect.innerHTML = '';
+    
+    if (models.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No models available';
+        modelSelect.appendChild(option);
+    } else {
+        // Add models
+        models.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model.name || model;
+            option.textContent = model.name || model;
+            modelSelect.appendChild(option);
+        });
+        
+        // Try to restore selected value if it exists
+        if (currentValue && models.some(m => (m.name || m) === currentValue)) {
+            modelSelect.value = currentValue;
+        } else if (this.aiRefinementState.ollamaModel && models.some(m => (m.name || m) === this.aiRefinementState.ollamaModel)) {
+            modelSelect.value = this.aiRefinementState.ollamaModel;
+        }
+    }
+    
+    this.aiRefinementState.availableModels = models;
+}
+
+// Template Management Methods
+async function loadTemplates() {
+    try {
+        const templates = await window.electronAPI.getTemplates();
+        
+        if (templates && Array.isArray(templates)) {
+            this.aiRefinementState.templates = templates;
+            
+            // If we have a default template, set it as current
+            const defaultTemplate = templates.find(t => t.isDefault);
+            if (defaultTemplate) {
+                this.aiRefinementState.currentTemplateId = defaultTemplate.id;
+            } else if (templates.length > 0) {
+                this.aiRefinementState.currentTemplateId = templates[0].id;
+            }
+            
+            return templates;
+        }
+        
+        return [];
+    } catch (error) {
+        console.error('Error loading templates:', error);
+        return [];
+    }
+}
+
+// Open template management modal
+async function openTemplateModal() {
+    try {
+        // Load templates if needed
+        if (this.aiRefinementState.templates.length === 0) {
+            await this.loadTemplates();
+        }
+        
+        // Show modal
+        const templateModal = document.getElementById('template-modal');
+        templateModal.classList.remove('hidden');
+        
+        // Render template list
+        this.renderTemplateList();
+        
+        this.aiRefinementState.isTemplateModalOpen = true;
+    } catch (error) {
+        console.error('Error opening template modal:', error);
+        this.showError('Failed to open template manager');
+    }
+}
+
+// Close template modal
+function closeTemplateModal() {
+    const templateModal = document.getElementById('template-modal');
+    templateModal.classList.add('hidden');
+    
+    // Hide editor section
+    const editorSection = document.getElementById('template-editor-section');
+    editorSection.classList.add('hidden');
+    
+    this.aiRefinementState.isTemplateModalOpen = false;
+    this.aiRefinementState.templateBeingEdited = null;
+}
+
+// Render the list of templates
+function renderTemplateList() {
+    const templateList = document.getElementById('template-list');
+    templateList.innerHTML = '';
+    
+    const templates = this.aiRefinementState.templates;
+    
+    if (templates.length === 0) {
+        templateList.innerHTML = '<div class="template-list-empty">No templates available. Click "Create New" to add one.</div>';
+        return;
+    }
+    
+    templates.forEach(template => {
+        const templateItem = document.createElement('div');
+        templateItem.className = 'template-item';
+        templateItem.dataset.id = template.id;
+        
+        if (template.id === this.aiRefinementState.currentTemplateId) {
+            templateItem.classList.add('active');
+        }
+        
+        const header = document.createElement('div');
+        header.className = 'template-item-header';
+        
+        const name = document.createElement('div');
+        name.className = 'template-item-name';
+        name.textContent = template.name;
+        
+        header.appendChild(name);
+        
+        if (template.isDefault) {
+            const defaultBadge = document.createElement('div');
+            defaultBadge.className = 'template-item-default';
+            defaultBadge.textContent = 'Default';
+            header.appendChild(defaultBadge);
+        }
+        
+        const description = document.createElement('div');
+        description.className = 'template-item-description';
+        description.textContent = template.description || 'No description';
+        
+        templateItem.appendChild(header);
+        templateItem.appendChild(description);
+        
+        // Add click event
+        templateItem.addEventListener('click', () => {
+            this.editTemplate(template.id);
+        });
+        
+        templateList.appendChild(templateItem);
+    });
+}
+
+// Create a new template
+function createNewTemplate() {
+    // Set up empty template
+    const newTemplate = {
+        id: Date.now().toString(),
+        name: '',
+        description: '',
+        prompt: 'Please improve this transcription: {{text}}',
+        isDefault: this.aiRefinementState.templates.length === 0
+    };
+    
+    this.aiRefinementState.templateBeingEdited = newTemplate;
+    
+    // Show editor with empty values
+    this.showTemplateEditor(newTemplate);
+}
+
+// Edit an existing template
+function editTemplate(templateId) {
+    const template = this.aiRefinementState.templates.find(t => t.id === templateId);
+    
+    if (template) {
+        this.aiRefinementState.templateBeingEdited = { ...template };
+        this.showTemplateEditor(template);
+        
+        // Update active class
+        const templateItems = document.querySelectorAll('.template-item');
+        templateItems.forEach(item => {
+            if (item.dataset.id === templateId) {
+                item.classList.add('active');
+            } else {
+                item.classList.remove('active');
+            }
+        });
+    }
+}
+
+// Display template editor with template data
+function showTemplateEditor(template) {
+    const editorSection = document.getElementById('template-editor-section');
+    const editorTitle = document.getElementById('template-editor-title');
+    
+    // Set title based on whether we're editing or creating
+    editorTitle.textContent = template.name ? `Edit Template: ${template.name}` : 'Create New Template';
+    
+    // Fill form fields
+    document.getElementById('template-name').value = template.name || '';
+    document.getElementById('template-description').value = template.description || '';
+    document.getElementById('template-prompt').value = template.prompt || '';
+    document.getElementById('template-default-checkbox').checked = template.isDefault || false;
+    
+    // Show delete button only for existing templates
+    const deleteButton = document.getElementById('delete-template-btn');
+    if (template.name) {
+        deleteButton.style.display = 'block';
+    } else {
+        deleteButton.style.display = 'none';
+    }
+    
+    // Show editor section
+    editorSection.classList.remove('hidden');
+}
+
+// Save template (new or edited)
+async function saveTemplate() {
+    try {
+        const name = document.getElementById('template-name').value.trim();
+        const description = document.getElementById('template-description').value.trim();
+        const prompt = document.getElementById('template-prompt').value.trim();
+        const isDefault = document.getElementById('template-default-checkbox').checked;
+        
+        if (!name) {
+            this.showError('Template name is required');
+            return;
+        }
+        
+        if (!prompt) {
+            this.showError('Prompt template is required');
+            return;
+        }
+        
+        if (!prompt.includes('{{text}}')) {
+            this.showError('Prompt template must include {{text}} placeholder');
+            return;
+        }
+        
+        // Get current template being edited
+        const template = this.aiRefinementState.templateBeingEdited;
+        
+        if (!template) {
+            this.showError('No template is being edited');
+            return;
+        }
+        
+        // Update template
+        template.name = name;
+        template.description = description;
+        template.prompt = prompt;
+        template.isDefault = isDefault;
+        
+        // If this is set as default, unset other defaults
+        if (isDefault) {
+            this.aiRefinementState.templates.forEach(t => {
+                if (t.id !== template.id) {
+                    t.isDefault = false;
+                }
+            });
+        }
+        
+        // Check if this is a new template
+        const isNew = !this.aiRefinementState.templates.some(t => t.id === template.id);
+        
+        // Add to templates array if new
+        if (isNew) {
+            this.aiRefinementState.templates.push(template);
+        } else {
+            // Update existing
+            const index = this.aiRefinementState.templates.findIndex(t => t.id === template.id);
+            if (index !== -1) {
+                this.aiRefinementState.templates[index] = template;
+            }
+        }
+        
+        // Save to backend
+        await window.electronAPI.saveTemplates(this.aiRefinementState.templates);
+        
+        // If this is the only template or is default, set as current
+        if (isDefault || this.aiRefinementState.templates.length === 1) {
+            this.aiRefinementState.currentTemplateId = template.id;
+        }
+        
+        // Update the list
+        this.renderTemplateList();
+        
+        // Hide editor
+        const editorSection = document.getElementById('template-editor-section');
+        editorSection.classList.add('hidden');
+        
+        this.aiRefinementState.templateBeingEdited = null;
+        
+    } catch (error) {
+        console.error('Error saving template:', error);
+        this.showError(`Error saving template: ${error.message}`);
+    }
+}
+
+// Cancel template editing
+function cancelTemplateEdit() {
+    // Hide editor
+    const editorSection = document.getElementById('template-editor-section');
+    editorSection.classList.add('hidden');
+    
+    this.aiRefinementState.templateBeingEdited = null;
+}
+
+// Confirm template deletion
+function confirmDeleteTemplate() {
+    const template = this.aiRefinementState.templateBeingEdited;
+    
+    if (!template) {
+        return;
+    }
+    
+    // Show confirmation modal
+    const deleteModal = document.getElementById('delete-template-modal');
+    const templateNameSpan = document.getElementById('delete-template-name');
+    
+    templateNameSpan.textContent = template.name;
+    deleteModal.classList.remove('hidden');
+}
+
+// Close delete confirmation modal
+function closeDeleteConfirmationModal() {
+    const deleteModal = document.getElementById('delete-template-modal');
+    deleteModal.classList.add('hidden');
+}
+
+// Delete the template
+async function deleteTemplate() {
+    try {
+        const template = this.aiRefinementState.templateBeingEdited;
+        
+        if (!template) {
+            return;
+        }
+        
+        // Remove from array
+        this.aiRefinementState.templates = this.aiRefinementState.templates.filter(t => t.id !== template.id);
+        
+        // Save to backend
+        await window.electronAPI.saveTemplates(this.aiRefinementState.templates);
+        
+        // If the deleted template was current, select another one
+        if (template.id === this.aiRefinementState.currentTemplateId) {
+            const newDefault = this.aiRefinementState.templates.find(t => t.isDefault);
+            if (newDefault) {
+                this.aiRefinementState.currentTemplateId = newDefault.id;
+            } else if (this.aiRefinementState.templates.length > 0) {
+                this.aiRefinementState.currentTemplateId = this.aiRefinementState.templates[0].id;
+            } else {
+                this.aiRefinementState.currentTemplateId = null;
+            }
+        }
+        
+        // Update the list
+        this.renderTemplateList();
+        
+        // Hide both modals
+        this.closeDeleteConfirmationModal();
+        
+        // Hide editor
+        const editorSection = document.getElementById('template-editor-section');
+        editorSection.classList.add('hidden');
+        
+        this.aiRefinementState.templateBeingEdited = null;
+        
+    } catch (error) {
+        console.error('Error deleting template:', error);
+        this.showError(`Error deleting template: ${error.message}`);
+        this.closeDeleteConfirmationModal();
+    }
+}

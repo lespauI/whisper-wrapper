@@ -8,7 +8,7 @@ const os = require('os');
 const fs = require('fs');
 
 // Define config file path
-const CONFIG_FILE_PATH = path.join(process.cwd(), 'data', 'config.json');
+const CONFIG_FILE_PATH = path.join(process.cwd(), 'data', 'config_debug.json');
 
 // Default configuration
 const defaultConfig = {

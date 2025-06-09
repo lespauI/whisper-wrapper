@@ -5,21 +5,23 @@
 - [x] Create Template Manager Service
 - [x] Create Ollama Service
 - [x] Add IPC Handlers
+- [x] Create Unit Tests for Phase 1
 
 ## Phase 2: User Interface - Settings and Templates
 - [ ] Update Settings Panel
 - [ ] Create Template Management Modal
 - [ ] Add CSS Styles
 - [ ] Implement Settings Logic
+- [ ] Create Unit Tests for Phase 2
 
 ## Phase 3: Transcription Integration
 - [ ] Create Refinement Controller
 - [ ] Update Transcription Tab
 - [ ] Implement Refinement Logic
 - [ ] Add User Feedback
+- [ ] Create Unit Tests for Phase 3
 
 ## Phase 4: Testing and Refinement
-- [ ] Create Unit Tests
 - [ ] Perform Integration Testing
 - [ ] Edge Case Testing
 - [ ] Performance Optimization

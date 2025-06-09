@@ -8,6 +8,9 @@ const path = require('path');
 // Mock fs module
 jest.mock('fs');
 
+// Use fake timers globally for this test file
+jest.useFakeTimers();
+
 describe('Auto-Save Functions (Isolated)', () => {
     let mockElectronAPI;
     let autoSaveFunctions;
@@ -15,7 +18,7 @@ describe('Auto-Save Functions (Isolated)', () => {
     beforeEach(() => {
         // Reset all mocks
         jest.clearAllMocks();
-
+        
         // Mock electron API
         mockElectronAPI = {
             getAppPaths: jest.fn(() => Promise.resolve({
@@ -31,7 +34,7 @@ describe('Auto-Save Functions (Isolated)', () => {
             deleteRecordingChunk: jest.fn(() => Promise.resolve({ success: true })),
             findRecordingChunks: jest.fn(() => Promise.resolve([]))
         };
-
+        
         // Create isolated auto-save functions
         autoSaveFunctions = {
             recordingSettings: {
@@ -63,144 +66,159 @@ describe('Auto-Save Functions (Isolated)', () => {
                     this.recordingSettings.enableAutoSave = false;
                 }
             },
+        };
+    });
+        
+    afterEach(() => {
+        // Clean up any timers
+        if (autoSaveFunctions && autoSaveFunctions.recordingAutoSave) {
+            if (autoSaveFunctions.recordingAutoSave.autoSaveTimer) {
+                clearInterval(autoSaveFunctions.recordingAutoSave.autoSaveTimer);
+                autoSaveFunctions.recordingAutoSave.autoSaveTimer = null;
+            }
+        }
+        jest.clearAllTimers();
+    });
 
-            startAutoSaveTimer() {
-                if (!this.recordingSettings.enableAutoSave) {
+    // Complete the autoSaveFunctions object with all required methods
+    beforeEach(() => {
+        // Add methods to autoSaveFunctions object
+        autoSaveFunctions.startAutoSaveTimer = function() {
+            if (!this.recordingSettings.enableAutoSave) {
+                return;
+            }
+
+            this.recordingAutoSave.autoSaveTimer = setInterval(async () => {
+                if (this.isRecording && !this.isPaused) {
+                    await this.saveCurrentRecordingChunk();
+                }
+            }, this.recordingSettings.autoSaveInterval);
+        };
+
+        autoSaveFunctions.stopAutoSaveTimer = function() {
+            if (this.recordingAutoSave.autoSaveTimer) {
+                clearInterval(this.recordingAutoSave.autoSaveTimer);
+                this.recordingAutoSave.autoSaveTimer = null;
+            }
+        };
+
+        autoSaveFunctions.saveCurrentRecordingChunk = async function() {
+            if (!this.recordingSettings.enableAutoSave || !this.audioChunks.length) {
+                return;
+            }
+
+            try {
+                const chunkBlob = { size: this.audioChunks.reduce((total, chunk) => total + (chunk.size || 100), 0) };
+                
+                if (chunkBlob.size === 0) {
                     return;
                 }
 
-                this.recordingAutoSave.autoSaveTimer = setInterval(async () => {
-                    if (this.isRecording && !this.isPaused) {
-                        await this.saveCurrentRecordingChunk();
-                    }
-                }, this.recordingSettings.autoSaveInterval);
-            },
-
-            stopAutoSaveTimer() {
-                if (this.recordingAutoSave.autoSaveTimer) {
-                    clearInterval(this.recordingAutoSave.autoSaveTimer);
-                    this.recordingAutoSave.autoSaveTimer = null;
+                const arrayBuffer = new ArrayBuffer(chunkBlob.size);
+                const chunkFilename = `${this.recordingAutoSave.sessionId}_chunk_${this.recordingAutoSave.chunkIndex.toString().padStart(3, '0')}.webm`;
+                
+                const result = await mockElectronAPI.saveRecordingChunk(arrayBuffer, chunkFilename);
+                
+                if (result.success) {
+                    this.recordingAutoSave.savedChunks.push({
+                        filename: chunkFilename,
+                        filePath: result.filePath,
+                        size: result.size,
+                        chunkIndex: this.recordingAutoSave.chunkIndex,
+                        timestamp: Date.now()
+                    });
+                    
+                    this.recordingAutoSave.chunkIndex++;
+                    this.audioChunks = [];
                 }
-            },
+            } catch (error) {
+                // Handle error gracefully
+            }
+        };
 
-            async saveCurrentRecordingChunk() {
-                if (!this.recordingSettings.enableAutoSave || !this.audioChunks.length) {
-                    return;
-                }
+        autoSaveFunctions.combineRecordingChunks = async function(finalBlob) {
+            if (!this.recordingSettings.enableAutoSave || this.recordingAutoSave.savedChunks.length === 0) {
+                return finalBlob;
+            }
 
-                try {
-                    const chunkBlob = { size: this.audioChunks.reduce((total, chunk) => total + (chunk.size || 100), 0) };
-                    
-                    if (chunkBlob.size === 0) {
-                        return;
-                    }
-
-                    const arrayBuffer = new ArrayBuffer(chunkBlob.size);
-                    const chunkFilename = `${this.recordingAutoSave.sessionId}_chunk_${this.recordingAutoSave.chunkIndex.toString().padStart(3, '0')}.webm`;
-                    
-                    const result = await mockElectronAPI.saveRecordingChunk(arrayBuffer, chunkFilename);
-                    
-                    if (result.success) {
-                        this.recordingAutoSave.savedChunks.push({
-                            filename: chunkFilename,
-                            filePath: result.filePath,
-                            size: result.size,
-                            chunkIndex: this.recordingAutoSave.chunkIndex,
-                            timestamp: Date.now()
-                        });
-                        
-                        this.recordingAutoSave.chunkIndex++;
-                        this.audioChunks = [];
-                    }
-                } catch (error) {
-                    // Handle error gracefully
-                }
-            },
-
-            async combineRecordingChunks(finalBlob) {
-                if (!this.recordingSettings.enableAutoSave || this.recordingAutoSave.savedChunks.length === 0) {
-                    return finalBlob;
-                }
-
-                try {
-                    const chunkBlobs = [];
-                    
-                    for (const chunkInfo of this.recordingAutoSave.savedChunks) {
-                        try {
-                            const chunkData = await mockElectronAPI.loadRecordingChunk(chunkInfo.filePath);
-                            if (chunkData) {
-                                chunkBlobs.push({ data: chunkData, size: chunkData.length });
-                            }
-                        } catch (error) {
-                            // Continue with other chunks
-                        }
-                    }
-                    
-                    chunkBlobs.push(finalBlob);
-                    
-                    const combinedSize = chunkBlobs.reduce((total, blob) => total + blob.size, 0);
-                    const combinedBlob = { size: combinedSize, type: 'audio/webm' };
-                    
-                    await this.cleanupAutoSaveFiles();
-                    
-                    return combinedBlob;
-                    
-                } catch (error) {
-                    return finalBlob;
-                }
-            },
-
-            async cleanupAutoSaveFiles() {
-                if (this.recordingAutoSave.savedChunks.length === 0) {
-                    return;
-                }
-
-                const failedChunks = [];
+            try {
+                const chunkBlobs = [];
                 
                 for (const chunkInfo of this.recordingAutoSave.savedChunks) {
                     try {
-                        await mockElectronAPI.deleteRecordingChunk(chunkInfo.filePath);
+                        const chunkData = await mockElectronAPI.loadRecordingChunk(chunkInfo.filePath);
+                        if (chunkData) {
+                            chunkBlobs.push({ data: chunkData, size: chunkData.length });
+                        }
                     } catch (error) {
-                        failedChunks.push(chunkInfo);
+                        // Continue with other chunks
                     }
                 }
                 
-                if (failedChunks.length > 0) {
-                    this.recordingAutoSave.savedChunks = failedChunks;
-                } else {
-                    // Only reset state if all chunks were successfully deleted
-                    this.recordingAutoSave.savedChunks = [];
-                    this.recordingAutoSave.chunkIndex = 0;
-                    this.recordingAutoSave.sessionId = null;
-                }
-            },
+                chunkBlobs.push(finalBlob);
+                
+                const combinedSize = chunkBlobs.reduce((total, blob) => total + blob.size, 0);
+                const combinedBlob = { size: combinedSize, type: 'audio/webm' };
+                
+                await this.cleanupAutoSaveFiles();
+                
+                return combinedBlob;
+                
+            } catch (error) {
+                return finalBlob;
+            }
+        };
 
-            async recoverRecordingFromChunks(sessionId) {
+        autoSaveFunctions.cleanupAutoSaveFiles = async function() {
+            if (this.recordingAutoSave.savedChunks.length === 0) {
+                return;
+            }
+
+            const failedChunks = [];
+            
+            for (const chunkInfo of this.recordingAutoSave.savedChunks) {
                 try {
-                    const recoveredChunks = await mockElectronAPI.findRecordingChunks(sessionId);
-                    
-                    if (recoveredChunks.length > 0) {
-                        const chunkBlobs = [];
-                        for (const chunkPath of recoveredChunks) {
-                            const chunkData = await mockElectronAPI.loadRecordingChunk(chunkPath);
-                            if (chunkData) {
-                                chunkBlobs.push({ data: chunkData, size: chunkData.length });
-                            }
-                        }
-                        
-                        if (chunkBlobs.length > 0) {
-                            const recoveredBlob = { 
-                                size: chunkBlobs.reduce((total, blob) => total + blob.size, 0),
-                                type: 'audio/webm'
-                            };
-                            return true;
+                    await mockElectronAPI.deleteRecordingChunk(chunkInfo.filePath);
+                } catch (error) {
+                    failedChunks.push(chunkInfo);
+                }
+            }
+            
+            if (failedChunks.length > 0) {
+                this.recordingAutoSave.savedChunks = failedChunks;
+            } else {
+                // Only reset state if all chunks were successfully deleted
+                this.recordingAutoSave.savedChunks = [];
+                this.recordingAutoSave.chunkIndex = 0;
+                this.recordingAutoSave.sessionId = null;
+            }
+        };
+
+        autoSaveFunctions.recoverRecordingFromChunks = async function(sessionId) {
+            try {
+                const recoveredChunks = await mockElectronAPI.findRecordingChunks(sessionId);
+                
+                if (recoveredChunks.length > 0) {
+                    const chunkBlobs = [];
+                    for (const chunkPath of recoveredChunks) {
+                        const chunkData = await mockElectronAPI.loadRecordingChunk(chunkPath);
+                        if (chunkData) {
+                            chunkBlobs.push({ data: chunkData, size: chunkData.length });
                         }
                     }
                     
-                    return false;
-                } catch (error) {
-                    return false;
+                    if (chunkBlobs.length > 0) {
+                        const recoveredBlob = { 
+                            size: chunkBlobs.reduce((total, blob) => total + blob.size, 0),
+                            type: 'audio/webm'
+                        };
+                        return true;
+                    }
                 }
+                
+                return false;
+            } catch (error) {
+                return false;
             }
         };
     });

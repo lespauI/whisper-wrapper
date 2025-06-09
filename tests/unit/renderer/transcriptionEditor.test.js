@@ -5,6 +5,9 @@
 
 const { JSDOM } = require('jsdom');
 
+// Use fake timers for all setTimeout/clearTimeout calls
+jest.useFakeTimers();
+
 describe('Enhanced Transcription Editor - Phase 4', () => {
     let dom;
     let window;
@@ -126,9 +129,13 @@ describe('Enhanced Transcription Editor - Phase 4', () => {
                 clearTimeout(this.transcriptionState.autoSaveTimer);
             }
             
+            // Use Jest's fake timer instead of real setTimeout
             this.transcriptionState.autoSaveTimer = setTimeout(() => {
                 this.saveTranscriptionDraft();
             }, 2000);
+            
+            // Immediately advance timers in tests to prevent hanging
+            jest.advanceTimersByTime(2000);
         };
         
         app.saveTranscriptionDraft = async function() {
@@ -479,21 +486,21 @@ ${text}
             expect(app.transcriptionState.historyIndex).toBe(0);
         });
 
-        test('should schedule auto-save after edit', (done) => {
+        test('should schedule auto-save after edit', () => {
             const newText = 'Auto-save test';
             
             app.handleTranscriptionEdit(newText);
             
             expect(app.transcriptionState.autoSaveTimer).toBeDefined();
             
-            // Wait for auto-save to trigger
-            setTimeout(() => {
-                expect(global.localStorage.setItem).toHaveBeenCalledWith(
-                    'whisper-transcription-draft',
-                    expect.stringContaining(newText)
-                );
-                done();
-            }, 2100);
+            // Use Jest's advanceTimersByTime instead of setTimeout
+            jest.advanceTimersByTime(2100);
+            
+            // Now verify auto-save was triggered
+            expect(global.localStorage.setItem).toHaveBeenCalledWith(
+                'whisper-transcription-draft',
+                expect.stringContaining(newText)
+            );
         });
 
         test('should save draft to localStorage', async () => {
@@ -866,5 +873,15 @@ ${text}
             
             expect(app.downloadTranscription).toHaveBeenCalled();
         });
+    });
+
+    // Clean up any timers after each test
+    afterEach(() => {
+        // Clear any timeouts and reset timers
+        if (app && app.transcriptionState && app.transcriptionState.autoSaveTimer) {
+            clearTimeout(app.transcriptionState.autoSaveTimer);
+            app.transcriptionState.autoSaveTimer = null;
+        }
+        jest.clearAllTimers();
     });
 });

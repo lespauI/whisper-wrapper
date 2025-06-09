@@ -150,7 +150,8 @@ describe('TranscriptionService', () => {
                 language: 'auto',
                 translate: false,
                 threads: 4,
-                initialPrompt: ''
+                initialPrompt: '',
+                useInitialPrompt: true
             });
         });
 
@@ -190,7 +191,8 @@ describe('TranscriptionService', () => {
                 language: 'auto',
                 translate: false,
                 threads: 4,
-                initialPrompt: customPrompt
+                initialPrompt: customPrompt,
+                useInitialPrompt: true
             });
         });
     });

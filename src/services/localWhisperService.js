@@ -25,11 +25,21 @@ class LocalWhisperService {
         console.log(`   - Temp directory: ${this.tempDir}`);
         
         // Default settings
-        this.model = 'base';
         this.language = 'auto';
         this.threads = 4;
         this.translate = false;
         this.initialPrompt = ''; // Initialize initial prompt as empty string
+        
+        // Get available models and set default model to one of the available ones
+        const availableModels = this.getAvailableModels();
+        // Set default model to 'tiny' if available, otherwise use the first available model, 
+        // or fall back to 'base' if no models are found
+        if (availableModels.length > 0) {
+            const tinyModel = availableModels.find(m => m.name === 'tiny');
+            this.model = tinyModel ? 'tiny' : availableModels[0].name;
+        } else {
+            this.model = 'base'; // fallback, but will fail if no models are available
+        }
         
         console.log('⚙️ LocalWhisperService: Default settings:');
         console.log(`   - Model: ${this.model}`);
@@ -45,7 +55,6 @@ class LocalWhisperService {
         }
         
         // Log available models
-        const availableModels = this.getAvailableModels();
         console.log(`🤖 LocalWhisperService: Found ${availableModels.length} models:`, availableModels.map(m => m.name));
         
         console.log('✅ LocalWhisperService: Initialization complete');
@@ -188,6 +197,144 @@ class LocalWhisperService {
     }
 
     /**
+     * Validate audio file and convert to proper format if needed
+     * @param {string} inputPath - Path to audio file
+     * @returns {Promise<{valid: boolean, message: string}>}
+     */
+    async validateAudioFile(inputPath) {
+        return new Promise((resolve, reject) => {
+            console.log('🔍 LocalWhisperService: Validating audio file format...');
+            
+            // Use ffprobe to get file information
+            const ffprobeProcess = spawn('ffprobe', [
+                '-v', 'error',
+                '-show_entries', 'stream=codec_type,codec_name,sample_rate,channels',
+                '-of', 'json',
+                inputPath
+            ]);
+            
+            let stdout = '';
+            let stderr = '';
+            
+            ffprobeProcess.stdout.on('data', (data) => {
+                stdout += data.toString();
+            });
+            
+            ffprobeProcess.stderr.on('data', (data) => {
+                stderr += data.toString();
+            });
+            
+            ffprobeProcess.on('close', (code) => {
+                if (code !== 0) {
+                    console.log('❌ LocalWhisperService: Failed to validate audio file:', stderr);
+                    resolve({ valid: false, message: `Failed to validate audio file: ${stderr}` });
+                    return;
+                }
+                
+                try {
+                    const info = JSON.parse(stdout);
+                    console.log('📊 Audio file info:', info);
+                    
+                    // Check if file has an audio stream
+                    const audioStream = info.streams?.find(stream => stream.codec_type === 'audio');
+                    if (!audioStream) {
+                        console.log('❌ LocalWhisperService: No audio stream found in file');
+                        resolve({ valid: false, message: 'No audio stream found in file' });
+                        return;
+                    }
+                    
+                    // File has valid audio
+                    resolve({ valid: true, message: 'Audio file is valid' });
+                } catch (error) {
+                    console.log('❌ LocalWhisperService: Error parsing ffprobe output:', error.message);
+                    resolve({ valid: false, message: `Error validating audio: ${error.message}` });
+                }
+            });
+            
+            ffprobeProcess.on('error', (error) => {
+                console.log('❌ LocalWhisperService: Failed to run ffprobe:', error.message);
+                // This likely means ffprobe is not installed
+                if (error.message.includes('ENOENT')) {
+                    resolve({ valid: true, message: 'Could not validate audio (ffprobe not available), proceeding anyway' });
+                } else {
+                    resolve({ valid: false, message: `Failed to validate audio: ${error.message}` });
+                }
+            });
+        });
+    }
+
+    /**
+     * Convert any audio file to proper WAV format for whisper.cpp
+     * @param {string} inputPath - Path to audio file
+     * @param {string} outputPath - Path for converted audio
+     * @returns {Promise<void>}
+     */
+    async convertAudioToWav(inputPath, outputPath) {
+        console.log('🔄 LocalWhisperService: Converting audio to proper WAV format...');
+        console.log(`🎵 Input: ${inputPath}`);
+        console.log(`🎵 Output: ${outputPath}`);
+
+        return new Promise((resolve, reject) => {
+            // Use ffmpeg to convert to WAV with proper format
+            const ffmpegArgs = [
+                '-i', inputPath,           // Input file
+                '-acodec', 'pcm_s16le',    // Audio codec: 16-bit PCM (required by whisper.cpp)
+                '-ar', '16000',            // Sample rate: 16kHz (optimal for speech recognition)
+                '-ac', '1',                // Mono audio
+                '-y',                      // Overwrite output file
+                outputPath                 // Output file
+            ];
+
+            console.log('🚀 LocalWhisperService: Executing ffmpeg conversion command:');
+            console.log(`   Command: ffmpeg ${ffmpegArgs.join(' ')}`);
+
+            const ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
+
+            let stdout = '';
+            let stderr = '';
+
+            ffmpegProcess.stdout.on('data', (data) => {
+                stdout += data.toString();
+            });
+
+            ffmpegProcess.stderr.on('data', (data) => {
+                const chunk = data.toString();
+                stderr += chunk;
+                // FFmpeg outputs progress to stderr, so we log it
+                if (chunk.includes('time=') || chunk.includes('size=')) {
+                    console.log('📊 FFmpeg progress:', chunk.trim());
+                }
+            });
+
+            ffmpegProcess.on('close', (code) => {
+                if (code === 0) {
+                    console.log('✅ LocalWhisperService: Audio conversion completed successfully');
+                    
+                    // Verify output file exists and has content
+                    if (fs.existsSync(outputPath)) {
+                        const stats = fs.statSync(outputPath);
+                        console.log(`📊 Converted audio size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+                        resolve();
+                    } else {
+                        reject(new Error('Audio conversion completed but output file not found'));
+                    }
+                } else {
+                    console.log(`❌ LocalWhisperService: FFmpeg failed with code ${code}`);
+                    console.log('📄 FFmpeg stderr:', stderr);
+                    reject(new Error(`FFmpeg conversion failed with code ${code}: ${stderr}`));
+                }
+            });
+
+            ffmpegProcess.on('error', (error) => {
+                console.log('❌ LocalWhisperService: Failed to start ffmpeg:', error.message);
+                reject(new Error(`Failed to start ffmpeg: ${error.message}`));
+            });
+        });
+    }
+
+    /**
      * Extract audio from video file using ffmpeg
      * @param {string} inputPath - Path to video file
      * @param {string} outputPath - Path for extracted audio
@@ -310,21 +457,49 @@ class LocalWhisperService {
         if (this.isVideoFile(filePath)) {
             console.log('🎬 LocalWhisperService: Video file detected, extracting audio...');
             
-            // Create temporary audio file path
-            const audioFileName = `extracted_audio_${Date.now()}.wav`;
-            audioFilePath = path.join(this.tempDir, audioFileName);
+            // Create temporary audio file path for both extraction and conversion
+            const extractedFileName = `extracted_audio_${Date.now()}.wav`;
+            const extractedFilePath = path.join(this.tempDir, extractedFileName);
+            
+            // We'll need to clean up the temp files
             needsCleanup = true;
 
             try {
                 // Extract audio from video
-                await this.extractAudioFromVideo(filePath, audioFilePath);
-                console.log(`🎵 LocalWhisperService: Audio extracted to: ${audioFilePath}`);
-            } catch (extractionError) {
-                console.log('❌ LocalWhisperService: Audio extraction failed:', extractionError.message);
-                throw new Error(`Audio extraction failed: ${extractionError.message}`);
+                await this.extractAudioFromVideo(filePath, extractedFilePath);
+                console.log(`🎵 LocalWhisperService: Audio extracted to: ${extractedFilePath}`);
+                
+                // Now convert the extracted audio to ensure proper format
+                const convertedFileName = `converted_audio_${Date.now()}.wav`;
+                audioFilePath = path.join(this.tempDir, convertedFileName);
+                
+                await this.convertAudioToWav(extractedFilePath, audioFilePath);
+                console.log(`🎵 LocalWhisperService: Audio converted to: ${audioFilePath}`);
+                
+                // Delete the intermediate extracted file
+                if (fs.existsSync(extractedFilePath)) {
+                    fs.unlinkSync(extractedFilePath);
+                    console.log('🗑️ LocalWhisperService: Cleaned up intermediate extracted audio file');
+                }
+            } catch (processingError) {
+                console.log('❌ LocalWhisperService: Audio processing failed:', processingError.message);
+                throw new Error(`Audio processing failed: ${processingError.message}`);
             }
         } else if (this.isSupportedAudioFile(filePath)) {
             console.log('🎵 LocalWhisperService: Audio file detected, proceeding with transcription');
+            
+            // Always convert audio files to ensure proper WAV format
+            const convertedFileName = `converted_audio_${Date.now()}.wav`;
+            audioFilePath = path.join(this.tempDir, convertedFileName);
+            needsCleanup = true;
+            
+            try {
+                await this.convertAudioToWav(filePath, audioFilePath);
+                console.log(`🎵 LocalWhisperService: Audio converted to: ${audioFilePath}`);
+            } catch (conversionError) {
+                console.log('❌ LocalWhisperService: Audio conversion failed:', conversionError.message);
+                throw new Error(`Audio conversion failed: ${conversionError.message}`);
+            }
         } else {
             console.log('❌ LocalWhisperService: Unsupported file format');
             const ext = path.extname(filePath);
@@ -431,7 +606,10 @@ class LocalWhisperService {
                 const duration = Date.now() - startTime;
                 console.log(`⏱️ LocalWhisperService: Process completed in ${duration}ms with code ${code}`);
                 
-                if (code === 0) {
+                // Check for error messages in stderr even if the process returned success code
+                const hasErrorMessages = stderr.includes('error:') || stderr.includes('failed to');
+                
+                if (code === 0 && !hasErrorMessages) {
                     console.log('✅ LocalWhisperService: Transcription successful, processing output...');
                     try {
                         // Read the JSON output file
@@ -533,6 +711,21 @@ class LocalWhisperService {
                         
                         reject(new Error(`Failed to parse whisper.cpp output: ${error.message}`));
                     }
+                } else if (code === 0 && hasErrorMessages) {
+                    console.log('❌ LocalWhisperService: whisper.cpp process returned success code but stderr contains errors');
+                    console.log('📄 STDERR:', stderr);
+                    console.log('📄 STDOUT:', stdout);
+                    
+                    // Extract the specific error message if possible
+                    const errorLine = stderr.split('\n').find(line => line.includes('error:')) || stderr;
+                    
+                    // Clean up extracted audio file if needed
+                    if (needsCleanup && fs.existsSync(audioFilePath)) {
+                        console.log('🗑️ LocalWhisperService: Cleaning up extracted audio file');
+                        fs.unlinkSync(audioFilePath);
+                    }
+                    
+                    reject(new Error(`whisper.cpp failed: ${errorLine}`));
                 } else {
                     console.log(`❌ LocalWhisperService: whisper.cpp failed with code ${code}`);
                     console.log('📄 STDERR:', stderr);

@@ -27,17 +27,34 @@ describe('LocalWhisperService', () => {
         // Default fs mocks
         fs.existsSync.mockReturnValue(false);
         fs.mkdirSync.mockReturnValue(undefined);
+        // Default empty models directory
+        fs.readdirSync.mockReturnValue([]);
+        fs.statSync.mockReturnValue({ size: 1000000 });
         
         service = new LocalWhisperService();
     });
 
     describe('constructor', () => {
         it('should initialize with default settings', () => {
+            // With our current setup, the default model will be 'base'
+            // We'll test the real implementation separately
             expect(service.model).toBe('base');
             expect(service.language).toBe('auto');
             expect(service.threads).toBe(4);
             expect(service.translate).toBe(false);
             expect(service.initialPrompt).toBe('');
+        });
+
+        it('should prefer tiny model when available', () => {
+            // Reset and setup mocks specifically for this test
+            jest.clearAllMocks();
+            fs.existsSync.mockReturnValue(true);
+            fs.readdirSync.mockReturnValue(['ggml-tiny.bin', 'ggml-base.bin']);
+            fs.statSync.mockReturnValue({ size: 1000000 });
+            
+            // Create a new service instance with our mocks
+            const tinyService = new LocalWhisperService();
+            expect(tinyService.model).toBe('tiny');
         });
     });
 
@@ -135,7 +152,9 @@ describe('LocalWhisperService', () => {
 
     describe('getAvailableModels', () => {
         it('should return empty array when models directory does not exist', () => {
+            // Override the default mock for this specific test
             fs.existsSync.mockReturnValue(false);
+            fs.readdirSync.mockReturnValue([]);
             
             const models = service.getAvailableModels();
             expect(models).toEqual([]);

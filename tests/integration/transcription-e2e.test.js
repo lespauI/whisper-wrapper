@@ -31,6 +31,7 @@ describe('End-to-End Transcription Test', () => {
         
         // Transcribe the test file
         const result = await whisperService.transcribeFile(testAudioFile, {
+            model: 'tiny', // Use 'tiny' model which is available
             threads: 4,
             translate: false
         });
@@ -99,6 +100,7 @@ describe('End-to-End Transcription Test', () => {
         
         // Transcribe the buffer
         const result = await whisperService.transcribeBuffer(audioBuffer, {
+            model: 'tiny', // Use 'tiny' model which is available
             threads: 4,
             translate: false
         });

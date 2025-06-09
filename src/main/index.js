@@ -4,6 +4,7 @@ const path = require('path');
 // Force production mode if NODE_ENV is explicitly set to production
 const isDev = process.env.NODE_ENV === 'production' ? false : (process.env.NODE_ENV === 'development' || !app.isPackaged);
 const IPCHandlers = require('./ipcHandlers');
+const RefinementHandlers = require('./refinementHandlers');
 
 // Keep a global reference of the window object
 let mainWindow;
@@ -66,6 +67,9 @@ app.whenReady().then(() => {
 
     // Initialize IPC handlers
     new IPCHandlers(mainWindow);
+    
+    // Initialize Refinement handlers
+    new RefinementHandlers();
 
     // Set up application menu
     const menu = require('./menu');

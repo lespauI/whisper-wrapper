@@ -43,6 +43,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Model management
     downloadModel: (modelName) => ipcRenderer.invoke('model:download', modelName),
     getModelInfo: (modelName) => ipcRenderer.invoke('model:info', modelName),
+    
+    // AI Refinement - Templates
+    getAllTemplates: () => ipcRenderer.invoke('template:getAll'),
+    getTemplate: (id) => ipcRenderer.invoke('template:get', id),
+    getDefaultTemplate: () => ipcRenderer.invoke('template:getDefault'),
+    createTemplate: (templateData) => ipcRenderer.invoke('template:create', templateData),
+    updateTemplate: (id, templateData) => ipcRenderer.invoke('template:update', id, templateData),
+    deleteTemplate: (id) => ipcRenderer.invoke('template:delete', id),
+    setDefaultTemplate: (id) => ipcRenderer.invoke('template:setDefault', id),
+    
+    // AI Refinement - Ollama
+    testOllamaConnection: () => ipcRenderer.invoke('ollama:testConnection'),
+    getOllamaModels: () => ipcRenderer.invoke('ollama:getModels'),
+    refineText: (text, templateId) => ipcRenderer.invoke('ollama:refineText', text, templateId),
+    
+    // AI Refinement - Settings
+    getAIRefinementSettings: () => ipcRenderer.invoke('aiRefinement:getSettings'),
+    saveAIRefinementSettings: (settings) => ipcRenderer.invoke('aiRefinement:saveSettings', settings),
   
     // Event listeners
     onTranscriptionProgress: (callback) => {
@@ -53,6 +71,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     onModelDownloadProgress: (callback) => {
         ipcRenderer.on('model:download:progress', callback);
+    },
+    onRefinementProgress: (callback) => {
+        ipcRenderer.on('refinement:progress', callback);
     },
   
     // Remove listeners

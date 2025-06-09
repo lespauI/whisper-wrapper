@@ -41,6 +41,15 @@ const defaultConfig = {
         timeoutSeconds: 30
     },
     
+    // AI Refinement settings
+    aiRefinement: {
+        enabled: false,
+        endpoint: "http://localhost:11434",
+        model: "gemma3:12b",
+        timeoutSeconds: 30,
+        defaultTemplateId: null
+    },
+    
     // Recording settings
     recording: {
         quality: "medium",
@@ -157,6 +166,39 @@ config.saveSettings = function(section, settings) {
     }
     
     // Save to file if changes were made
+    if (changed) {
+        saveConfig(this);
+    }
+    
+    return changed;
+};
+
+// Get AI Refinement settings
+config.getAIRefinementSettings = function() {
+    return {
+        enabled: this.aiRefinement?.enabled || false,
+        endpoint: this.aiRefinement?.endpoint || "http://localhost:11434",
+        model: this.aiRefinement?.model || "gemma3:12b",
+        timeoutSeconds: this.aiRefinement?.timeoutSeconds || 30,
+        defaultTemplateId: this.aiRefinement?.defaultTemplateId || null
+    };
+};
+
+// Save AI Refinement settings
+config.saveAIRefinementSettings = function(settings) {
+    if (!this.aiRefinement) {
+        this.aiRefinement = {};
+    }
+    
+    let changed = false;
+    
+    for (const [key, value] of Object.entries(settings)) {
+        if (this.aiRefinement[key] !== value) {
+            this.aiRefinement[key] = value;
+            changed = true;
+        }
+    }
+    
     if (changed) {
         saveConfig(this);
     }

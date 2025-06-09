@@ -70,6 +70,10 @@ class WhisperWrapperApp {
         this.setupSettings();
         this.loadSettings();
         this.checkForOrphanedRecordings();
+        
+        // Initialize refinement controller
+        this.refinementController = new RefinementController(this);
+        
         this.updateStatus('Ready');
         this.updateToggleButton(); // Initialize toggle button state
     }
@@ -381,6 +385,11 @@ class WhisperWrapperApp {
         setInterval(() => {
             this.updateTranscriptionStatus();
             this.updateUndoRedoButtons();
+            
+            // Update AI refinement UI if controller is initialized
+            if (this.refinementController) {
+                this.refinementController.updateRefinementUI();
+            }
         }, 1000);
     }
 
@@ -769,18 +778,68 @@ class WhisperWrapperApp {
         if (segments && segments.length > 0) {
             console.log('🎬 Has segments, rendering timestamped view');
             this.renderTimestampedSegments(segments);
-            this.transcriptionState.viewMode = 'timestamped';
-            this.showTimestampedView();
-        } else {
-            console.log('🎬 No segments, showing plain text view');
-            // Fallback to plain text view if no segments
-            this.transcriptionState.viewMode = 'plain';
-            this.showPlainTextView();
         }
+    }
+    
+    /**
+     * Update the transcription text and related UI state
+     * Used by AI refinement and other processes
+     * @param {string} text The new text to display
+     */
+    updateTranscriptionText(text) {
+        const transcriptionText = document.getElementById('transcription-text');
+        
+        // Update the current text
+        this.transcriptionState.currentText = text;
+        this.transcriptionState.isDirty = true;
+        
+        // Update the text view
+        transcriptionText.value = text;
+        
+        // When using plain view, ensure the segments view is hidden
+        if (this.transcriptionState.viewMode === 'plain') {
+            document.getElementById('transcription-segments').classList.add('hidden');
+            transcriptionText.classList.remove('hidden');
+        }
+        
+        // Auto-save the draft
+        this.saveTranscriptionDraft();
         
         // Update UI indicators
         this.updateTranscriptionStatus();
         this.updateToggleButton();
+    }
+    
+    /**
+     * Save the current transcription text to history for undo/redo
+     * Used before making significant changes like AI refinement
+     */
+    saveTranscriptionToHistory() {
+        const currentText = this.transcriptionState.currentText;
+        
+        // Only add to history if we have text and it's different from the last entry
+        if (currentText && 
+            (this.transcriptionState.history.length === 0 || 
+             currentText !== this.transcriptionState.history[this.transcriptionState.historyIndex])) {
+            
+            // If we're in the middle of the history stack, truncate the future history
+            if (this.transcriptionState.historyIndex < this.transcriptionState.history.length - 1) {
+                this.transcriptionState.history = this.transcriptionState.history.slice(0, this.transcriptionState.historyIndex + 1);
+            }
+            
+            // Add current text to history
+            this.transcriptionState.history.push(currentText);
+            this.transcriptionState.historyIndex = this.transcriptionState.history.length - 1;
+            
+            // Limit history size to prevent memory issues (keep last 50 states)
+            if (this.transcriptionState.history.length > 50) {
+                this.transcriptionState.history = this.transcriptionState.history.slice(-50);
+                this.transcriptionState.historyIndex = this.transcriptionState.history.length - 1;
+            }
+            
+            // Update UI
+            this.updateUndoRedoButtons();
+        }
     }
 
     renderTimestampedSegments(segments) {

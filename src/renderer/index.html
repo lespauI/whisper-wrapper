@@ -352,6 +352,14 @@
                                         🗑️ Clear
                                     </button>
                                 </div>
+                                <div class="toolbar-center ai-refinement-controls hidden" id="ai-refinement-controls">
+                                    <select id="template-selector" class="template-selector">
+                                        <option value="">Select template...</option>
+                                    </select>
+                                    <button id="refine-with-ai-btn" class="btn btn-primary btn-small">
+                                        ✨ Refine with AI
+                                    </button>
+                                </div>
                                 <div class="toolbar-right">
                                     <span id="transcription-status" class="transcription-status">
                                         Ready to transcribe
@@ -362,6 +370,12 @@
                                 <div id="transcription-loading" class="loading-state hidden">
                                     <div class="spinner"></div>
                                     <p>Transcribing audio...</p>
+                                </div>
+                                
+                                <div id="refinement-loading" class="loading-state hidden">
+                                    <div class="spinner"></div>
+                                    <p>Refining transcription with AI...</p>
+                                    <p class="loading-note">This may take a moment depending on the size of your transcription</p>
                                 </div>
 
                                 <div id="transcription-editor" class="transcription-editor">
@@ -642,6 +656,7 @@
         </div>
     </div>
 
+    <script src="controllers/refinementController.js"></script>
     <script src="index.js"></script>
 </body>
 </html>

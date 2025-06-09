@@ -14,10 +14,10 @@
 - [x] Implement Settings Logic
 
 ## Phase 3: Transcription Integration
-- [ ] Create Refinement Controller
-- [ ] Update Transcription Tab
-- [ ] Implement Refinement Logic
-- [ ] Add User Feedback
+- [x] Create Refinement Controller
+- [x] Update Transcription Tab
+- [x] Implement Refinement Logic
+- [x] Add User Feedback
 - [ ] Create Unit Tests for Phase 3
 
 ## Phase 4: Testing and Refinement

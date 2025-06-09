@@ -935,6 +935,12 @@ body {
     100% { transform: rotate(360deg); }
 }
 
+#refinement-loading .loading-note {
+    font-size: 0.8rem;
+    color: #718096;
+    margin-top: 0.5rem;
+}
+
 .empty-state .empty-icon {
     font-size: 3rem;
     margin-bottom: 1rem;
@@ -1417,10 +1423,31 @@ body {
 }
 
 .toolbar-left,
-.toolbar-right {
+.toolbar-right,
+.toolbar-center {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+}
+
+.ai-refinement-controls {
+    margin: 0 1rem;
+    padding: 0.25rem 0.5rem;
+    background-color: #f0f9ff;
+    border-radius: 0.375rem;
+    border: 1px solid #bae6fd;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.template-selector {
+    min-width: 180px;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.875rem;
+    border-radius: 0.375rem;
+    border: 1px solid #cbd5e0;
+    background-color: #fff;
 }
 
 .transcription-status {

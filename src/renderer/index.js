@@ -63,70 +63,81 @@ class WhisperWrapperApp {
     }
 
     setupEventListeners() {
+        // Helper function to safely add event listeners
+        const addListener = (selector, event, callback) => {
+            const element = selector.startsWith('#') ? 
+                document.getElementById(selector.substring(1)) : 
+                document.querySelector(selector);
+                
+            if (element) {
+                element.addEventListener(event, callback);
+            } else {
+                console.warn(`Element not found: ${selector}`);
+            }
+        };
+        
+        // Helper function to safely add event listeners to multiple elements
+        const addListenerAll = (selector, event, callback) => {
+            const elements = document.querySelectorAll(selector);
+            if (elements.length > 0) {
+                elements.forEach(el => el.addEventListener(event, callback));
+            } else {
+                console.warn(`No elements found for: ${selector}`);
+            }
+        };
+
         // Tab navigation
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                this.switchTab(e.target.dataset.tab);
-            });
+        addListenerAll('.tab-btn', 'click', (e) => {
+            this.switchTab(e.target.dataset.tab);
         });
 
-        // Settings modal
-        document.getElementById('settings-btn').addEventListener('click', () => {
+        // Settings toggle
+        addListener('#settings-btn', 'click', () => {
             this.openSettings();
         });
 
-        document.getElementById('cancel-settings-btn').addEventListener('click', () => {
+        addListener('#save-settings-btn', 'click', () => {
+            this.saveSettings();
             this.closeSettings();
         });
-
-        document.getElementById('save-settings-btn').addEventListener('click', () => {
-            this.saveSettings();
+        
+        // Settings close buttons
+        addListener('#close-settings-btn', 'click', () => {
+            this.closeSettings();
         });
-
-        document.querySelector('.modal-close').addEventListener('click', () => {
+        
+        addListener('#cancel-settings-btn', 'click', () => {
             this.closeSettings();
         });
 
         // Setup Whisper button
-        document.getElementById('setup-whisper-btn').addEventListener('click', () => {
+        addListener('#setup-whisper-btn', 'click', () => {
             this.setupWhisper();
         });
 
-        // Close modal on backdrop click
-        document.getElementById('settings-modal').addEventListener('click', (e) => {
-            if (e.target === e.currentTarget) {
-                this.closeSettings();
-            }
-        });
-
         // Model comparison modal
-        document.getElementById('model-info-btn').addEventListener('click', () => {
+        addListener('#model-info-btn', 'click', () => {
             this.openModelComparison();
         });
 
-        document.getElementById('close-model-comparison-btn').addEventListener('click', () => {
+        addListener('#close-model-comparison-btn', 'click', () => {
             this.closeModelComparison();
         });
 
         // Close model comparison modal on backdrop click
-        document.getElementById('model-comparison-modal').addEventListener('click', (e) => {
+        addListener('#model-comparison-modal', 'click', (e) => {
             if (e.target === e.currentTarget) {
                 this.closeModelComparison();
             }
         });
 
-        // Close model comparison modal on close button click
-        document.querySelector('#model-comparison-modal .modal-close').addEventListener('click', () => {
-            this.closeModelComparison();
-        });
-
         // Model selection change handler
-        document.getElementById('model-select').addEventListener('change', (e) => {
+        addListener('#model-select', 'change', (e) => {
             this.updateModelDescription(e.target.value);
         });
         
         // Initial prompt checkbox handler
-        document.getElementById('use-initial-prompt-checkbox').addEventListener('change', () => {
+        addListener('#use-initial-prompt-checkbox', 'change', () => {
             this.updateInitialPromptState();
         });
     }
@@ -1468,19 +1479,46 @@ ${text}
     }
 
     async openSettings() {
-        document.getElementById('settings-modal').classList.remove('hidden');
-        document.body.style.overflow = 'hidden';
+        const settingsHeader = document.getElementById('settings-header');
+        const settingsBtn = document.getElementById('settings-btn');
         
-        // Ensure model options are populated
+        // Show settings
+        settingsHeader.classList.remove('hidden');
+        settingsHeader.classList.add('visible');
+        settingsBtn.classList.add('active');
+        
+        // Update content
         await this.updateModelOptions();
-        
         await this.checkWhisperStatus();
         await this.loadSettings();
     }
-
-    closeSettings() {
-        document.getElementById('settings-modal').classList.add('hidden');
-        document.body.style.overflow = 'auto';
+    
+    async closeSettings() {
+        const settingsHeader = document.getElementById('settings-header');
+        const settingsBtn = document.getElementById('settings-btn');
+        
+        // Hide settings
+        settingsHeader.classList.remove('visible');
+        settingsBtn.classList.remove('active');
+        
+        // After animation completes
+        setTimeout(() => {
+            if (!settingsHeader.classList.contains('visible')) {
+                settingsHeader.classList.add('hidden');
+            }
+        }, 300);
+    }
+    
+    // Keep this method for compatibility with existing code
+    async toggleSettings() {
+        const settingsHeader = document.getElementById('settings-header');
+        const isHidden = settingsHeader.classList.contains('hidden');
+        
+        if (isHidden) {
+            await this.openSettings();
+        } else {
+            await this.closeSettings();
+        }
     }
 
     async saveSettings() {
@@ -1621,8 +1659,14 @@ ${text}
     }
 
     closeModelComparison() {
-        document.getElementById('model-comparison-modal').classList.add('hidden');
+        const modal = document.getElementById('model-comparison-modal');
+        modal.classList.add('hidden');
         document.body.style.overflow = 'auto';
+        
+        // Remove event listeners to prevent duplicates
+        document.querySelectorAll('.model-row[data-model]').forEach(row => {
+            row.replaceWith(row.cloneNode(true));
+        });
     }
 
     selectModelFromComparison(modelName) {

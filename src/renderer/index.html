@@ -16,9 +16,119 @@
                     Whisper Wrapper
                 </h1>
                 <div class="header-actions">
-                    <button id="settings-btn" class="btn btn-secondary" title="Settings">
-                        ⚙️
+                    <button id="settings-btn" class="btn btn-settings" title="Toggle Settings">
+                        <span class="settings-icon">⚙️</span>
+                        <span class="settings-text">Settings</span>
                     </button>
+                </div>
+            </div>
+            
+            <!-- Settings Header Panel (inline with header) -->
+            <div id="settings-header" class="settings-header hidden">
+                <div class="settings-top-bar">
+                    <h3 class="settings-title">Transcription Settings</h3>
+                    <button id="close-settings-btn" class="btn-icon" title="Close Settings">✕</button>
+                </div>
+                
+                <div class="settings-grid">
+                    <!-- Model & Engine Settings -->
+                    <div class="settings-card engine-card">
+                        <h4 class="settings-card-title">Engine Configuration</h4>
+                        
+                        <div class="status-card">
+                            <div class="status-icon">🔌</div>
+                            <div class="status-details">
+                                <h5>Whisper Engine</h5>
+                                <div id="whisper-status" class="status-indicator">
+                                    <span id="whisper-status-text">Checking...</span>
+                                </div>
+                            </div>
+                            <button id="setup-whisper-btn" class="btn btn-action" style="display: none;">Install</button>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="model-select">Model Selection</label>
+                            <div class="input-group">
+                                <select id="model-select" class="form-control">
+                                    <option value="tiny">Tiny (39M params)</option>
+                                    <option value="tiny.en">Tiny English-only</option>
+                                    <option value="base">Base (74M params)</option>
+                                    <option value="base.en">Base English-only</option>
+                                    <option value="small">Small (244M params)</option>
+                                    <option value="small.en">Small English-only</option>
+                                    <option value="medium">Medium (769M params)</option>
+                                    <option value="medium.en">Medium English-only</option>
+                                    <option value="large">Large (1550M params)</option>
+                                    <option value="turbo">Turbo (809M params)</option>
+                                </select>
+                                <button type="button" id="model-info-btn" class="btn-icon" title="Model information">ℹ️</button>
+                            </div>
+                            <div class="form-text" id="model-description">Select a model to see detailed information</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="threads-select">Processing Threads</label>
+                            <select id="threads-select" class="form-control">
+                                <option value="1">1 Thread</option>
+                                <option value="2">2 Threads</option>
+                                <option value="4" selected>4 Threads</option>
+                                <option value="8">8 Threads</option>
+                            </select>
+                            <div class="form-text">More threads = faster processing, higher CPU usage</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Language Settings -->
+                    <div class="settings-card language-card">
+                        <h4 class="settings-card-title">Language Settings</h4>
+                        
+                        <div class="form-group">
+                            <label for="language-select">Transcription Language</label>
+                            <select id="language-select" class="form-control">
+                                <option value="">Auto-detect language</option>
+                                <option value="en">English</option>
+                                <option value="es">Spanish</option>
+                                <option value="fr">French</option>
+                                <option value="de">German</option>
+                                <option value="it">Italian</option>
+                                <option value="pt">Portuguese</option>
+                                <option value="ru">Russian</option>
+                                <option value="ja">Japanese</option>
+                                <option value="ko">Korean</option>
+                                <option value="zh">Chinese</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <div class="checkbox-container">
+                                <input type="checkbox" id="translate-checkbox" class="styled-checkbox">
+                                <label for="translate-checkbox">Translate to English</label>
+                            </div>
+                            <div class="form-text">Convert non-English audio to English text</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Prompt Settings -->
+                    <div class="settings-card prompt-card">
+                        <h4 class="settings-card-title">Prompt Configuration</h4>
+                        
+                        <div class="form-group">
+                            <div class="checkbox-container">
+                                <input type="checkbox" id="use-initial-prompt-checkbox" class="styled-checkbox" checked>
+                                <label for="use-initial-prompt-checkbox">Use Initial Prompt</label>
+                            </div>
+                            <div class="form-text">Guide transcription with context or formatting instructions</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <textarea id="initial-prompt" class="form-control prompt-textarea" rows="3" placeholder="Enter initial prompt to guide transcription (optional)"></textarea>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="settings-actions">
+                    <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>
+                    <button id="cancel-settings-btn" class="btn btn-secondary">Cancel</button>
                 </div>
             </div>
         </header>
@@ -247,101 +357,14 @@
         </footer>
     </div>
 
-    <!-- Settings Modal -->
-    <div id="settings-modal" class="modal hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Settings</h3>
-                <button class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="setting-group">
-                    <label for="whisper-status">Local Whisper Status:</label>
-                    <div id="whisper-status" class="status-indicator">
-                        <span id="whisper-status-text">Checking...</span>
-                        <button id="setup-whisper-btn" class="btn btn-secondary" style="display: none;">Setup Whisper</button>
-                    </div>
-                    <small>Local Whisper processing - no internet connection required.</small>
-                </div>
-                <div class="setting-group">
-                    <label for="model-select">Whisper Model:</label>
-                    <select id="model-select">
-                        <option value="tiny">Tiny (39M params, ~1GB VRAM, ~10x speed)</option>
-                        <option value="tiny.en">Tiny English-only (39M params, ~1GB VRAM, ~10x speed)</option>
-                        <option value="base">Base (74M params, ~1GB VRAM, ~7x speed)</option>
-                        <option value="base.en">Base English-only (74M params, ~1GB VRAM, ~7x speed)</option>
-                        <option value="small">Small (244M params, ~2GB VRAM, ~4x speed)</option>
-                        <option value="small.en">Small English-only (244M params, ~2GB VRAM, ~4x speed)</option>
-                        <option value="medium">Medium (769M params, ~5GB VRAM, ~2x speed)</option>
-                        <option value="medium.en">Medium English-only (769M params, ~5GB VRAM, ~2x speed)</option>
-                        <option value="large">Large (1550M params, ~10GB VRAM, 1x speed)</option>
-                        <option value="turbo">Turbo (809M params, ~6GB VRAM, ~8x speed)</option>
-                    </select>
-                    <div class="model-info">
-                        <small id="model-description">Select a model to see detailed information.</small>
-                        <button type="button" id="model-info-btn" class="btn btn-small btn-info">ℹ️ Model Comparison</button>
-                    </div>
-                </div>
-                <div class="setting-group">
-                    <label for="language-select">Language (optional):</label>
-                    <select id="language-select">
-                        <option value="">Auto-detect</option>
-                        <option value="en">English</option>
-                        <option value="es">Spanish</option>
-                        <option value="fr">French</option>
-                        <option value="de">German</option>
-                        <option value="it">Italian</option>
-                        <option value="pt">Portuguese</option>
-                        <option value="ru">Russian</option>
-                        <option value="ja">Japanese</option>
-                        <option value="ko">Korean</option>
-                        <option value="zh">Chinese</option>
-                    </select>
-                </div>
-                <div class="setting-group">
-                    <label for="threads-select">Processing Threads:</label>
-                    <select id="threads-select">
-                        <option value="1">1 Thread</option>
-                        <option value="2">2 Threads</option>
-                        <option value="4" selected>4 Threads</option>
-                        <option value="8">8 Threads</option>
-                    </select>
-                    <small>More threads can speed up processing on multi-core systems.</small>
-                </div>
-                <div class="setting-group">
-                    <label>
-                        <input type="checkbox" id="translate-checkbox">
-                        Translate to English
-                    </label>
-                    <small>Automatically translate non-English audio to English.</small>
-                </div>
-                <div class="setting-group">
-                    <div class="setting-header">
-                        <label for="initial-prompt">Initial Prompt:</label>
-                        <div class="setting-toggle">
-                            <label>
-                                <input type="checkbox" id="use-initial-prompt-checkbox" checked>
-                                Use initial prompt
-                            </label>
-                        </div>
-                    </div>
-                    <textarea id="initial-prompt" rows="3" placeholder="Enter initial prompt to guide transcription (optional)"></textarea>
-                    <small>Guide the transcription with context or specific terms. Helps with technical terms, names, or specialized vocabulary.</small>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>
-                <button id="cancel-settings-btn" class="btn btn-secondary">Cancel</button>
-            </div>
-        </div>
-    </div>
+    <!-- Settings Modal - Removed and moved to header -->
 
     <!-- Model Comparison Modal -->
     <div id="model-comparison-modal" class="modal hidden">
         <div class="modal-content modal-large">
             <div class="modal-header">
                 <h3>Whisper Model Comparison</h3>
-                <button class="modal-close">&times;</button>
+                <button id="close-model-comparison-btn" class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="model-comparison-intro">

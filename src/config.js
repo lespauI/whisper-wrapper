@@ -8,7 +8,7 @@ const os = require('os');
 const fs = require('fs');
 
 // Define config file path
-const CONFIG_FILE_PATH = path.join(process.cwd(), 'data', 'config_debug.json');
+const CONFIG_FILE_PATH = path.join(process.cwd(), 'data', 'config.json');
 
 // Default configuration
 const defaultConfig = {
@@ -34,20 +34,15 @@ const defaultConfig = {
         recentFiles: []
     },
     
-    // Optional Ollama settings (if using Ollama)
+    // Ollama settings including refinement capabilities
     ollama: {
         endpoint: "http://localhost:11434",
         defaultModel: "gemma3:12b",
-        timeoutSeconds: 30
-    },
-    
-    // AI Refinement settings
-    aiRefinement: {
-        enabled: false,
-        endpoint: "http://localhost:11434",
-        model: "gemma3:12b",
-        timeoutSeconds: 30,
-        defaultTemplateId: null
+        timeoutSeconds: 300,
+        refinement: {
+            enabled: false,
+            defaultTemplateId: null
+        }
     },
     
     // Recording settings
@@ -173,30 +168,87 @@ config.saveSettings = function(section, settings) {
     return changed;
 };
 
-// Get AI Refinement settings
+// Get AI Refinement settings (from ollama config)
 config.getAIRefinementSettings = function() {
+    // For backward compatibility - if old aiRefinement section exists, migrate it
+    if (this.aiRefinement) {
+        console.log('Migrating old aiRefinement settings to ollama.refinement');
+        
+        // Initialize refinement if needed
+        if (!this.ollama) this.ollama = {};
+        if (!this.ollama.refinement) this.ollama.refinement = {};
+        
+        // Copy settings (maintain endpoint/model/timeout at the ollama level)
+        this.ollama.endpoint = this.aiRefinement.endpoint || this.ollama.endpoint || "http://localhost:11434";
+        this.ollama.defaultModel = this.aiRefinement.model || this.ollama.defaultModel || "gemma3:12b";
+        this.ollama.timeoutSeconds = this.aiRefinement.timeoutSeconds || this.ollama.timeoutSeconds || 300;
+        
+        // Copy refinement-specific settings
+        this.ollama.refinement.enabled = this.aiRefinement.enabled || false;
+        this.ollama.refinement.defaultTemplateId = this.aiRefinement.defaultTemplateId || null;
+        
+        // Remove old section
+        delete this.aiRefinement;
+        
+        // Save the config with the migration
+        saveConfig(this);
+    }
+    
+    // Ensure all properties exist
+    if (!this.ollama) this.ollama = {};
+    if (!this.ollama.refinement) this.ollama.refinement = {};
+    
     return {
-        enabled: this.aiRefinement?.enabled || false,
-        endpoint: this.aiRefinement?.endpoint || "http://localhost:11434",
-        model: this.aiRefinement?.model || "gemma3:12b",
-        timeoutSeconds: this.aiRefinement?.timeoutSeconds || 30,
-        defaultTemplateId: this.aiRefinement?.defaultTemplateId || null
+        enabled: this.ollama.refinement?.enabled || false,
+        endpoint: this.ollama.endpoint || "http://localhost:11434",
+        model: this.ollama.defaultModel || "gemma3:12b",
+        timeoutSeconds: this.ollama.timeoutSeconds || 300,
+        defaultTemplateId: this.ollama.refinement?.defaultTemplateId || null
     };
 };
 
 // Save AI Refinement settings
 config.saveAIRefinementSettings = function(settings) {
-    if (!this.aiRefinement) {
-        this.aiRefinement = {};
+    if (!this.ollama) {
+        this.ollama = {
+            endpoint: "http://localhost:11434",
+            defaultModel: "gemma3:12b",
+            timeoutSeconds: 300,
+            refinement: {}
+     };
+    }
+    
+    if (!this.ollama.refinement) {
+        this.ollama.refinement = {};
     }
     
     let changed = false;
     
-    for (const [key, value] of Object.entries(settings)) {
-        if (this.aiRefinement[key] !== value) {
-            this.aiRefinement[key] = value;
-            changed = true;
-        }
+    // Handle common Ollama settings
+    if (settings.endpoint !== undefined && this.ollama.endpoint !== settings.endpoint) {
+        this.ollama.endpoint = settings.endpoint;
+        changed = true;
+    }
+    
+    if (settings.model !== undefined && this.ollama.defaultModel !== settings.model) {
+        this.ollama.defaultModel = settings.model;
+        changed = true;
+    }
+    
+    if (settings.timeoutSeconds !== undefined && this.ollama.timeoutSeconds !== settings.timeoutSeconds) {
+        this.ollama.timeoutSeconds = settings.timeoutSeconds;
+        changed = true;
+    }
+    
+    // Handle refinement-specific settings
+    if (settings.enabled !== undefined && this.ollama.refinement.enabled !== settings.enabled) {
+           this.ollama.refinement.enabled = settings.enabled;
+        changed = true;
+    }
+    
+    if (settings.defaultTemplateId !== undefined && this.ollama.refinement.defaultTemplateId !== settings.defaultTemplateId) {
+        this.ollama.refinement.defaultTemplateId = settings.defaultTemplateId;
+        changed = true;
     }
     
     if (changed) {

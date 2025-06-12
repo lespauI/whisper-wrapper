@@ -154,11 +154,19 @@ class TemplateManager {
    */
   createTemplate(templateData) {
     const now = new Date().toISOString();
+    
+    // Ensure the prompt contains the {{text}} placeholder
+    let prompt = templateData.prompt || '';
+    if (!prompt.includes('{{text}}')) {
+      console.log('Adding {{text}} placeholder to template prompt');
+      prompt += prompt ? '\n\n{{text}}' : '{{text}}';
+    }
+    
     const newTemplate = {
       id: templateData.id || `template-${Date.now()}`,
       name: templateData.name || 'Untitled Template',
       description: templateData.description || '',
-      prompt: templateData.prompt || '',
+      prompt: prompt,
       isDefault: templateData.isDefault || false,
       createdAt: now,
       updatedAt: now
@@ -191,11 +199,23 @@ class TemplateManager {
     if (index === -1) return null;
     
     const now = new Date().toISOString();
+    // Ensure the prompt contains the {{text}} placeholder
+    let prompt;
+    if (templateData.prompt !== undefined) {
+      prompt = templateData.prompt;
+      if (!prompt.includes('{{text}}')) {
+        console.log('Adding {{text}} placeholder to updated template prompt');
+        prompt += prompt ? '\n\n{{text}}' : '{{text}}';
+      }
+    } else {
+      prompt = this.templates[index].prompt;
+    }
+    
     const updatedTemplate = {
       ...this.templates[index],
       name: templateData.name || this.templates[index].name,
       description: templateData.description !== undefined ? templateData.description : this.templates[index].description,
-      prompt: templateData.prompt !== undefined ? templateData.prompt : this.templates[index].prompt,
+      prompt: prompt,
       isDefault: templateData.isDefault !== undefined ? templateData.isDefault : this.templates[index].isDefault,
       updatedAt: now
     };

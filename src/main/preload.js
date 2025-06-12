@@ -57,10 +57,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     testOllamaConnection: () => ipcRenderer.invoke('ollama:testConnection'),
     getOllamaModels: () => ipcRenderer.invoke('ollama:getModels'),
     refineText: (text, templateId) => ipcRenderer.invoke('ollama:refineText', text, templateId),
+    abortRefinement: (requestId) => ipcRenderer.invoke('ollama:abortRequest', requestId),
+    abortAllRefinements: () => ipcRenderer.invoke('ollama:abortAllRequests'),
+    getActiveRefinements: () => ipcRenderer.invoke('ollama:getActiveRequests'),
     
     // AI Refinement - Settings
     getAIRefinementSettings: () => ipcRenderer.invoke('aiRefinement:getSettings'),
     saveAIRefinementSettings: (settings) => ipcRenderer.invoke('aiRefinement:saveSettings', settings),
+    debugAIRefinementSettings: () => ipcRenderer.invoke('aiRefinement:debugSettings'),
   
     // Event listeners
     onTranscriptionProgress: (callback) => {
@@ -74,6 +78,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     onRefinementProgress: (callback) => {
         ipcRenderer.on('refinement:progress', callback);
+    },
+    onRefinementStream: (callback) => {
+        ipcRenderer.on('refinement:stream', callback);
     },
   
     // Remove listeners

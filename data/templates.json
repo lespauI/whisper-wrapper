@@ -1,0 +1,83 @@
+[
+  {
+    "id": "format-email",
+    "name": "Email Format",
+    "description": "Format text as a professional email",
+    "prompt": "Format the following transcription as a professional email with proper greeting, paragraphs, and signature:\n\n{{text}}",
+    "isDefault": false,
+    "createdAt": "2025-06-09T16:56:49.980Z",
+    "updatedAt": "2025-06-09T16:56:49.980Z"
+  },
+  {
+    "id": "bullet-points",
+    "name": "Bullet Points",
+    "description": "Convert text into organized bullet points",
+    "prompt": "Convert the following transcription into well-organized bullet points with main topics and subtopics:\n\n{{text}}",
+    "isDefault": false,
+    "createdAt": "2025-06-09T16:56:49.980Z",
+    "updatedAt": "2025-06-09T16:56:49.980Z"
+  },
+  {
+    "id": "grammar-correction",
+    "name": "Grammar Correction",
+    "description": "Fix grammar and spelling errors",
+    "prompt": "Correct any grammar, spelling, or punctuation errors in the following transcription while preserving the original meaning:\n\n{{text}}",
+    "isDefault": false,
+    "createdAt": "2025-06-09T16:56:49.980Z",
+    "updatedAt": "2025-06-09T16:56:49.980Z"
+  },
+  {
+    "id": "meeting-notes",
+    "name": "Meeting Notes",
+    "description": "Format as structured meeting notes",
+    "prompt": "You are the MeatingNoteCreator. Convert the following meeting transcript into comprehensive, organized meeting notes using the EXACT template structure below. Do not deviate from this format or create custom sections.\n\n**MANDATORY TEMPLATE REQUIREMENTS**  \n**DO NOT deviate from this structure. Output must match 100% of the template below.**\n\n---\n\n## **Meeting Type & Summary**  \n- **Type:** [1-on-1 / Team Sync / Planning Session / Technical Discussion / Other]  \n- **Purpose:** [2-3 sentence summary of meeting's objective and outcomes]  \n- **Participants:** [List full names, roles, and relationships from transcript]  \n\n---\n\n## **Key Discussion Points**  \n- [Preserve technical specifications, error messages, tool versions, and configurations]  \n- [Include strategic debates, resource constraints, timeline conflicts]  \n- [Document all stakeholder perspectives and concerns]  \n- [For Team Syncs: Add project updates, blockers, and coordination needs]  \n- [For Planning Sessions: Include strategic initiatives, resource planning]  \n- [For Technical Discussions: Maintain full technical fidelity]  \n\n---\n\n## **Decisions Made**  \n- [List finalized decisions with context and reasoning]  \n- [Include rejected alternatives with rationale]  \n- [If no decisions: \"No formal decisions were made\"]  \n\n---\n\n## **Action Items**  \n**MANDATORY TABLE FORMAT - COPY EXACTLY:**  \n\n| **Task** | **Assigned To** | **Due Date** | **Priority** |  \n|----------|-----------------|--------------|--------------|  \n| [Specific, measurable task] | [Name/Role or TBD] | [Date/timeframe or TBD] | [High/Medium/Low] |  \n| [Next task] | [Name/Role or TBD] | [Date/timeframe or TBD] | [High/Medium/Low] |  \n\n- [Include ALL actionable items from transcript]  \n- [Use \"TBD\" for missing assignees/deadlines]  \n- [If no action items: \"No action items were assigned\"]  \n\n---\n\n## **Next Steps**  \n- [List upcoming deadlines, meetings, or milestones with dates]  \n- [Identify follow-up discussions and responsible parties]  \n- [Note dependencies and prerequisites]  \n- [If no next steps: \"No next steps were defined\"]  \n\n---\n\n## **Additional Notes**  \n- [Include technical specs, configurations, or sensitive details]  \n- [Document stakeholder relationships and external constraints]  \n- [If not applicable: \"No additional notes\"]  \n\n---\n\n**CRITICAL COMPLIANCE CHECKLIST (ENFORCE 100%):**  \n✅ Used **EXACT section headers** (## Meeting Type & Summary, etc.)  \n✅ Identified specific meeting type in first section  \n✅ Used **table format for action items** with all 4 columns  \n✅ Included all 6 sections (even with \"No items discussed\")  \n✅ Preserved technical details and stakeholder names  \n✅ Made action items specific, measurable, and trackable  \n\n**FINAL VERIFICATION (DO NOT SKIP):**  \n1. [ ] All six sections present with correct headers  \n2. [ ] Action items table matches exact structure  \n3. [ ] Technical details and stakeholder roles preserved  \n4. [ ] No sections omitted or rephrased  \n5. [ ] \"TBD\" used for missing info instead of omissions  \n\n**ENHANCED INSTRUCTIONS (Non-Negotiable):**  \n- **Preserve relationships:** Maintain context between topics and stakeholders  \n- **Technical accuracy:** Include full error messages, tool versions, configurations  \n- **Actionability:** Ensure every task is clear, assignable, and time-bound  \n- **Professional tone:** Use precise language without losing conversational nuance  \n- **No markdown deviations:** Use headers, tables, and lists exactly as shown  \n\n**If any template rules are violated (e.g., missing sections, wrong table format), the response will be invalid.**\n\n---\n\n**Now convert this meeting transcript:**\n\n{{text}}",
+    "isDefault": false,
+    "createdAt": "2025-06-09T16:56:49.980Z",
+    "updatedAt": "2025-06-11T15:01:40.102Z"
+  },
+  {
+    "id": "template-1749490998460",
+    "name": "formating",
+    "description": "",
+    "prompt": "Your ONLY goal is to reformat the text, fix grammar and transcription mistakes to make it readable.\n\n{{text}}\n\nUse the same language as the transcription.\n\nOutput format: the only formatted text",
+    "isDefault": true,
+    "createdAt": "2025-06-09T17:43:18.460Z",
+    "updatedAt": "2025-06-09T18:44:47.715Z"
+  },
+  {
+    "id": "template-1749663061369",
+    "name": "notes_short",
+    "description": "",
+    "prompt": "<instructions>\n    <identity>\n        - You are the MeetingNoteCreator, an expert in structured meeting notes.\n    </identity>\n    <purpose>\n        - Convert meeting transcripts into organized notes using a strict template.\n    </purpose>\n    <context>\n        - Use the provided template for all notes.\n    </context>\n    <task>\n        - Transform the transcript into notes with the exact template format.\n        - Include all sections, even if they state \"No items discussed.\"\n    </task>\n    <constraints>\n        - Do not deviate from the template.\n        - Use exact section headers and table format.\n        - Maintain professional tone and precise language.\n    </constraints>\n    <examples>\n        <template>\n            ---\n            ## **Meeting Type & Summary**  \n            - **Type:** [Meeting Type]  \n            - **Purpose:** [Objective and outcomes]  \n            - **Participants:** [Names and roles]  \n            ---\n            ## **Key Discussion Points**  \n            - [Technical details, debates, updates]  \n            ---\n            ## **Decisions Made**  \n            - [Final decisions and rationale]  \n            ---\n            ## **Action Items**  \n            | **Task** | **Assigned To** | **Due Date** | **Priority** |  \n            |----------|-----------------|--------------|--------------|  \n            | [Task] | [Assignee] | [Due Date] | [Priority] |  \n            ---\n            ## **Next Steps**  \n            - [Deadlines, follow-ups, dependencies]  \n            ---\n            ## **Additional Notes**  \n            - [Technical specs, constraints]  \n            ---\n            **Checklist:**  \n            - All sections present  \n            - Correct table format  \n            - Technical details preserved  \n            - Use \"TBD\" for missing info  \n            ---\n        </template>\n    </examples>\n</instructions>\n\n{{text}}",
+    "isDefault": false,
+    "createdAt": "2025-06-11T17:31:01.369Z",
+    "updatedAt": "2025-06-11T18:28:19.327Z"
+  },
+  {
+    "id": "template-1749663101191",
+    "name": "notes_long",
+    "description": "",
+    "prompt": "/no_think\n<instructions>\n    <identity>\n        - You are the MeetingNoteCreator, an expert in transforming meeting transcripts into structured, comprehensive notes.\n    </identity>\n    <purpose>\n        - Your purpose is to convert meeting transcripts into organized notes using a strict template format.\n    </purpose>\n    <context>\n        - You will receive a meeting transcript and must produce notes that adhere exactly to the specified template structure.\n    </context>\n    <task>\n        - Convert the provided meeting transcript into notes using the following mandatory template:\n        - Ensure all sections are included, even if they contain \"No items discussed.\"\n        - Use precise language and maintain technical accuracy.\n        - Preserve relationships and context between topics and stakeholders.\n        - Ensure every task is clear, assignable, and time-bound.\n    </task>\n    <constraints>\n        - Do not deviate from the template structure or create custom sections.\n        - Use the exact section headers and table format as provided.\n        - Include all six sections, even if they contain \"No items discussed.\"\n        - Use \"TBD\" for missing information instead of omissions.\n        - Maintain professional tone and precise language.\n    </constraints>\n    <examples>\n        <template>\n            ---\n            ## **Meeting Type & Summary**  \n            - **Type:** [1-on-1 / Team Sync / Planning Session / Technical Discussion / Other]  \n            - **Purpose:** [2-3 sentence summary of meeting's objective and outcomes]  \n            - **Participants:** [List full names, roles, and relationships from transcript]  \n            ---\n            ## **Key Discussion Points**  \n            - [Preserve technical specifications, error messages, tool versions, and configurations]  \n            - [Include strategic debates, resource constraints, timeline conflicts]  \n            - [Document all stakeholder perspectives and concerns]  \n            - [For Team Syncs: Add project updates, blockers, and coordination needs]  \n            - [For Planning Sessions: Include strategic initiatives, resource planning]  \n            - [For Technical Discussions: Maintain full technical fidelity]  \n            ---\n            ## **Decisions Made**  \n            - [List finalized decisions with context and reasoning]  \n            - [Include rejected alternatives with rationale]  \n            - [If no decisions: \"No formal decisions were made\"]  \n            ---\n            ## **Action Items**  \n            **MANDATORY TABLE FORMAT - COPY EXACTLY:**  \n            | **Task** | **Assigned To** | **Due Date** | **Priority** |  \n            |----------|-----------------|--------------|--------------|  \n            | [Specific, measurable task] | [Name/Role or TBD] | [Date/timeframe or TBD] | [High/Medium/Low] |  \n            | [Next task] | [Name/Role or TBD] | [Date/timeframe or TBD] | [High/Medium/Low] |  \n            - [Include ALL actionable items from transcript]  \n            - [Use \"TBD\" for missing assignees/deadlines]  \n            - [If no action items: \"No action items were assigned\"]  \n            ---\n            ## **Next Steps**  \n            - [List upcoming deadlines, meetings, or milestones with dates]  \n            - [Identify follow-up discussions and responsible parties]  \n            - [Note dependencies and prerequisites]  \n            - [If no next steps: \"No next steps were defined\"]  \n            ---\n            ## **Additional Notes**  \n            - [Include technical specs, configurations, or sensitive details]  \n            - [Document stakeholder relationships and external constraints]  \n            - [If not applicable: \"No additional notes\"]  \n            ---\n            **CRITICAL COMPLIANCE CHECKLIST (ENFORCE 100%):**  \n            ✅ Used **EXACT section headers** (## Meeting Type & Summary, etc.)  \n            ✅ Identified specific meeting type in first section  \n            ✅ Used **table format for action items** with all 4 columns  \n            ✅ Included all 6 sections (even with \"No items discussed\")  \n            ✅ Preserved technical details and stakeholder names  \n            ✅ Made action items specific, measurable, and trackable  \n            **FINAL VERIFICATION (DO NOT SKIP):**  \n            1. [ ] All six sections present with correct headers  \n            2. [ ] Action items table matches exact structure  \n            3. [ ] Technical details and stakeholder roles preserved  \n            4. [ ] No sections omitted or rephrased  \n            5. [ ] \"TBD\" used for missing info instead of omissions  \n            **ENHANCED INSTRUCTIONS (Non-Negotiable):**  \n            - **Preserve relationships:** Maintain context between topics and stakeholders  \n            - **Technical accuracy:** Include full error messages, tool versions, configurations  \n            - **Actionability:** Ensure every task is clear, assignable, and time-bound  \n            - **Professional tone:** Use precise language without losing conversational nuance  \n            - **No markdown deviations:** Use headers, tables, and lists exactly as shown  \n            **If any template rules are violated (e.g., missing sections, wrong table format), the response will be invalid.**\n            ---\n        </template>\n    </examples>\n</instructions>\n{{text}}",
+    "isDefault": false,
+    "createdAt": "2025-06-11T17:31:41.191Z",
+    "updatedAt": "2025-06-11T18:28:25.524Z"
+  },
+  {
+    "id": "template-1749668728273",
+    "name": "notes_simple",
+    "description": "",
+    "prompt": "I want you to act as a Meeting Note Creator for those who missed the call. You will provide a comprehensive recap of the meeting, summarizing key discussion points, decisions made, and action items. The notes should be clear and detailed, ensuring that anyone who missed the meeting can fully comprehend the full meeting context and understand what was discussed and agreed upon.\n\n\n\n{{text}}",
+    "isDefault": false,
+    "createdAt": "2025-06-11T19:05:28.273Z",
+    "updatedAt": "2025-06-11T19:12:37.601Z"
+  },
+  {
+    "id": "template-1749669399558",
+    "name": "recap_agent",
+    "description": "",
+    "prompt": "Given a meeting transcription, generate a concise yet detailed recap following this structure and guidelines:\n\n1. **Meeting Type & Summary**:\n   - Specify the type of meeting (e.g., Team Sync) and its purpose in 2-3 sentences.\n\n2. **Key Discussion Points**:\n   - List all topics discussed.\n   - For each topic, provide a summary that includes:\n     * Key points discussed\n     * Challenges or concerns raised\n     * How the discussion was resolved (if applicable)\n   - If a topic was raised by a specific person and is relevant to understanding the context, note who raised it.\n   - For lengthy discussions, focus on summarizing main points, decisions, and outcomes.\n\n3. **Decisions Made** (if any):\n   - List decisions made during the meeting with brief context.\n\n4. **Action Items**:\n   - For each action item, specify:\n     * Description of the task\n     * Assigned responsible person(s)\n     * Deadline (if specified)\n\n5. **Next Steps**:\n   - Outline immediate priorities or next actions for the team.\n\n6. **Additional Notes** (optional):\n   - Include any other relevant information not covered above, such as side discussions or observations about team morale, tools, or processes.\n\nGuidelines:\n- The recap should be self-contained; someone who missed the meeting should understand what was discussed and what’s next without additional context.\n- Use bullet points or lists for readability where appropriate.\n- Keep the tone professional but clear.\n- If certain sections (e.g., Decisions Made) do not apply, they can be omitted.\n\nMeeting transcription - {{text}}",
+    "isDefault": false,
+    "createdAt": "2025-06-11T19:16:39.558Z",
+    "updatedAt": "2025-06-11T19:26:15.974Z"
+  }
+]

@@ -145,7 +145,7 @@
                                     <span id="ollama-status-text">Not connected</span>
                                 </div>
                             </div>
-                            <button id="test-ollama-btn" class="btn btn-action">Test</button>
+                            <button id="test-ollama-btn" class="btn btn-action">Connect</button>
                         </div>
                         
                         <div class="form-group">
@@ -167,8 +167,8 @@
                         
                         <div class="form-group">
                             <label for="ollama-timeout">Request Timeout (seconds)</label>
-                            <input type="number" id="ollama-timeout" class="form-control" min="5" max="300" value="30">
-                            <div class="form-text">Maximum time to wait for AI response</div>
+                            <input type="number" id="ollama-timeout" class="form-control" min="5" max="600" value="300">
+                            <div class="form-text">Maximum time to wait for AI response (5-10 minutes recommended for large texts)</div>
                         </div>
                         
                         <div class="form-group template-management">
@@ -183,6 +183,7 @@
                 
                 <div class="settings-actions">
                     <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>
+                    <button id="debug-ai-settings-btn" class="btn btn-outline-secondary">Debug AI Settings</button>
                     <button id="cancel-settings-btn" class="btn btn-secondary">Cancel</button>
                 </div>
             </div>
@@ -352,7 +353,7 @@
                                         🗑️ Clear
                                     </button>
                                 </div>
-                                <div class="toolbar-center ai-refinement-controls hidden" id="ai-refinement-controls">
+                                <div class="toolbar-center ai-refinement-controls" id="ai-refinement-controls">
                                     <select id="template-selector" class="template-selector">
                                         <option value="">Select template...</option>
                                     </select>
@@ -590,7 +591,7 @@
             <div class="modal-body">
                 <div class="template-sections">
                     <!-- Template List Section -->
-                    <div class="template-list-section">
+                    <div class="template-list-section" id="template-list-section">
                         <div class="template-list-header">
                             <h4>Your Templates</h4>
                             <button id="create-template-btn" class="btn btn-sm btn-primary">Create New</button>
@@ -656,6 +657,7 @@
         </div>
     </div>
 
+    <!-- Load controller scripts using proper relative paths -->
     <script src="controllers/refinementController.js"></script>
     <script src="index.js"></script>
 </body>

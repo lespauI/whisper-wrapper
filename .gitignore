@@ -67,11 +67,13 @@ temp/
 test-config.js
 test-whisper.js
 /whisper.cpp
+/data/*
 
 # Whisper models (large binary files)
 /models/*.bin
-/data/config*.json
 
 # Test results
 /test-results/
 test-results/
+
+

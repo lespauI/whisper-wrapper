@@ -124,10 +124,66 @@
                             <textarea id="initial-prompt" class="form-control prompt-textarea" rows="3" placeholder="Enter initial prompt to guide transcription (optional)"></textarea>
                         </div>
                     </div>
+                    
+                    <!-- AI Refinement Settings -->
+                    <div class="settings-card ai-refinement-card">
+                        <h4 class="settings-card-title">AI Refinement</h4>
+                        
+                        <div class="form-group">
+                            <div class="checkbox-container">
+                                <input type="checkbox" id="ai-refinement-enabled-checkbox" class="styled-checkbox">
+                                <label for="ai-refinement-enabled-checkbox">Enable AI Refinement</label>
+                            </div>
+                            <div class="form-text">Use AI to refine and improve your transcriptions</div>
+                        </div>
+                        
+                        <div class="status-card">
+                            <div class="status-icon">🤖</div>
+                            <div class="status-details">
+                                <h5>Ollama Connection</h5>
+                                <div id="ollama-status" class="status-indicator">
+                                    <span id="ollama-status-text">Not connected</span>
+                                </div>
+                            </div>
+                            <button id="test-ollama-btn" class="btn btn-action">Connect</button>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="ollama-endpoint">Ollama Endpoint</label>
+                            <input type="text" id="ollama-endpoint" class="form-control" placeholder="http://localhost:11434" value="http://localhost:11434">
+                            <div class="form-text">URL of your local Ollama instance</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="ollama-model-select">Ollama Model</label>
+                            <div class="input-group">
+                                <select id="ollama-model-select" class="form-control">
+                                    <option value="">Loading models...</option>
+                                </select>
+                                <button type="button" id="refresh-models-btn" class="btn-icon" title="Refresh models list">🔄</button>
+                            </div>
+                            <div class="form-text">Select the model to use for refinement</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="ollama-timeout">Request Timeout (seconds)</label>
+                            <input type="number" id="ollama-timeout" class="form-control" min="5" max="600" value="300">
+                            <div class="form-text">Maximum time to wait for AI response (5-10 minutes recommended for large texts)</div>
+                        </div>
+                        
+                        <div class="form-group template-management">
+                            <div class="template-header">
+                                <label>Refinement Templates</label>
+                                <button id="manage-templates-btn" class="btn btn-sm">Manage Templates</button>
+                            </div>
+                            <div class="form-text">Templates define how AI refines your transcriptions</div>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="settings-actions">
                     <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>
+                    <button id="debug-ai-settings-btn" class="btn btn-outline-secondary">Debug AI Settings</button>
                     <button id="cancel-settings-btn" class="btn btn-secondary">Cancel</button>
                 </div>
             </div>
@@ -297,6 +353,14 @@
                                         🗑️ Clear
                                     </button>
                                 </div>
+                                <div class="toolbar-center ai-refinement-controls" id="ai-refinement-controls">
+                                    <select id="template-selector" class="template-selector">
+                                        <option value="">Select template...</option>
+                                    </select>
+                                    <button id="refine-with-ai-btn" class="btn btn-primary btn-small">
+                                        ✨ Refine with AI
+                                    </button>
+                                </div>
                                 <div class="toolbar-right">
                                     <span id="transcription-status" class="transcription-status">
                                         Ready to transcribe
@@ -307,6 +371,12 @@
                                 <div id="transcription-loading" class="loading-state hidden">
                                     <div class="spinner"></div>
                                     <p>Transcribing audio...</p>
+                                </div>
+                                
+                                <div id="refinement-loading" class="loading-state hidden">
+                                    <div class="spinner"></div>
+                                    <p>Refining transcription with AI...</p>
+                                    <p class="loading-note">This may take a moment depending on the size of your transcription</p>
                                 </div>
 
                                 <div id="transcription-editor" class="transcription-editor">
@@ -511,6 +581,84 @@
         </div>
     </div>
 
+    <!-- Template Management Modal -->
+    <div id="template-modal" class="modal-container hidden">
+        <div class="modal-content template-modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Refinement Templates</h3>
+                <button id="close-template-modal-btn" class="btn-icon">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="template-sections">
+                    <!-- Template List Section -->
+                    <div class="template-list-section" id="template-list-section">
+                        <div class="template-list-header">
+                            <h4>Your Templates</h4>
+                            <button id="create-template-btn" class="btn btn-sm btn-primary">Create New</button>
+                        </div>
+                        <div class="template-list" id="template-list">
+                            <!-- Templates will be added here dynamically -->
+                            <div class="template-list-empty">Loading templates...</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Template Editor Section -->
+                    <div class="template-editor-section hidden" id="template-editor-section">
+                        <div class="template-editor-header">
+                            <h4 id="template-editor-title">Edit Template</h4>
+                        </div>
+                        <div class="template-editor-form">
+                            <div class="form-group">
+                                <label for="template-name">Template Name</label>
+                                <input type="text" id="template-name" class="form-control" placeholder="Enter template name">
+                            </div>
+                            <div class="form-group">
+                                <label for="template-description">Description</label>
+                                <input type="text" id="template-description" class="form-control" placeholder="Brief description of this template">
+                            </div>
+                            <div class="form-group">
+                                <label for="template-prompt">Prompt Template</label>
+                                <textarea id="template-prompt" class="form-control prompt-textarea" rows="8" placeholder="Enter your prompt template. Use {{text}} as a placeholder for the transcription text."></textarea>
+                                <div class="form-text">Use {{text}} as a placeholder for the transcription text that will be refined.</div>
+                            </div>
+                            <div class="form-group">
+                                <div class="checkbox-container">
+                                    <input type="checkbox" id="template-default-checkbox" class="styled-checkbox">
+                                    <label for="template-default-checkbox">Set as default template</label>
+                                </div>
+                            </div>
+                            <div class="template-editor-actions">
+                                <button id="save-template-btn" class="btn btn-primary">Save Template</button>
+                                <button id="cancel-template-edit-btn" class="btn btn-secondary">Cancel</button>
+                                <button id="delete-template-btn" class="btn btn-danger">Delete</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Template Confirmation Modal -->
+    <div id="delete-template-modal" class="modal-container hidden">
+        <div class="modal-content confirmation-modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Confirm Deletion</h3>
+                <button id="close-delete-modal-btn" class="btn-icon">✕</button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the template "<span id="delete-template-name"></span>"?</p>
+                <p class="warning-text">This action cannot be undone.</p>
+                <div class="confirmation-actions">
+                    <button id="confirm-delete-btn" class="btn btn-danger">Delete Template</button>
+                    <button id="cancel-delete-btn" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load controller scripts using proper relative paths -->
+    <script src="controllers/refinementController.js"></script>
     <script src="index.js"></script>
 </body>
 </html>

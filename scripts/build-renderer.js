@@ -31,6 +31,18 @@ copyFile(
     path.join(distDir, 'index.js')
 );
 
+// Copy controllers
+const controllersDir = path.join(distDir, 'controllers');
+if (!fs.existsSync(controllersDir)) {
+    fs.mkdirSync(controllersDir, { recursive: true });
+}
+
+// Copy refinementController.js
+copyFile(
+    path.join(srcDir, 'controllers/refinementController.js'),
+    path.join(controllersDir, 'refinementController.js')
+);
+
 // Copy CSS
 const stylesDir = path.join(distDir, 'styles');
 if (!fs.existsSync(stylesDir)) {

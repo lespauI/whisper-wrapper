@@ -44,7 +44,19 @@ class WhisperWrapperApp {
             viewMode: 'timestamped' // 'timestamped' or 'plain'
         };
         
-
+        // AI Refinement state
+        this.aiRefinementState = {
+            enabled: false,
+            connected: false,
+            ollamaEndpoint: 'http://localhost:11434',
+            ollamaModel: '',
+            availableModels: [],
+            timeout: 30,
+            templates: [],
+            currentTemplateId: null,
+            templateBeingEdited: null,
+            isTemplateModalOpen: false
+        };
         
         this.init();
     }
@@ -58,6 +70,19 @@ class WhisperWrapperApp {
         this.setupSettings();
         this.loadSettings();
         this.checkForOrphanedRecordings();
+        
+        // Initialize refinement controller
+        try {
+            if (typeof RefinementController !== 'undefined') {
+                this.refinementController = new RefinementController(this);
+                console.log('Refinement controller initialized successfully');
+            } else {
+                console.warn('RefinementController not defined. AI refinement features will be unavailable.');
+            }
+        } catch (error) {
+            console.error('Error initializing refinement controller:', error);
+        }
+        
         this.updateStatus('Ready');
         this.updateToggleButton(); // Initialize toggle button state
     }
@@ -101,6 +126,28 @@ class WhisperWrapperApp {
             this.closeSettings();
         });
         
+        // Debug AI settings button
+        addListener('#debug-ai-settings-btn', 'click', async () => {
+            try {
+                const debug = await window.electronAPI.debugAIRefinementSettings();
+                console.log('AI Refinement Debug Information:', debug);
+                
+                // Show a summary as an alert
+                const summary = `
+AI Refinement Debug Info:
+- Enabled in config: ${debug.configSettings.enabled}
+- Enabled in Ollama service: ${debug.ollamaEnabled}
+- Model: ${debug.ollamaSettings.model}
+- Endpoint: ${debug.ollamaSettings.endpoint}
+                `;
+                
+                alert(summary);
+            } catch (error) {
+                console.error('Error getting debug info:', error);
+                this.showError(`Error debugging: ${error.message}`);
+            }
+        });
+        
         // Settings close buttons
         addListener('#close-settings-btn', 'click', () => {
             this.closeSettings();
@@ -134,6 +181,148 @@ class WhisperWrapperApp {
         // Model selection change handler
         addListener('#model-select', 'change', (e) => {
             this.updateModelDescription(e.target.value);
+        });
+        
+        // AI Refinement - Ollama connection test
+        addListener('#test-ollama-btn', 'click', () => {
+            this.testOllamaConnection();
+        });
+        
+        // AI Refinement - Refresh models
+        addListener('#refresh-models-btn', 'click', () => {
+            this.refreshOllamaModels();
+        });
+        
+        // AI Refinement - Model selection change
+        addListener('#ollama-model-select', 'change', async (e) => {
+            const selectedModel = e.target.value;
+            console.log(`Ollama model changed to: ${selectedModel}`);
+            
+            // Update state
+            this.aiRefinementState.ollamaModel = selectedModel;
+            
+            // Save the selection immediately
+            try {
+                const result = await window.electronAPI.saveAIRefinementSettings({
+                    model: selectedModel
+                });
+                console.log(`Saved Ollama model selection: ${selectedModel}`, result);
+            } catch (error) {
+                console.error('Error saving Ollama model selection:', error);
+            }
+        });
+        
+        // AI Refinement - Timeout change
+        addListener('#ollama-timeout', 'change', async (e) => {
+            const timeoutValue = parseInt(e.target.value);
+            console.log(`Ollama timeout changed to: ${timeoutValue} seconds`);
+            
+            // Update state
+            this.aiRefinementState.timeout = timeoutValue;
+            
+            // Save the timeout immediately
+            try {
+                const result = await window.electronAPI.saveAIRefinementSettings({
+                    timeoutSeconds: timeoutValue
+                });
+                console.log(`Saved Ollama timeout: ${timeoutValue} seconds`, result);
+            } catch (error) {
+                console.error('Error saving Ollama timeout:', error);
+            }
+        });
+        
+        // AI Refinement - Enable/disable checkbox
+        addListener('#ai-refinement-enabled-checkbox', 'change', async (e) => {
+            const enabled = e.target.checked;
+            console.log(`AI Refinement enabled checkbox changed to: ${enabled}`);
+            
+            // Update local state
+            this.aiRefinementState.enabled = enabled;
+            this.updateAIRefinementUIState();
+            
+            // Force setting the enabled state and other settings
+            const timeoutValue = parseInt(document.getElementById('ollama-timeout').value);
+            const settings = {
+                enabled: enabled,
+                endpoint: document.getElementById('ollama-endpoint').value,
+                model: document.getElementById('ollama-model-select').value,
+                timeoutSeconds: isNaN(timeoutValue) ? 300 : timeoutValue // Ensure valid timeout with fallback
+            };
+            
+            // Update local state to match
+            this.aiRefinementState.timeout = settings.timeoutSeconds;
+            
+            // Save to settings
+            try {
+                console.log('Explicitly saving AI Refinement enabled state:', settings);
+                const result = await window.electronAPI.saveAIRefinementSettings(settings);
+                
+                // Debug: Check if settings were properly saved
+                const debug = await window.electronAPI.debugAIRefinementSettings();
+                console.log('AI Refinement Debug Info after enable/disable:', debug);
+                
+                console.log(`AI Refinement enabled state saved: ${enabled}`, result);
+            } catch (error) {
+                console.error('Error saving AI Refinement enabled state:', error);
+            }
+        });
+        
+        // AI Refinement - Manage templates button
+        addListener('#manage-templates-btn', 'click', () => {
+            this.openTemplateModal();
+        });
+        
+        // Template modal - Close button
+        addListener('#close-template-modal-btn', 'click', () => {
+            this.closeTemplateModal();
+        });
+        
+        // Template modal - Create new template button
+        addListener('#create-template-btn', 'click', () => {
+            this.createNewTemplate();
+        });
+        
+        // Template modal - Save template button
+        addListener('#save-template-btn', 'click', () => {
+            this.saveTemplate();
+        });
+        
+        // Template modal - Cancel edit button
+        addListener('#cancel-template-edit-btn', 'click', () => {
+            this.cancelTemplateEdit();
+        });
+        
+        // Template modal - Delete template button
+        addListener('#delete-template-btn', 'click', () => {
+            this.confirmDeleteTemplate();
+        });
+        
+        // Delete confirmation modal - Close button
+        addListener('#close-delete-modal-btn', 'click', () => {
+            this.closeDeleteConfirmationModal();
+        });
+        
+        // Delete confirmation modal - Cancel button
+        addListener('#cancel-delete-btn', 'click', () => {
+            this.closeDeleteConfirmationModal();
+        });
+        
+        // Delete confirmation modal - Confirm button
+        addListener('#confirm-delete-btn', 'click', () => {
+            this.deleteTemplate();
+        });
+        
+        // Close modals on backdrop click
+        addListener('#template-modal', 'click', (e) => {
+            if (e.target === e.currentTarget) {
+                this.closeTemplateModal();
+            }
+        });
+        
+        addListener('#delete-template-modal', 'click', (e) => {
+            if (e.target === e.currentTarget) {
+                this.closeDeleteConfirmationModal();
+            }
         });
         
         // Initial prompt checkbox handler
@@ -295,14 +484,597 @@ class WhisperWrapperApp {
         setInterval(() => {
             this.updateTranscriptionStatus();
             this.updateUndoRedoButtons();
+            
+            // Update AI refinement UI if controller is initialized
+            if (this.refinementController) {
+                this.refinementController.updateRefinementUI();
+            }
         }, 1000);
     }
 
     setupSettings() {
         // Settings are handled in the modal event listeners
     }
+    
+    // Helper function to update the AI Refinement UI state
+    updateAIRefinementUIState() {
+        const enabled = this.aiRefinementState.enabled;
+        const aiSettingsFields = document.querySelectorAll('.ai-refinement-card .form-group:not(:first-child), .ai-refinement-card .status-card');
+        
+        aiSettingsFields.forEach(field => {
+            if (enabled) {
+                field.classList.remove('disabled');
+            } else {
+                field.classList.add('disabled');
+            }
+        });
+        
+        // Enable/disable input fields
+        document.getElementById('ollama-endpoint').disabled = !enabled;
+        document.getElementById('ollama-model-select').disabled = !enabled;
+        document.getElementById('ollama-timeout').disabled = !enabled;
+        document.getElementById('test-ollama-btn').disabled = !enabled;
+        document.getElementById('refresh-models-btn').disabled = !enabled;
+        document.getElementById('manage-templates-btn').disabled = !enabled;
+    }
+    
+    // Load refinement templates from storage
+    async loadTemplates() {
+        try {
+            // Use getAllTemplates (the correct method name) instead of getTemplates
+            const result = await window.electronAPI.getAllTemplates();
+            
+            if (result && result.success && Array.isArray(result.templates)) {
+                this.aiRefinementState.templates = result.templates;
+                console.log(`Loaded ${result.templates.length} refinement templates`);
+                
+                // If refinement controller exists, initialize or update the template selector
+                if (this.refinementController) {
+                    if (!this.refinementController.constructor.hasInitializedTemplateSelector) {
+                        this.refinementController.updateTemplateSelector(false); // initial setup
+                    } else {
+                        this.refinementController.updateTemplateSelector(true); // force update
+                    }
+                }
+            } else {
+                console.warn('No templates found or invalid template data', result);
+                this.aiRefinementState.templates = [];
+            }
+        } catch (error) {
+            console.error('Error loading templates:', error);
+            this.aiRefinementState.templates = [];
+        }
+    }
+    
+    // Template modal management
+    async openTemplateModal() {
+        try {
+            console.log('Opening template modal');
+            // Load templates if needed
+            if (this.aiRefinementState.templates.length === 0) {
+                await this.loadTemplates();
+            }
+            
+            // Show modal
+            const templateModal = document.getElementById('template-modal');
+            if (templateModal) {
+                templateModal.classList.remove('hidden');
+                
+                // Render template list if the function exists
+                if (typeof this.renderTemplateList === 'function') {
+                    this.renderTemplateList();
+                } else {
+                    console.warn('renderTemplateList function not found');
+                }
+                
+                this.aiRefinementState.isTemplateModalOpen = true;
+            } else {
+                console.error('Template modal element not found');
+            }
+        } catch (error) {
+            console.error('Error opening template modal:', error);
+            this.showError('Failed to open template manager');
+        }
+    }
+    
+    closeTemplateModal() {
+        console.log('Closing template modal');
+        const templateModal = document.getElementById('template-modal');
+        if (templateModal) {
+            templateModal.classList.add('hidden');
+            
+            // Reset template being edited
+            this.aiRefinementState.templateBeingEdited = null;
+            
+            // Hide edit form
+            const editForm = document.getElementById('template-editor-section');
+            const templateList = document.getElementById('template-list-section');
+            
+            if (editForm && templateList) {
+                editForm.classList.add('hidden');
+                templateList.classList.remove('hidden');
+            }
+            
+            this.aiRefinementState.isTemplateModalOpen = false;
+        } else {
+            console.error('Template modal element not found');
+        }
+    }
+    
+    // Render the list of available templates in the modal
+    renderTemplateList() {
+        console.log('Rendering template list');
+        const templateListContainer = document.getElementById('template-list');
+        if (!templateListContainer) {
+            console.error('Template list container not found');
+            return;
+        }
+        
+        // Clear existing list
+        templateListContainer.innerHTML = '';
+        
+        // Get templates from state
+        const templates = this.aiRefinementState.templates || [];
+        
+        if (templates.length === 0) {
+            const emptyMessage = document.createElement('div');
+            emptyMessage.className = 'template-empty-message';
+            emptyMessage.textContent = 'No templates available. Create your first template!';
+            templateListContainer.appendChild(emptyMessage);
+            return;
+        }
+        
+        // Create a template item for each template
+        templates.forEach(template => {
+            const item = document.createElement('div');
+            item.className = 'template-item';
+            if (template.isDefault) {
+                item.classList.add('default-template');
+            }
+            
+            const header = document.createElement('div');
+            header.className = 'template-header';
+            
+            const title = document.createElement('h4');
+            title.textContent = template.name;
+            
+            const badges = document.createElement('div');
+            badges.className = 'template-badges';
+            
+            if (template.isDefault) {
+                const defaultBadge = document.createElement('span');
+                defaultBadge.className = 'badge default-badge';
+                defaultBadge.textContent = 'Default';
+                badges.appendChild(defaultBadge);
+            }
+            
+            header.appendChild(title);
+            header.appendChild(badges);
+            
+            const description = document.createElement('p');
+            description.className = 'template-description';
+            description.textContent = template.description || 'No description';
+            
+            const actions = document.createElement('div');
+            actions.className = 'template-actions';
+            
+            const editBtn = document.createElement('button');
+            editBtn.className = 'btn btn-sm';
+            editBtn.textContent = 'Edit';
+            editBtn.addEventListener('click', () => {
+                this.editTemplate(template.id);
+            });
+            
+            const defaultBtn = document.createElement('button');
+            defaultBtn.className = 'btn btn-sm';
+            defaultBtn.textContent = template.isDefault ? 'Default ✓' : 'Set as Default';
+            defaultBtn.disabled = template.isDefault;
+            if (!template.isDefault) {
+                defaultBtn.addEventListener('click', () => {
+                    this.setDefaultTemplate(template.id);
+                });
+            }
+            
+            actions.appendChild(editBtn);
+            actions.appendChild(defaultBtn);
+            
+            item.appendChild(header);
+            item.appendChild(description);
+            item.appendChild(actions);
+            
+            templateListContainer.appendChild(item);
+        });
+    }
+    
+    // Edit a template
+    async editTemplate(templateId) {
+        console.log(`Editing template: ${templateId}`);
+        try {
+            // Find the template in the list
+            const template = this.aiRefinementState.templates.find(t => t.id === templateId);
+            if (!template) {
+                throw new Error(`Template with ID ${templateId} not found`);
+            }
+            
+            // Set as current template being edited
+            this.aiRefinementState.templateBeingEdited = { ...template };
+            
+            // Show edit form, hide list
+            const editForm = document.getElementById('template-editor-section');
+            const templateList = document.getElementById('template-list-section');
+            
+            if (editForm && templateList) {
+                // Fill form fields
+                document.getElementById('template-name').value = template.name || '';
+                document.getElementById('template-description').value = template.description || '';
+                document.getElementById('template-prompt').value = template.prompt || '';
+                
+                // Show form, hide list
+                editForm.classList.remove('hidden');
+                templateList.classList.add('hidden');
+                
+                // Update form title
+                const formTitle = document.getElementById('template-form-title');
+                if (formTitle) {
+                    formTitle.textContent = 'Edit Template';
+                }
+                
+                // Show delete button
+                const deleteBtn = document.getElementById('delete-template-btn');
+                if (deleteBtn) {
+                    deleteBtn.classList.remove('hidden');
+                }
+            } else {
+                console.error('Template edit form or list container not found');
+            }
+        } catch (error) {
+            console.error('Error editing template:', error);
+            this.showError(`Failed to edit template: ${error.message}`);
+        }
+    }
+    
+    // Create a new template
+    createNewTemplate() {
+        console.log('Creating new template');
+        // Create empty template
+        this.aiRefinementState.templateBeingEdited = {
+            id: null, // Will be assigned when saving
+            name: '',
+            description: '',
+            prompt: '',
+            isDefault: false
+        };
+        
+        // Show edit form, hide list
+        const editForm = document.getElementById('template-editor-section');
+        const templateList = document.getElementById('template-list-section');
+        
+        if (editForm && templateList) {
+            // Clear form fields
+            document.getElementById('template-name').value = '';
+            document.getElementById('template-description').value = '';
+            document.getElementById('template-prompt').value = '';
+            
+            // Show form, hide list
+            editForm.classList.remove('hidden');
+            templateList.classList.add('hidden');
+            
+            // Update form title
+            const formTitle = document.getElementById('template-form-title');
+            if (formTitle) {
+                formTitle.textContent = 'Create New Template';
+            }
+            
+            // Hide delete button
+            const deleteBtn = document.getElementById('delete-template-btn');
+            if (deleteBtn) {
+                deleteBtn.classList.add('hidden');
+            }
+        } else {
+            console.error('Template edit form or list container not found');
+        }
+    }
+    
+    // Cancel template editing
+    cancelTemplateEdit() {
+        console.log('Canceling template edit');
+        // Reset template being edited
+        this.aiRefinementState.templateBeingEdited = null;
+        
+        // Hide edit form, show list
+        const editForm = document.getElementById('template-editor-section');
+        const templateList = document.getElementById('template-list-section');
+        
+        if (editForm && templateList) {
+            editForm.classList.add('hidden');
+            templateList.classList.remove('hidden');
+        } else {
+            console.error('Template edit form or list container not found');
+        }
+    }
+    
+    // Save template (create or update)
+    async saveTemplate() {
+        console.log('Saving template');
+        try {
+            // Get template being edited
+            const template = this.aiRefinementState.templateBeingEdited;
+            if (!template) {
+                throw new Error('No template being edited');
+            }
+            
+            // Get form values
+            const name = document.getElementById('template-name').value.trim();
+            const description = document.getElementById('template-description').value.trim();
+            const prompt = document.getElementById('template-prompt').value.trim();
+            
+            // Validate
+            if (!name) {
+                throw new Error('Template name is required');
+            }
+            
+            if (!prompt) {
+                throw new Error('Template prompt is required');
+            }
+            
+            // Update template data
+            template.name = name;
+            template.description = description;
+            template.prompt = prompt;
+            
+            // Save template
+            let result;
+            if (template.id) {
+                // Update existing template
+                result = await window.electronAPI.updateTemplate(template.id, template);
+            } else {
+                // Create new template
+                result = await window.electronAPI.createTemplate(template);
+            }
+            
+            if (!result.success) {
+                throw new Error(result.message || 'Failed to save template');
+            }
+            
+            // Reload templates
+            await this.loadTemplates();
+            
+            // Return to list view
+            this.cancelTemplateEdit();
+            
+            // Render updated list
+            this.renderTemplateList();
+            
+        } catch (error) {
+            console.error('Error saving template:', error);
+            this.showError(`Failed to save template: ${error.message}`);
+        }
+    }
+    
+    // Confirm delete template
+    confirmDeleteTemplate() {
+        console.log('Confirming template deletion');
+        // Get template being edited
+        const template = this.aiRefinementState.templateBeingEdited;
+        if (!template || !template.id) {
+            console.error('No template selected for deletion');
+            return;
+        }
+        
+        // Show confirmation modal
+        const deleteModal = document.getElementById('delete-template-modal');
+        if (deleteModal) {
+            // Set template name in confirmation message
+            const templateName = document.getElementById('delete-template-name');
+            if (templateName) {
+                templateName.textContent = template.name;
+            }
+            
+            deleteModal.classList.remove('hidden');
+        } else {
+            console.error('Delete confirmation modal not found');
+        }
+    }
+    
+    // Close delete confirmation modal
+    closeDeleteConfirmationModal() {
+        console.log('Closing delete confirmation modal');
+        const deleteModal = document.getElementById('delete-template-modal');
+        if (deleteModal) {
+            deleteModal.classList.add('hidden');
+        } else {
+            console.error('Delete confirmation modal not found');
+        }
+    }
+    
+    // Delete template
+    async deleteTemplate() {
+        console.log('Deleting template');
+        try {
+            // Get template being edited
+            const template = this.aiRefinementState.templateBeingEdited;
+            if (!template || !template.id) {
+                throw new Error('No template selected for deletion');
+            }
+            
+            // Delete template
+            const result = await window.electronAPI.deleteTemplate(template.id);
+            
+            if (!result.success) {
+                throw new Error(result.message || 'Failed to delete template');
+            }
+            
+            // Close confirmation modal
+            this.closeDeleteConfirmationModal();
+            
+            // Reload templates
+            await this.loadTemplates();
+            
+            // Return to list view
+            this.cancelTemplateEdit();
+            
+            // Render updated list
+            this.renderTemplateList();
+            
+        } catch (error) {
+            console.error('Error deleting template:', error);
+            this.showError(`Failed to delete template: ${error.message}`);
+        }
+    }
+    
+    // Set a template as default
+    async setDefaultTemplate(templateId) {
+        console.log(`Setting template ${templateId} as default`);
+        try {
+            // Set default template
+            const result = await window.electronAPI.setDefaultTemplate(templateId);
+            
+            if (!result.success) {
+                throw new Error(result.message || 'Failed to set default template');
+            }
+            
+            // Reload templates
+            await this.loadTemplates();
+            
+            // Render updated list
+            this.renderTemplateList();
+            
+        } catch (error) {
+            console.error('Error setting default template:', error);
+            this.showError(`Failed to set default template: ${error.message}`);
+        }
+    }
+    
+    // Helper function to show error messages
+    showError(message) {
+        console.error(message);
+        // Show error notification if available
+        if (typeof this.showNotification === 'function') {
+            this.showNotification({
+                type: 'error',
+                message: message
+            });
+        } else {
+            // Fallback to alert
+            alert(message);
+        }
+    }
+    
+    // Test connection to Ollama server
+    async testOllamaConnection() {
+        try {
+            // Update UI to show testing state
+            const statusText = document.getElementById('ollama-status-text');
+            statusText.textContent = 'Testing connection...';
+            
+            // Get endpoint from input field
+            const endpoint = document.getElementById('ollama-endpoint').value;
+            this.aiRefinementState.ollamaEndpoint = endpoint;
+            
+            // Call API to test connection
+            const result = await window.electronAPI.testOllamaConnection(endpoint);
+            
+            if (result.success) {
+                this.aiRefinementState.connected = true;
+                statusText.textContent = 'Connected ✅';
+                statusText.classList.remove('error');
+                statusText.classList.add('success');
+                
+                return true;
+            } else {
+                throw new Error(result.error || 'Connection failed');
+            }
+        } catch (error) {
+            console.error('Ollama connection test failed:', error);
+            this.aiRefinementState.connected = false;
+            
+            const statusText = document.getElementById('ollama-status-text');
+            statusText.textContent = `Not connected ❌ (${error.message})`;
+            statusText.classList.remove('success');
+            statusText.classList.add('error');
+            
+            return false;
+        }
+    }
+    
+    // Refresh list of available Ollama models
+    async refreshOllamaModels() {
+        try {
+            // Only proceed if connected
+            if (!this.aiRefinementState.connected) {
+                return false;
+            }
+            
+            const modelSelect = document.getElementById('ollama-model-select');
+            modelSelect.innerHTML = '<option value="">Loading models...</option>';
+            
+            // Get endpoint from state
+            const endpoint = this.aiRefinementState.ollamaEndpoint;
+            
+            // Call API to get models
+            const result = await window.electronAPI.getOllamaModels(endpoint);
+            
+            if (result.success && result.models) {
+                // Clear select options
+                modelSelect.innerHTML = '';
+                
+                // Store models in state
+                this.aiRefinementState.availableModels = result.models;
+                
+                // Create option for each model
+                result.models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.name;
+                    option.textContent = `${model.name} (${Math.round(model.size / (1024 * 1024))}MB)`;
+                    modelSelect.appendChild(option);
+                });
+                
+                // Select current model if it exists
+                if (this.aiRefinementState.ollamaModel && 
+                    result.models.some(m => m.name === this.aiRefinementState.ollamaModel)) {
+                    console.log(`Setting Ollama model select to saved value: ${this.aiRefinementState.ollamaModel}`);
+                    modelSelect.value = this.aiRefinementState.ollamaModel;
+                    
+                    // Save this selection explicitly to ensure it persists
+                    try {
+                        await window.electronAPI.saveAIRefinementSettings({
+                            model: this.aiRefinementState.ollamaModel
+                        });
+                        console.log(`Saved selected Ollama model: ${this.aiRefinementState.ollamaModel}`);
+                    } catch (error) {
+                        console.error('Error saving Ollama model selection:', error);
+                    }
+                } else if (result.models.length > 0) {
+                    // Otherwise select first model
+                    this.aiRefinementState.ollamaModel = result.models[0].name;
+                    modelSelect.value = result.models[0].name;
+                    
+                    // Save this default selection
+                    try {
+                        await window.electronAPI.saveAIRefinementSettings({
+                            model: result.models[0].name
+                        });
+                        console.log(`Saved default Ollama model: ${result.models[0].name}`);
+                    } catch (error) {
+                        console.error('Error saving default Ollama model:', error);
+                    }
+                }
+                
+                return true;
+            } else {
+                throw new Error(result.error || 'Failed to retrieve models');
+            }
+        } catch (error) {
+            console.error('Error refreshing Ollama models:', error);
+            
+            const modelSelect = document.getElementById('ollama-model-select');
+            modelSelect.innerHTML = '<option value="">Failed to load models</option>';
+            
+            return false;
+        }
+    }
 
-    switchTab(tabName) {
+    async switchTab(tabName) {
         // Update tab buttons
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.classList.remove('active');
@@ -316,6 +1088,28 @@ class WhisperWrapperApp {
         document.getElementById(`${tabName}-tab`).classList.add('active');
 
         this.currentTab = tabName;
+        
+        // If switching to transcription tab, ensure templates are loaded and dropdown is updated
+        if (tabName === 'transcription' && this.refinementController) {
+            try {
+                // Reload templates in case they were added in settings
+                await this.loadTemplates();
+                
+                // Check if template selector needs initialization
+                if (this.refinementController && 
+                    typeof this.refinementController.updateTemplateSelector === 'function') {
+                    
+                    // Initialize if needed
+                    if (!this.refinementController.constructor.hasInitializedTemplateSelector) {
+                        setTimeout(() => {
+                            this.refinementController.updateTemplateSelector(false);
+                        }, 500);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading templates for transcription tab:', error);
+            }
+        }
     }
 
     async selectFile() {
@@ -683,18 +1477,82 @@ class WhisperWrapperApp {
         if (segments && segments.length > 0) {
             console.log('🎬 Has segments, rendering timestamped view');
             this.renderTimestampedSegments(segments);
-            this.transcriptionState.viewMode = 'timestamped';
-            this.showTimestampedView();
+            
+            // Make sure the appropriate view is shown based on the current mode
+            if (this.transcriptionState.viewMode === 'timestamped') {
+                console.log('🎬 Showing timestamped view after rendering segments');
+                this.showTimestampedView();
+            } else {
+                console.log('🎬 Showing plain text view after rendering segments');
+                this.showPlainTextView();
+            }
         } else {
-            console.log('🎬 No segments, showing plain text view');
-            // Fallback to plain text view if no segments
+            // If no segments, always default to plain text view
+            console.log('🎬 No segments, defaulting to plain text view');
             this.transcriptionState.viewMode = 'plain';
             this.showPlainTextView();
         }
+    }
+    
+    /**
+     * Update the transcription text and related UI state
+     * Used by AI refinement and other processes
+     * @param {string} text The new text to display
+     */
+    updateTranscriptionText(text) {
+        const transcriptionText = document.getElementById('transcription-text');
+        
+        // Update the current text
+        this.transcriptionState.currentText = text;
+        this.transcriptionState.isDirty = true;
+        
+        // Update the text view
+        transcriptionText.value = text;
+        
+        // When using plain view, ensure the segments view is hidden
+        if (this.transcriptionState.viewMode === 'plain') {
+            document.getElementById('transcription-segments').classList.add('hidden');
+            transcriptionText.classList.remove('hidden');
+        }
+        
+        // Auto-save the draft
+        this.saveTranscriptionDraft();
         
         // Update UI indicators
         this.updateTranscriptionStatus();
         this.updateToggleButton();
+    }
+    
+    /**
+     * Save the current transcription text to history for undo/redo
+     * Used before making significant changes like AI refinement
+     */
+    saveTranscriptionToHistory() {
+        const currentText = this.transcriptionState.currentText;
+        
+        // Only add to history if we have text and it's different from the last entry
+        if (currentText && 
+            (this.transcriptionState.history.length === 0 || 
+             currentText !== this.transcriptionState.history[this.transcriptionState.historyIndex])) {
+            
+            // If we're in the middle of the history stack, truncate the future history
+            if (this.transcriptionState.historyIndex < this.transcriptionState.history.length - 1) {
+                this.transcriptionState.history = this.transcriptionState.history.slice(0, this.transcriptionState.historyIndex + 1);
+            }
+            
+            // Add current text to history
+            this.transcriptionState.history.push(currentText);
+            this.transcriptionState.historyIndex = this.transcriptionState.history.length - 1;
+            
+            // Limit history size to prevent memory issues (keep last 50 states)
+            if (this.transcriptionState.history.length > 50) {
+                this.transcriptionState.history = this.transcriptionState.history.slice(-50);
+                this.transcriptionState.historyIndex = this.transcriptionState.history.length - 1;
+            }
+            
+            // Update UI
+            this.updateUndoRedoButtons();
+        }
     }
 
     renderTimestampedSegments(segments) {
@@ -989,14 +1847,64 @@ class WhisperWrapperApp {
     }
     
     toggleViewMode() {
-        if (this.transcriptionState.viewMode === 'timestamped') {
+        // Check if we have segments first
+        if (this.transcriptionState.segments.length === 0 && this.transcriptionState.viewMode === 'plain') {
+            // No segments available and trying to switch to timestamped view
+            console.log('🎬 Cannot switch to timestamped view - no segments available');
+            
+            // Show a notification to the user
+            this.showNotification('No timestamp data available. The transcript needs to be generated with timestamps.', 'warning');
+            
+            // Keep in plain text mode
+            this.transcriptionState.viewMode = 'plain';
+        } else if (this.transcriptionState.viewMode === 'timestamped') {
+            // Switching to plain text view
             this.transcriptionState.viewMode = 'plain';
             this.showPlainTextView();
         } else {
+            // Switching to timestamped view
             this.transcriptionState.viewMode = 'timestamped';
             this.showTimestampedView();
         }
+        
+        // Update the button text/state
         this.updateToggleButton();
+    }
+    
+    /**
+     * Show a notification to the user
+     * @param {string} message - The message to display
+     * @param {string} type - The type of notification (info, warning, error)
+     */
+    showNotification(message, type = 'info') {
+        const container = document.getElementById('notification-container') || this.createNotificationContainer();
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+        
+        container.appendChild(notification);
+        
+        // Auto-remove after a delay
+        setTimeout(() => {
+            notification.classList.add('fade-out');
+            setTimeout(() => {
+                if (container.contains(notification)) {
+                    container.removeChild(notification);
+                }
+            }, 500);
+        }, 3000);
+    }
+    
+    /**
+     * Create a notification container if it doesn't exist
+     * @returns {HTMLElement} The notification container
+     */
+    createNotificationContainer() {
+        const container = document.createElement('div');
+        container.id = 'notification-container';
+        container.className = 'notification-container';
+        document.body.appendChild(container);
+        return container;
     }
     
     showTimestampedView() {
@@ -1041,22 +1949,29 @@ class WhisperWrapperApp {
     updateToggleButton() {
         const toggleBtn = document.getElementById('toggle-view-btn');
         
-        if (this.transcriptionState.segments.length === 0) {
-            // No segments available, disable timestamped view
-            toggleBtn.disabled = true;
-            toggleBtn.textContent = '📝 Plain Text Only';
-            toggleBtn.title = 'No timestamp data available';
-            return;
-        }
-        
+        // Always enable the button, regardless of segments availability
         toggleBtn.disabled = false;
         
-        if (this.transcriptionState.viewMode === 'timestamped') {
-            toggleBtn.textContent = '📝 Plain Text View';
-            toggleBtn.title = 'Switch to plain text editing view';
+        if (this.transcriptionState.segments.length === 0) {
+            // No segments available, but button still enabled
+            if (this.transcriptionState.viewMode === 'timestamped') {
+                // Force to plain text view if no segments are available
+                this.transcriptionState.viewMode = 'plain';
+                toggleBtn.textContent = '🕒 Timestamped View';
+                toggleBtn.title = 'Switch to timestamped view (no timestamps currently available)';
+            } else {
+                toggleBtn.textContent = '🕒 Timestamped View';
+                toggleBtn.title = 'Switch to timestamped view (no timestamps currently available)';
+            }
         } else {
-            toggleBtn.textContent = '🕒 Timestamped View';
-            toggleBtn.title = 'Switch to timestamped segments view';
+            // Has segments, normal behavior
+            if (this.transcriptionState.viewMode === 'timestamped') {
+                toggleBtn.textContent = '📝 Plain Text View';
+                toggleBtn.title = 'Switch to plain text editing view';
+            } else {
+                toggleBtn.textContent = '🕒 Timestamped View';
+                toggleBtn.title = 'Switch to timestamped segments view';
+            }
         }
     }
 
@@ -1240,6 +2155,7 @@ class WhisperWrapperApp {
     }
 
     undoTranscription() {
+        // Only perform the undo if there's history to undo to
         if (this.transcriptionState.historyIndex > 0) {
             this.transcriptionState.historyIndex--;
             const previousText = this.transcriptionState.history[this.transcriptionState.historyIndex];
@@ -1251,10 +2167,14 @@ class WhisperWrapperApp {
             
             this.updateTranscriptionStatus();
             this.scheduleAutoSave();
+        } else {
+            // If no history to undo to, just show a status update
+            this.updateStatus('Nothing to undo');
         }
     }
 
     redoTranscription() {
+        // Only perform the redo if there's history to redo to
         if (this.transcriptionState.historyIndex < this.transcriptionState.history.length - 1) {
             this.transcriptionState.historyIndex++;
             const nextText = this.transcriptionState.history[this.transcriptionState.historyIndex];
@@ -1266,6 +2186,9 @@ class WhisperWrapperApp {
             
             this.updateTranscriptionStatus();
             this.scheduleAutoSave();
+        } else {
+            // If no history to redo to, just show a status update
+            this.updateStatus('Nothing to redo');
         }
     }
 
@@ -1309,12 +2232,13 @@ class WhisperWrapperApp {
         const undoBtn = document.getElementById('undo-btn');
         const redoBtn = document.getElementById('redo-btn');
         
+        // Always keep buttons enabled as requested
         if (undoBtn) {
-            undoBtn.disabled = this.transcriptionState.historyIndex <= 0;
+            undoBtn.disabled = false;
         }
         
         if (redoBtn) {
-            redoBtn.disabled = this.transcriptionState.historyIndex >= this.transcriptionState.history.length - 1;
+            redoBtn.disabled = false;
         }
     }
 
@@ -1560,6 +2484,50 @@ ${text}
                 }
             }
             
+            // Save AI Refinement settings
+            try {
+                console.log('Saving AI Refinement settings');
+                // Check if the API is available
+                if (!window.electronAPI || !window.electronAPI.getConfig || !window.electronAPI.setConfig) {
+                    console.warn('electronAPI methods not available for saving AI Refinement settings');
+                    return;
+                }
+                
+                // Get current config to update only the AI Refinement section
+                const currentConfig = await window.electronAPI.getConfig();
+                
+                // Update AI Refinement settings
+                const enabledCheckbox = document.getElementById('ai-refinement-enabled-checkbox');
+                const endpointInput = document.getElementById('ollama-endpoint');
+                const modelSelect = document.getElementById('ollama-model-select');
+                const timeoutInput = document.getElementById('ollama-timeout');
+                
+                // Create updated settings object
+                const aiRefinementSettings = {
+                    enabled: enabledCheckbox ? enabledCheckbox.checked : false,
+                    endpoint: endpointInput ? endpointInput.value : 'http://localhost:11434',
+                    model: modelSelect && modelSelect.value ? modelSelect.value : this.aiRefinementState.ollamaModel,
+                    timeoutSeconds: timeoutInput ? parseInt(timeoutInput.value) : 30
+                };
+                
+                // Update state
+                this.aiRefinementState.enabled = aiRefinementSettings.enabled;
+                this.aiRefinementState.ollamaEndpoint = aiRefinementSettings.endpoint;
+                this.aiRefinementState.ollamaModel = aiRefinementSettings.model;
+                this.aiRefinementState.timeout = aiRefinementSettings.timeoutSeconds;
+                
+                // Save using the dedicated method instead of mixing with main config
+                const result = await window.electronAPI.saveAIRefinementSettings(aiRefinementSettings);
+                if (!result.success) {
+                    throw new Error('Failed to save AI Refinement settings');
+                }
+                
+                console.log('AI Refinement settings saved successfully');
+            } catch (error) {
+                console.error('Error saving AI Refinement settings:', error);
+                throw error; // Rethrow to be caught by parent function
+            }
+            
             this.closeSettings();
             this.updateStatus('Settings saved');
             
@@ -1596,6 +2564,53 @@ ${text}
             
             // Update initial prompt textarea state based on checkbox
             this.updateInitialPromptState();
+            
+            // Load AI Refinement settings
+            try {
+                // Check if the API is available
+                if (!window.electronAPI || !window.electronAPI.getConfig) {
+                    console.warn('electronAPI.getConfig not available for loading AI Refinement settings');
+                    return;
+                }
+                
+                // Get AI Refinement settings using the dedicated method
+                const aiSettings = await window.electronAPI.getAIRefinementSettings();
+                if (aiSettings) {
+                    this.aiRefinementState.enabled = aiSettings.enabled || false;
+                    this.aiRefinementState.ollamaEndpoint = aiSettings.endpoint || 'http://localhost:11434';
+                    this.aiRefinementState.ollamaModel = aiSettings.model || '';
+                    this.aiRefinementState.timeout = aiSettings.timeoutSeconds || 300; // Use 300s as default to match config.js
+                    
+                    // Update UI elements if they exist
+                    const enabledCheckbox = document.getElementById('ai-refinement-enabled-checkbox');
+                    const endpointInput = document.getElementById('ollama-endpoint');
+                    const timeoutInput = document.getElementById('ollama-timeout');
+                    const modelSelect = document.getElementById('ollama-model-select');
+                    
+                    if (enabledCheckbox) enabledCheckbox.checked = this.aiRefinementState.enabled;
+                    if (endpointInput) endpointInput.value = this.aiRefinementState.ollamaEndpoint;
+                    if (timeoutInput) timeoutInput.value = this.aiRefinementState.timeout;
+                    
+                    // We'll populate the model after fetching the list of models, but store it for later use
+                    console.log('Stored Ollama model from settings:', this.aiRefinementState.ollamaModel);
+                    
+                    // Update UI state if the method exists
+                    if (typeof this.updateAIRefinementUIState === 'function') {
+                        this.updateAIRefinementUIState();
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading AI Refinement settings:', error);
+            }
+            
+            // Test Ollama connection if AI Refinement is enabled
+            if (this.aiRefinementState.enabled) {
+                await this.testOllamaConnection();
+                await this.refreshOllamaModels();
+            }
+            
+            // Always load templates - needed for dropdown population regardless of enabled state
+            await this.loadTemplates();
             
         } catch (error) {
             console.error('Error loading settings:', error);
@@ -2486,8 +3501,13 @@ Would you like to open the project directory?`;
 
     async checkForOrphanedRecordings() {
         try {
+            // Check if the API is available
+            if (!window.electronAPI || !window.electronAPI.getAppPaths || !window.electronAPI.findRecordingChunks) {
+                console.warn('electronAPI methods not available for checking orphaned recordings');
+                return;
+            }
+            
             // Look for any recording chunks that might be left from a previous session
-            const { app } = require('electron');
             const tempDir = await window.electronAPI.getAppPaths();
             
             // Get all files in the recordings temp directory
@@ -2656,3 +3676,535 @@ document.addEventListener('keydown', (e) => {
         }
     }
 });
+
+// ============================
+// AI Refinement Methods
+// ============================
+
+// Save AI Refinement settings as part of the main settings
+async function saveAIRefinementSettings() {
+    try {
+        const enabled = document.getElementById('ai-refinement-enabled-checkbox').checked;
+        const ollamaEndpoint = document.getElementById('ollama-endpoint').value;
+        const ollamaModel = document.getElementById('ollama-model-select').value;
+        const timeout = parseInt(document.getElementById('ollama-timeout').value);
+        
+        // Using the combined Ollama config structure
+        const settings = {
+            enabled,
+            endpoint: ollamaEndpoint,
+            model: ollamaModel,
+            timeoutSeconds: timeout
+        };
+        
+        console.log('Saving AI Refinement settings (using combined Ollama config):', settings);
+        const result = await window.electronAPI.saveAIRefinementSettings(settings);
+        
+        // Debug: Check if settings were properly saved
+        const debug = await window.electronAPI.debugAIRefinementSettings();
+        console.log('AI Refinement Debug Info:', debug);
+        
+        if (result.success) {
+            this.updateStatus('AI Refinement settings saved');
+            
+            // Update local state with the latest settings
+            this.aiRefinementState.enabled = debug.ollamaSettings.enabled;
+            
+            return true;
+        } else {
+            this.showError('Failed to save AI Refinement settings');
+            return false;
+        }
+    } catch (error) {
+        console.error('Error saving AI Refinement settings:', error);
+        this.showError(`Error saving AI Refinement settings: ${error.message}`);
+        return false;
+    }
+}
+
+// Load AI Refinement settings
+async function loadAIRefinementSettings() {
+    try {
+        const settings = await window.electronAPI.getAIRefinementSettings();
+        console.log('Loaded AI Refinement settings:', settings);
+        
+        if (settings) {
+            document.getElementById('ai-refinement-enabled-checkbox').checked = settings.enabled || false;
+            document.getElementById('ollama-endpoint').value = settings.endpoint || 'http://localhost:11434';
+            document.getElementById('ollama-timeout').value = settings.timeoutSeconds || 30;
+            
+            console.log('Updating AI Refinement state with settings:', settings);
+            
+            this.aiRefinementState.enabled = settings.enabled || false;
+            this.aiRefinementState.ollamaEndpoint = settings.endpoint || 'http://localhost:11434';
+            this.aiRefinementState.ollamaModel = settings.model || '';
+            this.aiRefinementState.timeout = settings.timeoutSeconds || 30;
+            
+            console.log('Updated AI Refinement state:', this.aiRefinementState);
+            
+            // If we have a model selected, set it
+            if (settings.model && this.aiRefinementState.availableModels.length > 0) {
+                document.getElementById('ollama-model-select').value = settings.model;
+            }
+            
+            this.updateAIRefinementUIState();
+        }
+    } catch (error) {
+        console.error('Error loading AI Refinement settings:', error);
+    }
+}
+
+// Update UI elements based on the enabled state
+function updateAIRefinementUIState() {
+    const enabled = this.aiRefinementState.enabled;
+    const elements = [
+        document.getElementById('ollama-endpoint'),
+        document.getElementById('ollama-model-select'),
+        document.getElementById('ollama-timeout'),
+        document.getElementById('refresh-models-btn'),
+        document.getElementById('test-ollama-btn'),
+        document.getElementById('manage-templates-btn')
+    ];
+    
+    elements.forEach(el => {
+        if (el) {
+            el.disabled = !enabled;
+        }
+    });
+}
+
+// Test connection to Ollama
+async function testOllamaConnection() {
+    try {
+        const ollamaStatus = document.getElementById('ollama-status');
+        const ollamaStatusText = document.getElementById('ollama-status-text');
+        
+        ollamaStatusText.textContent = 'Testing connection...';
+        ollamaStatus.className = 'status-indicator loading';
+        
+        const endpoint = document.getElementById('ollama-endpoint').value;
+        
+        const result = await window.electronAPI.testOllamaConnection({
+            endpoint
+        });
+        
+        if (result.success) {
+            ollamaStatusText.textContent = 'Connected';
+            ollamaStatus.className = 'status-indicator success';
+            this.aiRefinementState.connected = true;
+            
+            // If we got models, update the dropdown
+            if (result.models && result.models.length > 0) {
+                this.updateOllamaModelDropdown(result.models);
+            }
+            
+            return true;
+        } else {
+            ollamaStatusText.textContent = 'Connection failed';
+            ollamaStatus.className = 'status-indicator error';
+            this.aiRefinementState.connected = false;
+            return false;
+        }
+    } catch (error) {
+        console.error('Error testing Ollama connection:', error);
+        const ollamaStatus = document.getElementById('ollama-status');
+        const ollamaStatusText = document.getElementById('ollama-status-text');
+        
+        ollamaStatusText.textContent = 'Connection error';
+        ollamaStatus.className = 'status-indicator error';
+        this.aiRefinementState.connected = false;
+        return false;
+    }
+}
+
+// Refresh available Ollama models
+async function refreshOllamaModels() {
+    try {
+        const endpoint = document.getElementById('ollama-endpoint').value;
+        const result = await window.electronAPI.getOllamaModels({
+            endpoint
+        });
+        
+        if (result.success && result.models) {
+            this.updateOllamaModelDropdown(result.models);
+            return true;
+        } else {
+            this.showError('Failed to get Ollama models');
+            return false;
+        }
+    } catch (error) {
+        console.error('Error refreshing Ollama models:', error);
+        this.showError(`Error refreshing Ollama models: ${error.message}`);
+        return false;
+    }
+}
+
+// Update the Ollama model dropdown with available models
+function updateOllamaModelDropdown(models) {
+    const modelSelect = document.getElementById('ollama-model-select');
+    const currentValue = modelSelect.value;
+    
+    // Clear existing options
+    modelSelect.innerHTML = '';
+    
+    if (models.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No models available';
+        modelSelect.appendChild(option);
+    } else {
+        // Add models
+        models.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model.name || model;
+            option.textContent = model.name || model;
+            modelSelect.appendChild(option);
+        });
+        
+        // Try to restore selected value if it exists
+        if (currentValue && models.some(m => (m.name || m) === currentValue)) {
+            modelSelect.value = currentValue;
+        } else if (this.aiRefinementState.ollamaModel && models.some(m => (m.name || m) === this.aiRefinementState.ollamaModel)) {
+            modelSelect.value = this.aiRefinementState.ollamaModel;
+        }
+    }
+    
+    this.aiRefinementState.availableModels = models;
+}
+
+// Template Management Methods
+async function loadTemplates() {
+    try {
+        const templates = await window.electronAPI.getTemplates();
+        
+        if (templates && Array.isArray(templates)) {
+            this.aiRefinementState.templates = templates;
+            
+            // If we have a default template, set it as current
+            const defaultTemplate = templates.find(t => t.isDefault);
+            if (defaultTemplate) {
+                this.aiRefinementState.currentTemplateId = defaultTemplate.id;
+            } else if (templates.length > 0) {
+                this.aiRefinementState.currentTemplateId = templates[0].id;
+            }
+            
+            return templates;
+        }
+        
+        return [];
+    } catch (error) {
+        console.error('Error loading templates:', error);
+        return [];
+    }
+}
+
+// Open template management modal
+async function openTemplateModal() {
+    try {
+        // Load templates if needed
+        if (this.aiRefinementState.templates.length === 0) {
+            await this.loadTemplates();
+        }
+        
+        // Show modal
+        const templateModal = document.getElementById('template-modal');
+        templateModal.classList.remove('hidden');
+        
+        // Render template list
+        this.renderTemplateList();
+        
+        this.aiRefinementState.isTemplateModalOpen = true;
+    } catch (error) {
+        console.error('Error opening template modal:', error);
+        this.showError('Failed to open template manager');
+    }
+}
+
+// Close template modal
+function closeTemplateModal() {
+    const templateModal = document.getElementById('template-modal');
+    templateModal.classList.add('hidden');
+    
+    // Hide editor section
+    const editorSection = document.getElementById('template-editor-section');
+    editorSection.classList.add('hidden');
+    
+    this.aiRefinementState.isTemplateModalOpen = false;
+    this.aiRefinementState.templateBeingEdited = null;
+}
+
+// Render the list of templates
+function renderTemplateList() {
+    const templateList = document.getElementById('template-list');
+    templateList.innerHTML = '';
+    
+    const templates = this.aiRefinementState.templates;
+    
+    if (templates.length === 0) {
+        templateList.innerHTML = '<div class="template-list-empty">No templates available. Click "Create New" to add one.</div>';
+        return;
+    }
+    
+    templates.forEach(template => {
+        const templateItem = document.createElement('div');
+        templateItem.className = 'template-item';
+        templateItem.dataset.id = template.id;
+        
+        if (template.id === this.aiRefinementState.currentTemplateId) {
+            templateItem.classList.add('active');
+        }
+        
+        const header = document.createElement('div');
+        header.className = 'template-item-header';
+        
+        const name = document.createElement('div');
+        name.className = 'template-item-name';
+        name.textContent = template.name;
+        
+        header.appendChild(name);
+        
+        if (template.isDefault) {
+            const defaultBadge = document.createElement('div');
+            defaultBadge.className = 'template-item-default';
+            defaultBadge.textContent = 'Default';
+            header.appendChild(defaultBadge);
+        }
+        
+        const description = document.createElement('div');
+        description.className = 'template-item-description';
+        description.textContent = template.description || 'No description';
+        
+        templateItem.appendChild(header);
+        templateItem.appendChild(description);
+        
+        // Add click event
+        templateItem.addEventListener('click', () => {
+            this.editTemplate(template.id);
+        });
+        
+        templateList.appendChild(templateItem);
+    });
+}
+
+// Create a new template
+function createNewTemplate() {
+    // Set up empty template
+    const newTemplate = {
+        id: Date.now().toString(),
+        name: '',
+        description: '',
+        prompt: 'Please improve this transcription: {{text}}',
+        isDefault: this.aiRefinementState.templates.length === 0
+    };
+    
+    this.aiRefinementState.templateBeingEdited = newTemplate;
+    
+    // Show editor with empty values
+    this.showTemplateEditor(newTemplate);
+}
+
+// Edit an existing template
+function editTemplate(templateId) {
+    const template = this.aiRefinementState.templates.find(t => t.id === templateId);
+    
+    if (template) {
+        this.aiRefinementState.templateBeingEdited = { ...template };
+        this.showTemplateEditor(template);
+        
+        // Update active class
+        const templateItems = document.querySelectorAll('.template-item');
+        templateItems.forEach(item => {
+            if (item.dataset.id === templateId) {
+                item.classList.add('active');
+            } else {
+                item.classList.remove('active');
+            }
+        });
+    }
+}
+
+// Display template editor with template data
+function showTemplateEditor(template) {
+    const editorSection = document.getElementById('template-editor-section');
+    const editorTitle = document.getElementById('template-editor-title');
+    
+    // Set title based on whether we're editing or creating
+    editorTitle.textContent = template.name ? `Edit Template: ${template.name}` : 'Create New Template';
+    
+    // Fill form fields
+    document.getElementById('template-name').value = template.name || '';
+    document.getElementById('template-description').value = template.description || '';
+    document.getElementById('template-prompt').value = template.prompt || '';
+    document.getElementById('template-default-checkbox').checked = template.isDefault || false;
+    
+    // Show delete button only for existing templates
+    const deleteButton = document.getElementById('delete-template-btn');
+    if (template.name) {
+        deleteButton.style.display = 'block';
+    } else {
+        deleteButton.style.display = 'none';
+    }
+    
+    // Show editor section
+    editorSection.classList.remove('hidden');
+}
+
+// Save template (new or edited)
+async function saveTemplate() {
+    try {
+        const name = document.getElementById('template-name').value.trim();
+        const description = document.getElementById('template-description').value.trim();
+        const prompt = document.getElementById('template-prompt').value.trim();
+        const isDefault = document.getElementById('template-default-checkbox').checked;
+        
+        if (!name) {
+            this.showError('Template name is required');
+            return;
+        }
+        
+        if (!prompt) {
+            this.showError('Prompt template is required');
+            return;
+        }
+        
+        if (!prompt.includes('{{text}}')) {
+            this.showError('Prompt template must include {{text}} placeholder');
+            return;
+        }
+        
+        // Get current template being edited
+        const template = this.aiRefinementState.templateBeingEdited;
+        
+        if (!template) {
+            this.showError('No template is being edited');
+            return;
+        }
+        
+        // Update template
+        template.name = name;
+        template.description = description;
+        template.prompt = prompt;
+        template.isDefault = isDefault;
+        
+        // If this is set as default, unset other defaults
+        if (isDefault) {
+            this.aiRefinementState.templates.forEach(t => {
+                if (t.id !== template.id) {
+                    t.isDefault = false;
+                }
+            });
+        }
+        
+        // Check if this is a new template
+        const isNew = !this.aiRefinementState.templates.some(t => t.id === template.id);
+        
+        // Add to templates array if new
+        if (isNew) {
+            this.aiRefinementState.templates.push(template);
+        } else {
+            // Update existing
+            const index = this.aiRefinementState.templates.findIndex(t => t.id === template.id);
+            if (index !== -1) {
+                this.aiRefinementState.templates[index] = template;
+            }
+        }
+        
+        // Save to backend
+        await window.electronAPI.saveTemplates(this.aiRefinementState.templates);
+        
+        // If this is the only template or is default, set as current
+        if (isDefault || this.aiRefinementState.templates.length === 1) {
+            this.aiRefinementState.currentTemplateId = template.id;
+        }
+        
+        // Update the list
+        this.renderTemplateList();
+        
+        // Hide editor
+        const editorSection = document.getElementById('template-editor-section');
+        editorSection.classList.add('hidden');
+        
+        this.aiRefinementState.templateBeingEdited = null;
+        
+    } catch (error) {
+        console.error('Error saving template:', error);
+        this.showError(`Error saving template: ${error.message}`);
+    }
+}
+
+// Cancel template editing
+function cancelTemplateEdit() {
+    // Hide editor
+    const editorSection = document.getElementById('template-editor-section');
+    editorSection.classList.add('hidden');
+    
+    this.aiRefinementState.templateBeingEdited = null;
+}
+
+// Confirm template deletion
+function confirmDeleteTemplate() {
+    const template = this.aiRefinementState.templateBeingEdited;
+    
+    if (!template) {
+        return;
+    }
+    
+    // Show confirmation modal
+    const deleteModal = document.getElementById('delete-template-modal');
+    const templateNameSpan = document.getElementById('delete-template-name');
+    
+    templateNameSpan.textContent = template.name;
+    deleteModal.classList.remove('hidden');
+}
+
+// Close delete confirmation modal
+function closeDeleteConfirmationModal() {
+    const deleteModal = document.getElementById('delete-template-modal');
+    deleteModal.classList.add('hidden');
+}
+
+// Delete the template
+async function deleteTemplate() {
+    try {
+        const template = this.aiRefinementState.templateBeingEdited;
+        
+        if (!template) {
+            return;
+        }
+        
+        // Remove from array
+        this.aiRefinementState.templates = this.aiRefinementState.templates.filter(t => t.id !== template.id);
+        
+        // Save to backend
+        await window.electronAPI.saveTemplates(this.aiRefinementState.templates);
+        
+        // If the deleted template was current, select another one
+        if (template.id === this.aiRefinementState.currentTemplateId) {
+            const newDefault = this.aiRefinementState.templates.find(t => t.isDefault);
+            if (newDefault) {
+                this.aiRefinementState.currentTemplateId = newDefault.id;
+            } else if (this.aiRefinementState.templates.length > 0) {
+                this.aiRefinementState.currentTemplateId = this.aiRefinementState.templates[0].id;
+            } else {
+                this.aiRefinementState.currentTemplateId = null;
+            }
+        }
+        
+        // Update the list
+        this.renderTemplateList();
+        
+        // Hide both modals
+        this.closeDeleteConfirmationModal();
+        
+        // Hide editor
+        const editorSection = document.getElementById('template-editor-section');
+        editorSection.classList.add('hidden');
+        
+        this.aiRefinementState.templateBeingEdited = null;
+        
+    } catch (error) {
+        console.error('Error deleting template:', error);
+        this.showError(`Error deleting template: ${error.message}`);
+        this.closeDeleteConfirmationModal();
+    }
+}

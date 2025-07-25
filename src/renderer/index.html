@@ -235,6 +235,23 @@
                             <!-- Recording Settings -->
                             <div class="record-settings">
                                 <h4>Recording Settings</h4>
+                                
+                                <!-- Audio Level Meter & Visualization - moved to settings panel -->
+                                <div class="audio-corner-panel audio-corner-settings">
+                                    <div class="audio-level-container audio-level-corner">
+                                        <label>Input:</label>
+                                        <div class="audio-level-meter">
+                                            <div id="audio-level-bar" class="audio-level-bar"></div>
+                                        </div>
+                                        <span id="audio-level-text">0%</span>
+                                    </div>
+                                    
+                                    <!-- Compact Audio Visualization -->
+                                    <div class="record-visualization record-visualization-corner">
+                                        <canvas id="audio-visualizer" width="280" height="80"></canvas>
+                                    </div>
+                                </div>
+                                
                                 <div class="settings-row">
                                     <div class="setting-group">
                                         <label for="quality-select">Quality:</label>
@@ -253,6 +270,24 @@
                                     <div class="setting-group">
                                         <label for="auto-transcribe">Auto-transcribe:</label>
                                         <input type="checkbox" id="auto-transcribe" checked>
+                                    </div>
+                                </div>
+                                <div class="settings-row">
+                                    <div class="setting-group">
+                                        <label for="ongoing-transcription">Show ongoing transcription:</label>
+                                        <input type="checkbox" id="ongoing-transcription">
+                                    </div>
+                                    <div class="setting-group">
+                                        <label for="chunk-duration">Transcription chunk (seconds):</label>
+                                        <select id="chunk-duration">
+                                            <option value="3">3 seconds (fast)</option>
+                                            <option value="5" selected>5 seconds (recommended)</option>
+                                            <option value="8">8 seconds (slower)</option>
+                                            <option value="10">10 seconds (best quality)</option>
+                                        </select>
+                                        <small style="color: #666; font-size: 11px; display: block; margin-top: 2px;">
+                                            Smart chunking - waits for quiet moments to avoid cutting words
+                                        </small>
                                     </div>
                                 </div>
                             </div>
@@ -290,19 +325,27 @@
                                     </button>
                                 </div>
                             </div>
-                            
-                            <!-- Audio Level Meter -->
-                            <div class="audio-level-container">
-                                <label>Input Level:</label>
-                                <div class="audio-level-meter">
-                                    <div id="audio-level-bar" class="audio-level-bar"></div>
-                                </div>
-                                <span id="audio-level-text">0%</span>
-                            </div>
 
-                            <!-- Audio Visualization -->
-                            <div class="record-visualization">
-                                <canvas id="audio-visualizer" width="600" height="120"></canvas>
+                            <!-- Ongoing Transcription -->
+                            <div id="ongoing-transcription-container" class="ongoing-transcription-container hidden">
+                                <div class="transcription-header">
+                                    <h4>Ongoing Transcription</h4>
+                                    <div class="transcription-status">
+                                        <span id="ongoing-transcription-status" class="transcription-status">Ready</span>
+                                    </div>
+                                </div>
+                                <div class="transcription-content">
+                                    <div id="ongoing-transcription-loading" class="loading-state hidden">
+                                        <div class="spinner"></div>
+                                        <p>Processing chunk...</p>
+                                    </div>
+                                    <div 
+                                        id="ongoing-transcription-text" 
+                                        class="transcription-editor ongoing-transcription-enlarged"
+                                        contenteditable="false"
+                                        data-placeholder="Transcription will appear here as you speak..."
+                                    ></div>
+                                </div>
                             </div>
 
                             <!-- Recording Info -->
@@ -658,7 +701,10 @@
     </div>
 
     <!-- Load controller scripts using proper relative paths -->
+    <!-- Legacy refinement controller (will be refactored later) -->
     <script src="controllers/refinementController.js"></script>
-    <script src="index.js"></script>
+    
+    <!-- New modular application -->
+    <script type="module" src="index_new.js"></script>
 </body>
 </html>

@@ -19,39 +19,79 @@ function copyFile(src, dest) {
     fs.copyFileSync(src, dest);
 }
 
+// Copy directory recursively
+function copyDirectory(src, dest) {
+    if (!fs.existsSync(dest)) {
+        fs.mkdirSync(dest, { recursive: true });
+    }
+    
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+    
+    for (const entry of entries) {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+        
+        if (entry.isDirectory()) {
+            copyDirectory(srcPath, destPath);
+        } else {
+            copyFile(srcPath, destPath);
+        }
+    }
+}
+
 // Copy HTML
 copyFile(
     path.join(srcDir, 'index.html'),
     path.join(distDir, 'index.html')
 );
 
-// Copy JS
-copyFile(
-    path.join(srcDir, 'index.js'),
-    path.join(distDir, 'index.js')
-);
+// Copy all JS files in root
+const jsFiles = ['index.js', 'index_new.js', 'index_test.js', 'new_index.js'];
+jsFiles.forEach(jsFile => {
+    const srcPath = path.join(srcDir, jsFile);
+    if (fs.existsSync(srcPath)) {
+        copyFile(srcPath, path.join(distDir, jsFile));
+    }
+});
 
-// Copy controllers
-const controllersDir = path.join(distDir, 'controllers');
-if (!fs.existsSync(controllersDir)) {
-    fs.mkdirSync(controllersDir, { recursive: true });
+// Copy entire app directory (App.js, AppState.js, etc.)
+const appSrcDir = path.join(srcDir, 'app');
+const appDestDir = path.join(distDir, 'app');
+if (fs.existsSync(appSrcDir)) {
+    copyDirectory(appSrcDir, appDestDir);
+    console.log('✅ Copied app/ directory');
 }
 
-// Copy refinementController.js
-copyFile(
-    path.join(srcDir, 'controllers/refinementController.js'),
-    path.join(controllersDir, 'refinementController.js')
-);
-
-// Copy CSS
-const stylesDir = path.join(distDir, 'styles');
-if (!fs.existsSync(stylesDir)) {
-    fs.mkdirSync(stylesDir, { recursive: true });
+// Copy entire utils directory (Constants.js, UIHelpers.js, EventHandler.js, etc.)
+const utilsSrcDir = path.join(srcDir, 'utils');
+const utilsDestDir = path.join(distDir, 'utils');
+if (fs.existsSync(utilsSrcDir)) {
+    copyDirectory(utilsSrcDir, utilsDestDir);
+    console.log('✅ Copied utils/ directory');
 }
 
-copyFile(
-    path.join(srcDir, 'styles/main.css'),
-    path.join(stylesDir, 'main.css')
-);
+// Copy all controllers
+const controllersSrcDir = path.join(srcDir, 'controllers');
+const controllersDestDir = path.join(distDir, 'controllers');
+if (fs.existsSync(controllersSrcDir)) {
+    copyDirectory(controllersSrcDir, controllersDestDir);
+    console.log('✅ Copied controllers/ directory');
+}
 
-console.log('Renderer build completed successfully!');
+// Copy entire styles directory
+const stylesSrcDir = path.join(srcDir, 'styles');
+const stylesDestDir = path.join(distDir, 'styles');
+if (fs.existsSync(stylesSrcDir)) {
+    copyDirectory(stylesSrcDir, stylesDestDir);
+    console.log('✅ Copied styles/ directory');
+}
+
+// Copy assets if they exist
+const assetsSrcDir = path.join(srcDir, 'assets');
+const assetsDestDir = path.join(distDir, 'assets');
+if (fs.existsSync(assetsSrcDir)) {
+    copyDirectory(assetsSrcDir, assetsDestDir);
+    console.log('✅ Copied assets/ directory');
+}
+
+console.log('🚀 Renderer build completed successfully!');

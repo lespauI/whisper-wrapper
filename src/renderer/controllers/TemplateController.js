@@ -69,18 +69,22 @@ export class TemplateController {
             this.closeDeleteConfirmationModal();
         });
 
-        // Close modal when clicking overlay
-        EventHandler.addListener('#template-modal', 'click', (e) => {
-            if (e.target.id === 'template-modal') {
-                this.closeTemplateModal();
-            }
-        });
+        // Close modal when clicking overlay (check if elements exist)
+        if (UIHelpers.getElementById('template-modal')) {
+            EventHandler.addListener('#template-modal', 'click', (e) => {
+                if (e.target.id === 'template-modal') {
+                    this.closeTemplateModal();
+                }
+            });
+        }
 
-        EventHandler.addListener('#delete-template-modal', 'click', (e) => {
-            if (e.target.id === 'delete-template-modal') {
-                this.closeDeleteConfirmationModal();
-            }
-        });
+        if (UIHelpers.getElementById('delete-template-modal')) {
+            EventHandler.addListener('#delete-template-modal', 'click', (e) => {
+                if (e.target.id === 'delete-template-modal') {
+                    this.closeDeleteConfirmationModal();
+                }
+            });
+        }
     }
 
     /**

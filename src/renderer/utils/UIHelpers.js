@@ -116,6 +116,31 @@ export class UIHelpers {
     }
 
     /**
+     * Set CSS style property of element
+     * @param {string|Element} element - Element or selector
+     * @param {string} property - CSS property name
+     * @param {string} value - CSS property value
+     */
+    static setStyle(element, property, value) {
+        const el = typeof element === 'string' ? document.querySelector(element) : element;
+        if (el) {
+            el.style[property] = value;
+        }
+    }
+
+    /**
+     * Set multiple CSS styles on element
+     * @param {string|Element} element - Element or selector
+     * @param {Object} styles - Object with CSS property-value pairs
+     */
+    static setStyles(element, styles) {
+        const el = typeof element === 'string' ? document.querySelector(element) : element;
+        if (el && styles) {
+            Object.assign(el.style, styles);
+        }
+    }
+
+    /**
      * Get element value (for inputs, selects, etc.)
      * @param {string|Element} element - Element or selector
      * @returns {string} Element value

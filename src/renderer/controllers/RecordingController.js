@@ -321,9 +321,9 @@ export class RecordingController {
                     historyIndex: 0
                 });
 
-                // Show transcription result (this will be moved to TranscriptionController later)
-                if (window.app && window.app.showTranscriptionResult) {
-                    await window.app.showTranscriptionResult(result.text, result.segments);
+                // Show transcription result using FileUploadController's working method
+                if (window.whisperApp && window.whisperApp.controllers.fileUpload) {
+                    await window.whisperApp.controllers.fileUpload.showTranscriptionResult(result.text, result.segments);
                 }
                 
                 this.statusController.updateStatus(`Recording transcribed (Language: ${result.language || 'unknown'})`);
@@ -473,9 +473,12 @@ export class RecordingController {
                         segmentsCount: result.segments?.length
                     });
                     
-                    // Show transcription result (this will be moved to TranscriptionController later)
-                    if (window.app && window.app.showTranscriptionResult) {
-                        await window.app.showTranscriptionResult(result.text, result.segments);
+                    // Clear loading state before showing result
+                    this.statusController.showTranscriptionLoading(false);
+                    
+                    // Show transcription result using the FileUploadController's working method
+                    if (window.whisperApp && window.whisperApp.controllers.fileUpload) {
+                        await window.whisperApp.controllers.fileUpload.showTranscriptionResult(result.text, result.segments);
                     }
                     
                     this.statusController.updateStatus(`Recording transcribed (Language: ${result.language || 'unknown'})`);
@@ -484,6 +487,8 @@ export class RecordingController {
                     // Keep recording available for saving or re-transcribing
                     // User can come back to recording tab and use the buttons
                 } else {
+                    // Clear loading state on failure
+                    this.statusController.showTranscriptionLoading(false);
                     this.statusController.showError('Auto-transcription failed');
                 }
             } else {

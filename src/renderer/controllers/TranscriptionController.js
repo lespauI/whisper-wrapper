@@ -92,29 +92,33 @@ export class TranscriptionController {
             this.exportAs('json');
         });
 
-        // Download transcription
-        EventHandler.addListener('#download-btn', 'click', () => {
-            this.downloadTranscription();
-        });
+        // Download transcription (optional - may not exist in all views)
+        if (UIHelpers.getElementById('download-btn')) {
+            EventHandler.addListener('#download-btn', 'click', () => {
+                this.downloadTranscription();
+            });
+        }
     }
 
     /**
      * Setup export dropdown functionality
      */
     setupExportDropdown() {
-        const dropdownBtn = UIHelpers.getElementById('export-dropdown-btn');
-        const dropdownMenu = UIHelpers.getElementById('export-dropdown');
-        
-        if (!dropdownBtn || !dropdownMenu) return;
-
-        EventHandler.addListener(dropdownBtn, 'click', (e) => {
+        // Use string selectors for EventHandler
+        EventHandler.addListener('#export-dropdown-btn', 'click', (e) => {
             e.stopPropagation();
-            UIHelpers.toggleClass(dropdownMenu, CSS_CLASSES.HIDDEN);
+            const dropdownMenu = UIHelpers.getElementById('export-dropdown');
+            if (dropdownMenu) {
+                UIHelpers.toggleClass(dropdownMenu, CSS_CLASSES.HIDDEN);
+            }
         });
         
         // Close dropdown when clicking outside
         document.addEventListener('click', () => {
-            UIHelpers.addClass(dropdownMenu, CSS_CLASSES.HIDDEN);
+            const dropdownMenu = UIHelpers.getElementById('export-dropdown');
+            if (dropdownMenu) {
+                UIHelpers.addClass(dropdownMenu, CSS_CLASSES.HIDDEN);
+            }
         });
     }
 
@@ -564,9 +568,22 @@ ${text}
         const transcriptionSegments = UIHelpers.getElementById('transcription-segments');
         const emptyState = UIHelpers.getElementById('transcription-empty');
         
+        console.log('🎬 Element lookup results:', {
+            transcriptionText: !!transcriptionText,
+            transcriptionSegments: !!transcriptionSegments,
+            emptyState: !!emptyState
+        });
+        
         // Hide empty state
         if (emptyState) {
             UIHelpers.addClass(emptyState, CSS_CLASSES.HIDDEN);
+            console.log('🎬 Hidden empty state');
+        }
+        
+        // CRITICAL: Clear loading state immediately
+        if (this.statusController && this.statusController.showTranscriptionLoading) {
+            this.statusController.showTranscriptionLoading(false);
+            console.log('🎬 Cleared transcription loading state');
         }
 
         // Update transcription state
@@ -598,6 +615,9 @@ ${text}
         // Set plain text content
         if (transcriptionText) {
             transcriptionText.value = text;
+            console.log('🎬 Set textarea value to:', text.substring(0, 50) + '...');
+        } else {
+            console.error('🎬 transcriptionText element not found!');
         }
 
         this.updateTranscriptionStatus();

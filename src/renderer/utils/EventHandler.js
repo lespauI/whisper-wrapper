@@ -13,15 +13,23 @@ export class EventHandler {
      * @returns {boolean} True if listener was added successfully
      */
     static addListener(selector, event, callback, context = document) {
-        const element = selector.startsWith('#') ? 
-            context.getElementById(selector.substring(1)) : 
-            context.querySelector(selector);
+        let element;
+        
+        // Handle both string selectors and element objects
+        if (typeof selector === 'string') {
+            element = selector.startsWith('#') ? 
+                context.getElementById(selector.substring(1)) : 
+                context.querySelector(selector);
+        } else if (selector && selector.nodeType === Node.ELEMENT_NODE) {
+            // It's already an element
+            element = selector;
+        }
             
         if (element) {
             element.addEventListener(event, callback);
             return true;
         } else {
-            console.warn(`Element not found: ${selector}`);
+            console.warn(`Element not found: ${typeof selector === 'string' ? selector : 'element object'}`);
             return false;
         }
     }

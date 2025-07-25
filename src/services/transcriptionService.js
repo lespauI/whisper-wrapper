@@ -190,10 +190,16 @@ class TranscriptionService {
                 whisperOptions.initialPrompt = options.initialPrompt || this.initialPrompt;
             }
             
+            // Add context prompt for chunk processing (takes precedence over initial prompt)
+            if (options.contextPrompt) {
+                whisperOptions.contextPrompt = options.contextPrompt;
+                console.log(`📝 TranscriptionService: Using context prompt (${options.contextPrompt.length} chars): "${options.contextPrompt.substring(0, 100)}..."`);
+            }
+            
             // Log initial prompt status
-            if (whisperOptions.initialPrompt && whisperOptions.useInitialPrompt) {
+            if (whisperOptions.initialPrompt && whisperOptions.useInitialPrompt && !options.contextPrompt) {
                 console.log(`🔤 TranscriptionService: Using initial prompt (${whisperOptions.initialPrompt.length} chars)`);
-            } else {
+            } else if (!options.contextPrompt) {
                 console.log(`🔤 TranscriptionService: Initial prompt is DISABLED`);
             }
 

@@ -546,6 +546,27 @@ export class RecordingController {
     }
 
     /**
+     * Generate context prompt from previous transcription for better chunk continuity
+     * @returns {string|null} - Last 1000 characters of transcribed text, or null if no text
+     */
+    generateContextPrompt() {
+        if (!this.ongoingTranscription.transcriptionText || this.ongoingTranscription.transcriptionText.length === 0) {
+            console.log('📝 No previous transcription text - no context prompt');
+            return null;
+        }
+        
+        // Get last 1000 characters as context for better transcription continuity
+        const contextPrompt = this.ongoingTranscription.transcriptionText.slice(-1000);
+        
+        if (contextPrompt.length > 0) {
+            console.log(`📝 Generated context prompt (${contextPrompt.length} chars): "${contextPrompt.substring(0, 100)}${contextPrompt.length > 100 ? '...' : ''}"`);
+            return contextPrompt;
+        }
+        
+        return null;
+    }
+
+    /**
      * Initialize ongoing transcription
      */
     async initializeOngoingTranscription() {
@@ -718,8 +739,11 @@ export class RecordingController {
                 // Convert blob to array buffer for transcription
                 const arrayBuffer = await queueItem.blob.arrayBuffer();
                 
-                // Transcribe the chunk
-                const result = await window.electronAPI.transcribeAudio(arrayBuffer);
+                // Generate context prompt from previous transcription (last 1000 characters)
+                const contextPrompt = this.generateContextPrompt();
+                
+                // Transcribe the chunk with context
+                const result = await window.electronAPI.transcribeAudio(arrayBuffer, contextPrompt);
                 
                 if (result.success && result.text && result.text.trim()) {
                     const cleanText = result.text.trim();

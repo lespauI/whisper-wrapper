@@ -286,7 +286,7 @@ class IPCHandlers {
         }
     }
 
-    async handleTranscribeAudio(event, audioData) {
+    async handleTranscribeAudio(event, audioData, prompt = null) {
         try {
             // Get current configuration
             const currentConfig = config.getSimplified();
@@ -331,6 +331,12 @@ class IPCHandlers {
             if (currentConfig.initialPrompt) {
                 transcriptionOptions.initialPrompt = currentConfig.initialPrompt;
                 console.log(`🔤 IPC: Initial prompt ${currentConfig.useInitialPrompt ? 'ENABLED' : 'DISABLED'} (${currentConfig.initialPrompt.length} chars)`);
+            }
+            
+            // Add context prompt for ongoing transcription chunks
+            if (prompt && prompt.trim()) {
+                transcriptionOptions.contextPrompt = prompt.trim();
+                console.log(`📝 IPC: Context prompt provided (${prompt.trim().length} chars): "${prompt.trim().substring(0, 100)}..."`);
             }
             
             // Transcribe the audio buffer

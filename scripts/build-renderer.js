@@ -45,8 +45,8 @@ copyFile(
     path.join(distDir, 'index.html')
 );
 
-// Copy all JS files in root
-const jsFiles = ['index.js', 'index_new.js', 'index_test.js', 'new_index.js'];
+// Copy JS files in root
+const jsFiles = ['index.js'];
 jsFiles.forEach(jsFile => {
     const srcPath = path.join(srcDir, jsFile);
     if (fs.existsSync(srcPath)) {

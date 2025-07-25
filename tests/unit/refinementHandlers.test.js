@@ -348,11 +348,13 @@ describe('Refinement IPC Handlers', () => {
       // Check that progress updates were sent
       expect(eventMock.sender.send).toHaveBeenCalledWith('refinement:progress', {
         status: 'processing',
+        progress: 0,
         message: expect.stringContaining('Test Template')
       });
       
       expect(eventMock.sender.send).toHaveBeenCalledWith('refinement:progress', {
         status: 'completed',
+        progress: 100,
         message: 'Text refined successfully'
       });
     });
@@ -395,7 +397,7 @@ describe('Refinement IPC Handlers', () => {
       
       // Assertions
       expect(result.success).toBe(false);
-      expect(result.message).toContain('No template found');
+      expect(result.message).toContain('was not found');
       expect(ollamaService.refineText).not.toHaveBeenCalled();
     });
 
@@ -423,6 +425,7 @@ describe('Refinement IPC Handlers', () => {
       // Check that error progress update was sent
       expect(eventMock.sender.send).toHaveBeenCalledWith('refinement:progress', {
         status: 'error',
+        progress: 0,
         message: 'Service error'
       });
     });

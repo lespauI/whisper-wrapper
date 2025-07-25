@@ -62,9 +62,16 @@ class WhisperWrapperApp {
     }
 
     init() {
+        // Initialize upload manager first
+        try {
+            this.uploadManager = new UploadManager(this);
+            console.log('Upload manager initialized successfully');
+        } catch (error) {
+            console.error('Error initializing upload manager:', error);
+        }
+        
         this.setupEventListeners();
         this.setupTabNavigation();
-        this.setupFileUpload();
         this.setupRecording();
         this.setupTranscription();
         this.setupSettings();
@@ -335,40 +342,8 @@ AI Refinement Debug Info:
         // Initial tab setup is handled in init
     }
 
-    setupFileUpload() {
-        const uploadArea = document.getElementById('file-upload');
-        const browseBtn = document.getElementById('browse-btn');
-
-        // Click to browse
-        browseBtn.addEventListener('click', () => {
-            this.selectFile();
-        });
-
-        uploadArea.addEventListener('click', () => {
-            this.selectFile();
-        });
-
-        // Drag and drop
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('dragover');
-        });
-
-        uploadArea.addEventListener('dragleave', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('dragover');
-        });
-
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('dragover');
-            
-            const files = Array.from(e.dataTransfer.files);
-            if (files.length > 0) {
-                this.handleFileUpload(files[0].path);
-            }
-        });
-    }
+    // Upload functionality now handled by UploadManager
+    // setupFileUpload() method moved to UploadManager class
 
     setupRecording() {
         const startBtn = document.getElementById('start-record-btn');
@@ -4207,4 +4182,19 @@ async function deleteTemplate() {
         this.showError(`Error deleting template: ${error.message}`);
         this.closeDeleteConfirmationModal();
     }
+
+    // Component access methods
+    getUploadManager() {
+        return this.uploadManager;
+    }
+
+    getTranscriptionManager() {
+        // For now return this since transcription methods are still in main class
+        return this;
+    }
 }
+
+// Initialize the app when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    window.whisperApp = new WhisperWrapperApp();
+});

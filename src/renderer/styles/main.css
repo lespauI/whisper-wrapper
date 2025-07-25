@@ -2328,3 +2328,91 @@ textarea.disabled {
         transform: translateX(50px);
     }
 }
+
+/* Ongoing Transcription Styles */
+.ongoing-transcription-container {
+    margin-top: 2rem;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 12px;
+    padding: 1.5rem;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.ongoing-transcription-container .transcription-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.ongoing-transcription-container .transcription-header h4 {
+    color: #4a5568;
+    font-size: 1.1rem;
+    margin: 0;
+}
+
+.ongoing-transcription-container .transcription-status {
+    font-size: 0.9rem;
+    color: #667eea;
+    font-weight: 500;
+}
+
+.ongoing-transcription-container .transcription-content {
+    position: relative;
+}
+
+.ongoing-transcription-container #ongoing-transcription-text {
+    width: 100%;
+    min-height: 120px;
+    max-height: 200px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1rem;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+    background: #f7fafc;
+    color: #4a5568;
+    transition: border-color 0.2s ease;
+}
+
+.ongoing-transcription-container #ongoing-transcription-text:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.ongoing-transcription-container #ongoing-transcription-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(247, 250, 252, 0.95);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+.ongoing-transcription-container #ongoing-transcription-loading .spinner {
+    width: 24px;
+    height: 24px;
+    border: 2px solid #e2e8f0;
+    border-top: 2px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 0.5rem;
+}
+
+.ongoing-transcription-container #ongoing-transcription-loading p {
+    color: #667eea;
+    font-size: 0.9rem;
+    margin: 0;
+}

@@ -255,6 +255,24 @@
                                         <input type="checkbox" id="auto-transcribe" checked>
                                     </div>
                                 </div>
+                                <div class="settings-row">
+                                    <div class="setting-group">
+                                        <label for="ongoing-transcription">Show ongoing transcription:</label>
+                                        <input type="checkbox" id="ongoing-transcription">
+                                    </div>
+                                    <div class="setting-group">
+                                        <label for="chunk-duration">Transcription chunk (seconds):</label>
+                                        <select id="chunk-duration">
+                                            <option value="3">3 seconds (fast)</option>
+                                            <option value="5" selected>5 seconds (recommended)</option>
+                                            <option value="8">8 seconds (slower)</option>
+                                            <option value="10">10 seconds (most context)</option>
+                                        </select>
+                                        <small style="color: #666; font-size: 11px; display: block; margin-top: 2px;">
+                                            Uses overlapping chunks for better accuracy
+                                        </small>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="record-controls">
@@ -303,6 +321,29 @@
                             <!-- Audio Visualization -->
                             <div class="record-visualization">
                                 <canvas id="audio-visualizer" width="600" height="120"></canvas>
+                            </div>
+
+                            <!-- Ongoing Transcription -->
+                            <div id="ongoing-transcription-container" class="ongoing-transcription-container hidden">
+                                <div class="transcription-header">
+                                    <h4>Ongoing Transcription</h4>
+                                    <div class="transcription-status">
+                                        <span id="ongoing-transcription-status" class="transcription-status">Ready</span>
+                                    </div>
+                                </div>
+                                <div class="transcription-content">
+                                    <div id="ongoing-transcription-loading" class="loading-state hidden">
+                                        <div class="spinner"></div>
+                                        <p>Processing chunk...</p>
+                                    </div>
+                                    <textarea 
+                                        id="ongoing-transcription-text" 
+                                        class="transcription-editor"
+                                        rows="8"
+                                        readonly
+                                        placeholder="Transcription will appear here as you speak..."
+                                    ></textarea>
+                                </div>
                             </div>
 
                             <!-- Recording Info -->

@@ -41,7 +41,8 @@ export class RecordingController {
             enabled: false,
             chunkDuration: 5, // seconds
             currentChunkRecorder: null,
-            transcriptionText: '',
+            transcriptionText: '', // Keep for backwards compatibility
+            chunks: [], // Array of individual chunk texts
             chunkCount: 0,
             chunkQueue: [], // Queue of chunks waiting for transcription
             processingQueue: false, // Background transcription worker status
@@ -470,11 +471,15 @@ export class RecordingController {
     clearOngoingTranscription() {
         console.log('Clearing ongoing transcription');
         
-        UIHelpers.setValue('#ongoing-transcription-text', '');
+        const container = UIHelpers.getElementById('ongoing-transcription-text');
+        if (container) {
+            container.innerHTML = '';
+        }
         UIHelpers.setText('#ongoing-transcription-status', 'Ready');
         
         // Reset state
         this.ongoingTranscription.transcriptionText = '';
+        this.ongoingTranscription.chunks = [];
         this.ongoingTranscription.chunkCount = 0;
         this.ongoingTranscription.chunkQueue = [];
         this.ongoingTranscription.pendingStop = false;
@@ -490,6 +495,54 @@ export class RecordingController {
             }
             this.ongoingTranscription.currentChunkRecorder = null;
         }
+    }
+
+    /**
+     * Update ongoing transcription display with latest chunk bold
+     */
+    updateOngoingTranscriptionDisplay() {
+        const container = UIHelpers.getElementById('ongoing-transcription-text');
+        if (!container) return;
+
+        if (this.ongoingTranscription.chunks.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        // Build HTML with all chunks except the last one in normal text
+        let html = '';
+        const chunks = this.ongoingTranscription.chunks;
+        
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            
+            // Add space before chunk (except for the first one)
+            if (i > 0) {
+                html += ' ';
+            }
+            
+            if (i === chunks.length - 1) {
+                // Latest chunk - make it bold
+                html += `<span class="latest-chunk">${this.escapeHtml(chunk)}</span>`;
+            } else {
+                // Previous chunks - normal text
+                html += this.escapeHtml(chunk);
+            }
+        }
+
+        container.innerHTML = html;
+        
+        // Scroll to bottom
+        container.scrollTop = container.scrollHeight;
+    }
+
+    /**
+     * Escape HTML characters to prevent XSS
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     /**
@@ -672,18 +725,15 @@ export class RecordingController {
                     const cleanText = result.text.trim();
                     console.log(`✓ Chunk ${queueItem.chunkNumber} transcribed: "${cleanText}"`);
                     
-                    // Append to ongoing transcription
+                    // Add to chunks array for bold formatting
+                    this.ongoingTranscription.chunks.push(cleanText);
+                    
+                    // Update transcriptionText for backwards compatibility
                     const separator = this.ongoingTranscription.transcriptionText ? ' ' : '';
                     this.ongoingTranscription.transcriptionText += separator + cleanText;
                     
-                    // Update the textarea
-                    UIHelpers.setValue('#ongoing-transcription-text', this.ongoingTranscription.transcriptionText);
-                    
-                    // Scroll to bottom
-                    const textarea = UIHelpers.getElementById('ongoing-transcription-text');
-                    if (textarea) {
-                        textarea.scrollTop = textarea.scrollHeight;
-                    }
+                    // Update the display with latest chunk bold
+                    this.updateOngoingTranscriptionDisplay();
                 } else {
                     console.log(`Chunk ${queueItem.chunkNumber} transcription returned empty (likely silence)`);
                 }
@@ -1053,11 +1103,17 @@ export class RecordingController {
         ctx.fillStyle = '#f7fafc';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
-        // Draw placeholder text
+        // Draw placeholder text - compact for corner visualization
         ctx.fillStyle = '#a0aec0';
-        ctx.font = '16px Arial';
+        ctx.font = '14px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Audio visualization will appear here during recording', canvas.width / 2, canvas.height / 2);
+        if (canvas.width < 400) {
+            // Compact message for corner visualization
+            ctx.fillText('🎵 Audio waveform', canvas.width / 2, canvas.height / 2);
+        } else {
+            // Full message for larger canvas
+            ctx.fillText('Audio visualization will appear here during recording', canvas.width / 2, canvas.height / 2);
+        }
     }
 
     /**

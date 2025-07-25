@@ -235,6 +235,23 @@
                             <!-- Recording Settings -->
                             <div class="record-settings">
                                 <h4>Recording Settings</h4>
+                                
+                                <!-- Audio Level Meter & Visualization - moved to settings panel -->
+                                <div class="audio-corner-panel audio-corner-settings">
+                                    <div class="audio-level-container audio-level-corner">
+                                        <label>Input:</label>
+                                        <div class="audio-level-meter">
+                                            <div id="audio-level-bar" class="audio-level-bar"></div>
+                                        </div>
+                                        <span id="audio-level-text">0%</span>
+                                    </div>
+                                    
+                                    <!-- Compact Audio Visualization -->
+                                    <div class="record-visualization record-visualization-corner">
+                                        <canvas id="audio-visualizer" width="280" height="80"></canvas>
+                                    </div>
+                                </div>
+                                
                                 <div class="settings-row">
                                     <div class="setting-group">
                                         <label for="quality-select">Quality:</label>
@@ -308,20 +325,6 @@
                                     </button>
                                 </div>
                             </div>
-                            
-                            <!-- Audio Level Meter -->
-                            <div class="audio-level-container">
-                                <label>Input Level:</label>
-                                <div class="audio-level-meter">
-                                    <div id="audio-level-bar" class="audio-level-bar"></div>
-                                </div>
-                                <span id="audio-level-text">0%</span>
-                            </div>
-
-                            <!-- Audio Visualization -->
-                            <div class="record-visualization">
-                                <canvas id="audio-visualizer" width="600" height="120"></canvas>
-                            </div>
 
                             <!-- Ongoing Transcription -->
                             <div id="ongoing-transcription-container" class="ongoing-transcription-container hidden">
@@ -336,13 +339,12 @@
                                         <div class="spinner"></div>
                                         <p>Processing chunk...</p>
                                     </div>
-                                    <textarea 
+                                    <div 
                                         id="ongoing-transcription-text" 
-                                        class="transcription-editor"
-                                        rows="8"
-                                        readonly
-                                        placeholder="Transcription will appear here as you speak..."
-                                    ></textarea>
+                                        class="transcription-editor ongoing-transcription-enlarged"
+                                        contenteditable="false"
+                                        data-placeholder="Transcription will appear here as you speak..."
+                                    ></div>
                                 </div>
                             </div>
 

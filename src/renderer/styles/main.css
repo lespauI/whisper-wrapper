@@ -564,10 +564,12 @@ body {
     border-radius: 12px;
     padding: 1.5rem;
     border: 1px solid #e2e8f0;
+    position: relative; /* Enable absolute positioning for child elements */
 }
 
 .record-settings h4 {
     margin-bottom: 1rem;
+    margin-right: 300px; /* Leave space for audio corner panel */
     color: #4a5568;
     font-size: 1.1rem;
 }
@@ -667,6 +669,21 @@ body {
     justify-content: center;
 }
 
+/* Main recording area with repositioned elements */
+.record-main-area {
+    position: relative;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: visible; /* Allow corner panel to extend outside */
+}
+
+/* Record section container */
+.record-section {
+    width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden; /* Prevent horizontal overflow */
+}
+
 /* Audio Level Meter */
 .audio-level-container {
     display: flex;
@@ -676,6 +693,102 @@ body {
     border-radius: 12px;
     padding: 1rem;
     border: 1px solid #e2e8f0;
+}
+
+/* Corner panel for audio level and visualization */
+.audio-corner-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 300px;
+    max-width: 320px;
+}
+
+/* Audio corner panel within settings */
+.audio-corner-settings {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 10;
+    min-width: 280px;
+    max-width: 300px;
+}
+
+/* Audio Level Meter - Corner positioning */
+.audio-level-corner {
+    padding: 0.75rem;
+    margin: 0;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    border-radius: 12px;
+}
+
+/* Compact label for corner position */
+.audio-level-corner label {
+    min-width: 50px;
+    font-size: 0.9rem;
+}
+
+/* Corner audio visualization */
+.record-visualization-corner {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    border-radius: 12px;
+    padding: 0.75rem;
+    margin: 0;
+}
+
+.record-visualization-corner #audio-visualizer {
+    width: 100%;
+    height: 80px;
+    border-radius: 8px;
+    background: #f7fafc;
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 768px) {
+    .audio-corner-panel {
+        position: static;
+        margin-top: 1rem;
+        min-width: auto;
+        max-width: none;
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .audio-corner-settings {
+        position: static;
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+        min-width: auto;
+        max-width: none;
+    }
+    
+    .audio-level-corner label {
+        min-width: 80px;
+        font-size: 1rem;
+    }
+    
+    .record-visualization-corner {
+        margin-top: 0;
+    }
+    
+    .record-visualization-corner #audio-visualizer {
+        width: 100%;
+        height: 120px;
+    }
+    
+    .record-settings h4 {
+        margin-right: 0; /* Remove margin on mobile */
+    }
 }
 
 .audio-level-container label {
@@ -2326,5 +2439,218 @@ textarea.disabled {
     to {
         opacity: 0;
         transform: translateX(50px);
+    }
+}
+
+/* Ongoing Transcription Styles - Enhanced with Overlay */
+.ongoing-transcription-container {
+    margin-top: 2rem;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 16px;
+    padding: 2rem;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    min-height: 350px; /* Increased from 300px */
+    max-height: 70vh; /* Adaptive height based on viewport */
+    overflow: hidden;
+    box-sizing: border-box;
+    position: relative;
+    backdrop-filter: blur(10px); /* Restore overlay effect */
+    /* Add subtle gradient overlay */
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(247, 250, 252, 0.98) 100%);
+    transition: all 0.3s ease; /* Smooth transitions */
+    display: flex; /* Enable flexbox layout */
+    flex-direction: column; /* Stack children vertically */
+}
+
+.ongoing-transcription-container .transcription-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.ongoing-transcription-container .transcription-header h4 {
+    color: #4a5568;
+    font-size: 1.1rem;
+    margin: 0;
+}
+
+.ongoing-transcription-container .transcription-status {
+    font-size: 0.9rem;
+    color: #667eea;
+    font-weight: 500;
+}
+
+.ongoing-transcription-container .transcription-content {
+    position: relative;
+    width: 100%;
+    box-sizing: border-box;
+    flex: 1; /* Allow content to grow */
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* Enable proper flex behavior */
+}
+
+.ongoing-transcription-container #ongoing-transcription-text {
+    width: 100%;
+    flex: 1; /* Fill available space in flex container */
+    min-height: 150px; /* Increased minimum height */
+    max-height: calc(70vh - 200px); /* Adaptive max height */
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1.25rem; /* Slightly more padding */
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    font-size: 0.95rem; /* Slightly larger font */
+    line-height: 1.6; /* Better line spacing */
+    outline: none;
+    background: rgba(247, 250, 252, 0.8); /* Semi-transparent background */
+    color: #4a5568;
+    transition: all 0.2s ease; /* Enhanced transitions */
+    box-sizing: border-box;
+    overflow-y: auto;
+    display: block;
+    backdrop-filter: blur(5px); /* Subtle backdrop blur */
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1); /* Subtle inset shadow */
+    white-space: pre-wrap; /* Preserve line breaks */
+    word-wrap: break-word; /* Handle long words */
+}
+
+/* Placeholder styling for contenteditable div */
+.ongoing-transcription-container #ongoing-transcription-text:empty::before {
+    content: attr(data-placeholder);
+    color: #a0aec0;
+    font-style: italic;
+    pointer-events: none;
+}
+
+/* Bold styling for latest chunk */
+.ongoing-transcription-container #ongoing-transcription-text .latest-chunk {
+    font-weight: bold;
+    color: #3182ce; /* Blue color for better visibility */
+}
+
+/* Enhanced styling for enlarged ongoing transcription */
+.ongoing-transcription-enlarged {
+    min-height: 250px !important; /* Larger minimum height */
+    max-height: calc(80vh - 180px) !important; /* More adaptive height */
+    font-size: 1rem !important;
+    line-height: 1.6 !important;
+    padding: 1.5rem !important;
+    box-sizing: border-box !important;
+    background: rgba(247, 250, 252, 0.9) !important; /* More prominent background */
+    backdrop-filter: blur(8px) !important; /* Enhanced overlay effect */
+}
+
+/* Hover effect for ongoing transcription container */
+.ongoing-transcription-container:hover {
+    box-shadow: 0 6px 25px rgba(0, 0, 0, 0.18); /* Enhanced shadow on hover */
+    transform: translateY(-2px); /* Subtle lift effect */
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.97) 0%, rgba(247, 250, 252, 1) 100%);
+}
+
+/* Hover effect for textarea */
+.ongoing-transcription-container #ongoing-transcription-text:hover {
+    border-color: #a0aec0; /* Subtle border change on hover */
+    background: rgba(255, 255, 255, 0.85); /* Slightly brighter on hover */
+}
+
+.ongoing-transcription-container #ongoing-transcription-text:focus {
+    border-color: #667eea;
+    box-shadow: inset 0 0 0 2px rgba(102, 126, 234, 0.2), 0 0 0 3px rgba(102, 126, 234, 0.1); /* Enhanced focus effect */
+    background: rgba(255, 255, 255, 0.9); /* Brighter background on focus */
+    transform: scale(1.005); /* Subtle scale effect */
+}
+
+.ongoing-transcription-container #ongoing-transcription-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(247, 250, 252, 0.95);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    box-sizing: border-box; /* Ensure proper sizing */
+    overflow: hidden; /* Prevent any content overflow */
+}
+
+.ongoing-transcription-container #ongoing-transcription-loading .spinner {
+    width: 24px;
+    height: 24px;
+    border: 2px solid #e2e8f0;
+    border-top: 2px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 0.5rem;
+}
+
+.ongoing-transcription-container #ongoing-transcription-loading p {
+    color: #667eea;
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+/* Responsive Design for Ongoing Transcription */
+@media (max-width: 768px) {
+    .ongoing-transcription-container {
+        min-height: 280px; /* Smaller on mobile */
+        max-height: 60vh; /* Less viewport height on mobile */
+        padding: 1.5rem; /* Reduced padding */
+        margin-top: 1.5rem;
+    }
+    
+    .ongoing-transcription-container #ongoing-transcription-text {
+        min-height: 120px; /* Smaller minimum on mobile */
+        max-height: calc(60vh - 150px); /* Adaptive for mobile viewport */
+        font-size: 0.9rem; /* Slightly smaller font on mobile */
+        padding: 1rem; /* Less padding on mobile */
+    }
+    
+    .ongoing-transcription-container #ongoing-transcription-text .latest-chunk {
+        font-weight: bold;
+        color: #2563eb; /* Stronger blue for better mobile contrast */
+    }
+    
+    .ongoing-transcription-enlarged {
+        min-height: 180px !important; /* Reduced for mobile */
+        max-height: calc(70vh - 120px) !important;
+        font-size: 0.95rem !important; /* Slightly smaller on mobile */
+    }
+}
+
+@media (min-width: 1200px) {
+    .ongoing-transcription-container {
+        min-height: 400px; /* Larger on desktop */
+        max-height: 75vh; /* More height on larger screens */
+    }
+    
+    .ongoing-transcription-container #ongoing-transcription-text {
+        min-height: 200px; /* Larger minimum on desktop */
+        max-height: calc(75vh - 220px);
+        font-size: 1rem; /* Larger font on desktop */
+    }
+    
+    .ongoing-transcription-enlarged {
+        min-height: 300px !important; /* Larger for desktop */
+        max-height: calc(85vh - 200px) !important;
+        font-size: 1.1rem !important; /* Larger font on desktop */
+    }
+}
+
+/* High DPI displays */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    .ongoing-transcription-container {
+        backdrop-filter: blur(15px); /* Enhanced blur on high DPI */
+    }
+    
+    .ongoing-transcription-container #ongoing-transcription-text {
+        backdrop-filter: blur(8px); /* Enhanced text area blur */
     }
 }

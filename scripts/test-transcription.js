@@ -4,7 +4,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 
 console.log('🎬 Running transcription end-to-end test...');
-console.log('📁 Make sure you have placed "Thank you for contac.wav" in tests/data/ directory');
+console.log('📁 Make sure you have placed "test.wav" in tests/data/ directory');
 
 const testFile = path.join(__dirname, '../tests/integration/transcription-e2e.test.js');
 

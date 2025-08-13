@@ -5,7 +5,7 @@ const config = require('../../src/config');
 
 describe('End-to-End Transcription Test', () => {
     let whisperService;
-    const testAudioFile = path.join(__dirname, '../data/Thank you for contac.wav');
+    const testAudioFile = path.join(__dirname, '../data/test.wav');
     const expectedText = "Thank you for contacting us. All lines are currently busy. Your call is very important to us.";
 
     beforeAll(async () => {

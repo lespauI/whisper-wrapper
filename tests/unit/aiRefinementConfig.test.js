@@ -51,21 +51,21 @@ describe('AI Refinement Configuration', () => {
     });
 
     it('should use default values when settings are missing', () => {
-      // Temporarily modify the config object to remove aiRefinement settings
-      const originalConfig = { ...config.aiRefinement };
-      config.aiRefinement = undefined;
+      // Temporarily modify the config object to remove ollama settings
+      const originalConfig = { ...config.ollama };
+      config.ollama = undefined;
       
       // Get settings - should use defaults
       const settings = config.getAIRefinementSettings();
       
       // Restore the original config
-      config.aiRefinement = originalConfig;
+      config.ollama = originalConfig;
       
       // Verify default values are provided
       expect(settings.enabled).toBe(false);
       expect(settings.endpoint).toBe('http://localhost:11434');
       expect(settings.model).toBe('gemma3:12b');
-      expect(settings.timeoutSeconds).toBe(30);
+      expect(settings.timeoutSeconds).toBe(300);
       expect(settings.defaultTemplateId).toBe(null);
     });
 
@@ -85,9 +85,9 @@ describe('AI Refinement Configuration', () => {
       
       // Assertions
       expect(changed).toBe(true);
-      expect(config.aiRefinement.enabled).toBe(true);
-      expect(config.aiRefinement.model).toBe('new-model');
-      expect(config.aiRefinement.defaultTemplateId).toBe('new-template');
+      expect(config.ollama.refinement.enabled).toBe(true);
+      expect(config.ollama.defaultModel).toBe('new-model');
+      expect(config.ollama.refinement.defaultTemplateId).toBe('new-template');
       expect(fs.writeFileSync).toHaveBeenCalled();
     });
 
@@ -95,6 +95,16 @@ describe('AI Refinement Configuration', () => {
       // Mock fs.writeFileSync implementation
       const fs = require('fs');
       fs.writeFileSync.mockClear();
+      
+      // Ensure ollama config exists to get current settings
+      if (!config.ollama) {
+        config.ollama = {
+          endpoint: 'http://localhost:11434',
+          defaultModel: 'gemma3:12b',
+          timeoutSeconds: 300,
+          refinement: { enabled: false, defaultTemplateId: null }
+        };
+      }
       
       // Get current settings
       const currentSettings = config.getAIRefinementSettings();
@@ -107,10 +117,10 @@ describe('AI Refinement Configuration', () => {
       expect(fs.writeFileSync).not.toHaveBeenCalled();
     });
 
-    it('should create aiRefinement section if missing', () => {
-      // Temporarily remove the aiRefinement section
-      const originalConfig = { ...config.aiRefinement };
-      config.aiRefinement = undefined;
+    it('should create ollama section if missing', () => {
+      // Temporarily remove the ollama section
+      const originalConfig = { ...config.ollama };
+      config.ollama = undefined;
       
       // Save new settings
       const newSettings = {
@@ -122,12 +132,12 @@ describe('AI Refinement Configuration', () => {
       
       // Verify the section was created and settings were saved
       expect(changed).toBe(true);
-      expect(config.aiRefinement).toBeDefined();
-      expect(config.aiRefinement.enabled).toBe(true);
-      expect(config.aiRefinement.endpoint).toBe('http://test:11434');
+      expect(config.ollama).toBeDefined();
+      expect(config.ollama.refinement.enabled).toBe(true);
+      expect(config.ollama.endpoint).toBe('http://test:11434');
       
       // Restore original
-      config.aiRefinement = originalConfig;
+      config.ollama = originalConfig;
     });
   });
 });

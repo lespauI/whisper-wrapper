@@ -131,6 +131,37 @@ class LocalWhisperService {
     }
 
     /**
+     * Sanitize prompt text to avoid command line parsing issues
+     * Removes or escapes special characters that could cause problems
+     */
+    sanitizePrompt(prompt) {
+        if (!prompt || typeof prompt !== 'string') {
+            return '';
+        }
+
+        // Remove or replace problematic characters that can cause shell parsing issues
+        let sanitized = prompt
+            // Remove shell wildcards and special characters
+            .replace(/[\*\?\[\]{}|&;<>()$`\\!]/g, '')
+            // Replace multiple spaces with single space
+            .replace(/\s+/g, ' ')
+            // Remove quotes that could break command parsing
+            .replace(/['"]/g, '')
+            // Trim whitespace
+            .trim();
+
+        // Limit length to prevent overly long prompts (keep most recent context)
+        if (sanitized.length > 1000) {
+            const originalLength = sanitized.length;
+            // Truncate from the beginning to keep the most recent/relevant context
+            sanitized = sanitized.substring(originalLength - 1000).trim();
+            console.log(`⚠️ Prompt truncated from ${originalLength} to ${sanitized.length} characters, keeping most recent context`);
+        }
+
+        return sanitized;
+    }
+
+    /**
      * Set the model to use for transcription
      */
     setModel(model) {
@@ -513,7 +544,8 @@ class LocalWhisperService {
             outputFormat = 'json',
             threads = 4,
             initialPrompt = undefined, // Don't default to this.initialPrompt
-            useInitialPrompt = true // Default to true for backward compatibility
+            useInitialPrompt = true, // Default to true for backward compatibility
+            contextPrompt = undefined // Context from previous chunks
         } = options;
         
         // Only use initialPrompt if explicitly provided in options or if useInitialPrompt is true
@@ -569,9 +601,23 @@ class LocalWhisperService {
             args.push('-tr');
         }
 
-        // Add initial prompt if provided and enabled
-        if (effectiveInitialPrompt && effectiveInitialPrompt.trim().length > 0) {
-            args.push('--prompt', effectiveInitialPrompt);
+        // Add context prompt for chunk processing (takes precedence over initial prompt)
+        if (contextPrompt && contextPrompt.trim().length > 0) {
+            // Sanitize context prompt to avoid command line parsing issues
+            const sanitizedPrompt = this.sanitizePrompt(contextPrompt.trim());
+            if (sanitizedPrompt.length > 0) {
+                // Use correct whisper.cpp prompt format: --prompt followed by the text
+                args.push('--prompt', sanitizedPrompt);
+                console.log(`📝 Using sanitized context prompt (${sanitizedPrompt.length} chars): "${sanitizedPrompt.substring(0, 100)}..."`);
+            } else {
+                console.log('⚠️ Context prompt was empty after sanitization, skipping');
+            }
+        } else if (effectiveInitialPrompt && effectiveInitialPrompt.trim().length > 0) {
+            // Add initial prompt if provided and enabled (only if no context prompt)
+            const sanitizedInitialPrompt = this.sanitizePrompt(effectiveInitialPrompt);
+            if (sanitizedInitialPrompt.length > 0) {
+                args.push('--prompt', sanitizedInitialPrompt);
+            }
         }
 
         // Add other options
@@ -579,7 +625,46 @@ class LocalWhisperService {
 
         console.log('🚀 LocalWhisperService: Executing whisper.cpp command:');
         console.log(`   Command: ${this.whisperPath}`);
-        console.log(`   Args: ${args.join(' ')}`);
+        
+        // Display arguments properly with quotes where needed for clarity
+        const quotedArgs = args.map(arg => {
+            // Quote arguments that contain spaces for display clarity
+            return arg.includes(' ') ? `"${arg}"` : arg;
+        });
+        console.log(`   Args: ${quotedArgs.join(' ')}`);
+        console.log(`   Full command: ${this.whisperPath} ${quotedArgs.join(' ')}`);
+        
+        // Log argument array for debugging
+        console.log(`   Argument array:`, args);
+
+        // Validate argument structure
+        const promptIndex = args.indexOf('--prompt');
+        if (promptIndex !== -1) {
+            if (promptIndex + 1 >= args.length) {
+                throw new Error('--prompt flag found but no prompt text provided');
+            }
+            const promptText = args[promptIndex + 1];
+            console.log(`✅ Prompt validation: Found "--prompt" at index ${promptIndex}, text: "${promptText.substring(0, 50)}..."`);
+            
+            // Ensure the next argument after prompt text is a flag (starts with -)
+            if (promptIndex + 2 < args.length) {
+                const nextArg = args[promptIndex + 2];
+                if (!nextArg.startsWith('-')) {
+                    console.warn(`⚠️ Warning: Argument after prompt "${nextArg}" doesn't look like a flag`);
+                }
+            }
+        }
+
+        // Validate all numeric arguments to prevent stoi errors
+        for (let i = 0; i < args.length; i++) {
+            if (args[i] === '-t' && i + 1 < args.length) {
+                const threadsValue = args[i + 1];
+                if (!/^\d+$/.test(threadsValue)) {
+                    console.error(`❌ Invalid threads value: "${threadsValue}" - must be a number`);
+                    throw new Error(`Invalid threads parameter: ${threadsValue}`);
+                }
+            }
+        }
 
         return new Promise((resolve, reject) => {
             const startTime = Date.now();
@@ -730,6 +815,7 @@ class LocalWhisperService {
                     console.log(`❌ LocalWhisperService: whisper.cpp failed with code ${code}`);
                     console.log('📄 STDERR:', stderr);
                     console.log('📄 STDOUT:', stdout);
+                    console.log('🔧 Command executed:', `${this.whisperPath} ${args.join(' ')}`);
                     
                     // Clean up extracted audio file if needed
                     if (needsCleanup && fs.existsSync(audioFilePath)) {
@@ -737,7 +823,13 @@ class LocalWhisperService {
                         fs.unlinkSync(audioFilePath);
                     }
                     
-                    reject(new Error(`whisper.cpp failed with code ${code}: ${stderr}`));
+                    // Provide more specific error messages for common issues
+                    let errorMessage = `whisper.cpp failed with code ${code}: ${stderr}`;
+                    if (stderr.includes('stoi: no conversion')) {
+                        errorMessage += '\n🔍 This error suggests a parameter parsing issue. Check for special characters in prompts or invalid numeric values.';
+                    }
+                    
+                    reject(new Error(errorMessage));
                 }
             });
 

@@ -64,7 +64,8 @@ export class RecordingController {
             voiceStartConsecutive: 4, // Samples >= level before starting a chunk
             maxSilenceWaitMs: 5000, // Wait time before giving up starting a chunk
             hallucinationStreak: 0,
-            suppressContextUntil: 0 // Timestamp until which context is suppressed
+            suppressContextUntil: 0, // Timestamp until which context is suppressed
+            nextAllowedStartAt: 0 // Cooldown to avoid rapid restarts during silence
         };
 
         this.init();
@@ -652,6 +653,10 @@ export class RecordingController {
         let t = this.normalizeWhitespace(text);
         // Sometimes Whisper returns trailing hyphen splits; fix common artifact
         t = t.replace(/-\s+/g, '');
+        // If the text itself contains highly repetitive n-grams, treat as hallucination
+        if (this.hasRepetitiveNgrams(t)) {
+            return '';
+        }
         // Dedupe overlap with previous accumulated text
         t = this.dedupeWithPrevious(t);
         return t;
@@ -668,9 +673,29 @@ export class RecordingController {
         const lowSpeech = (queueItem?.speechRatio ?? 1) < 0.18 && (queueItem?.maxLevel ?? 100) < (this.ongoingTranscription.minSpeechLevel + 6);
 
         // Detect internal repeats like "It is a church. It is a church."
-        const internalRepeat = /\b(.{2,40}?)\b(?:\W+\1\b){1,}\.?$/i.test(text);
+        const internalRepeat = /\b(.{2,40}?)\b(?:\W+\1\b){1,}/i.test(text);
 
-        return (lowSpeech && shortSimple) || internalRepeat;
+        return (lowSpeech && shortSimple) || internalRepeat || this.hasRepetitiveNgrams(text);
+    }
+
+    /**
+     * Detect repetitive 3-6 word n-grams occurring 2+ times
+     */
+    hasRepetitiveNgrams(text) {
+        const words = this.normalizeWhitespace(text).toLowerCase().split(' ').filter(Boolean);
+        const counts = new Map();
+        for (let n = 3; n <= 6; n++) {
+            if (words.length < n * 2) continue;
+            counts.clear();
+            for (let i = 0; i <= words.length - n; i++) {
+                const ngram = words.slice(i, i + n).join(' ');
+                counts.set(ngram, (counts.get(ngram) || 0) + 1);
+                if (counts.get(ngram) >= 2) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -688,7 +713,7 @@ export class RecordingController {
         const full = this.ongoingTranscription.transcriptionText || '';
         if (!full) return null;
         // Use only a short tail and preferably from the last incomplete sentence
-        const tail = full.slice(-400);
+        const tail = full.slice(-240);
         const lastBoundary = Math.max(
             tail.lastIndexOf('. '),
             tail.lastIndexOf('! '),
@@ -698,10 +723,14 @@ export class RecordingController {
         // Take the portion after the last boundary: this is likely the unfinished clause
         let prompt = lastBoundary >= 0 ? tail.slice(lastBoundary + 1) : tail;
         // Limit further to avoid over-biasing Whisper's initial prompt
-        if (prompt.length > 200) {
-            prompt = prompt.slice(-200);
+        if (prompt.length > 80) {
+            prompt = prompt.slice(-80);
         }
         prompt = this.normalizeWhitespace(prompt);
+        // If the prompt itself is repetitive (common in loops), drop it
+        if (this.hasRepetitiveNgrams(prompt)) {
+            return null;
+        }
         return prompt || null;
     }
 
@@ -745,6 +774,11 @@ export class RecordingController {
         }
 
         try {
+            // Respect cooldown to avoid getting stuck starting during silence
+            if (Date.now() < (this.ongoingTranscription.nextAllowedStartAt || 0)) {
+                setTimeout(() => this.startChunkRecording(), 250);
+                return;
+            }
             // Wait for voice before starting a new chunk to avoid transcribing silence
             const voiceReady = await this.waitForVoiceStart();
             if (!voiceReady) {
@@ -802,10 +836,13 @@ export class RecordingController {
                     const mimeType = this.getMimeType();
                     const blobPreview = new Blob(chunkData, { type: mimeType });
                     const isBigEnough = blobPreview.size >= this.ongoingTranscription.minChunkBytes;
-                    const hasSpeech = ratio >= this.ongoingTranscription.minSpeechRatio || maxLevel >= (this.ongoingTranscription.minSpeechLevel + 8);
+                    // Require both some sustained activity and a reasonable max level
+                    const hasSpeech = (ratio >= this.ongoingTranscription.minSpeechRatio) && (maxLevel >= (this.ongoingTranscription.minSpeechLevel + 5));
                     if (!isBigEnough || !hasSpeech) {
                         console.log(`Skipping chunk ${chunkNumber} (silence/too small) size=${blobPreview.size} bytes, speechRatio=${ratio.toFixed(2)}, maxLevel=${maxLevel}%`);
                         this.ongoingTranscription.lastChunkWasSilent = true;
+                        // small cooldown to avoid immediate restart thrash
+                        this.ongoingTranscription.nextAllowedStartAt = Date.now() + 800;
                         UIHelpers.setText('#ongoing-transcription-status', 'Silence detected (skipped)...');
                     } else {
                         this.ongoingTranscription.lastChunkWasSilent = false;
@@ -813,6 +850,7 @@ export class RecordingController {
                     }
                 } else {
                     this.ongoingTranscription.lastChunkWasSilent = true;
+                    this.ongoingTranscription.nextAllowedStartAt = Date.now() + 800;
                 }
                 
                 // Start next chunk immediately

@@ -51,7 +51,10 @@ export class RecordingController {
             audioLevelThreshold: 15, // Below this % = quiet moment, good to cut
             maxExtensionTime: 2000, // Maximum 2 seconds extension
             chunkStartTime: null, // When current chunk started
-            pendingStop: false // Whether we're waiting for a quiet moment to stop
+            pendingStop: false, // Whether we're waiting for a quiet moment to stop
+            // De-duplication helpers
+            lastTail: '', // Tail of the accumulated transcript used for overlap matching
+            recentChunks: [] // Track last few chunk texts to detect loops
         };
 
         this.init();
@@ -484,6 +487,8 @@ export class RecordingController {
         this.ongoingTranscription.chunkQueue = [];
         this.ongoingTranscription.pendingStop = false;
         this.ongoingTranscription.chunkStartTime = null;
+        this.ongoingTranscription.recentChunks = [];
+        this.ongoingTranscription.lastTail = '';
         
         // Stop background worker
         this.stopTranscriptionWorker();
@@ -546,24 +551,112 @@ export class RecordingController {
     }
 
     /**
+     * Normalize whitespace in text
+     */
+    normalizeWhitespace(text) {
+        return (text || '')
+            .replace(/[\t\f\v]+/g, ' ')
+            .replace(/\s{2,}/g, ' ')
+            .replace(/\s+([,.!?;:])/g, '$1')
+            .trim();
+    }
+
+    /**
+     * Get a tail from the accumulated transcript for overlap detection
+     */
+    getTranscriptTail(maxChars = 200) {
+        const t = this.ongoingTranscription.transcriptionText || '';
+        if (!t) return '';
+        return t.slice(-maxChars);
+    }
+
+    /**
+     * Find length of the longest overlap where suffix of prevTail equals prefix of nextText
+     */
+    findOverlap(prevTail, nextText, minChars = 15) {
+        if (!prevTail || !nextText) return 0;
+        const maxLen = Math.min(prevTail.length, nextText.length);
+        // Try longer overlaps first
+        for (let len = maxLen; len >= minChars; len--) {
+            const suffix = prevTail.slice(-len);
+            const prefix = nextText.slice(0, len);
+            if (suffix.toLowerCase() === prefix.toLowerCase()) {
+                return len;
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Remove duplicated prefix of newText if it overlaps with transcript tail
+     */
+    dedupeWithPrevious(newText) {
+        const prevTail = this.getTranscriptTail(240);
+        const overlap = this.findOverlap(prevTail, newText, 12);
+        if (overlap > 0) {
+            return newText.slice(overlap).trimStart();
+        }
+        return newText;
+    }
+
+    /**
+     * Simple duplicate/loop detection against recent chunks
+     */
+    isDuplicateChunk(cleanText) {
+        const recent = this.ongoingTranscription.recentChunks || [];
+        const normalized = this.normalizeWhitespace(cleanText).toLowerCase();
+        return recent.some(t => this.normalizeWhitespace(t).toLowerCase() === normalized);
+    }
+
+    /**
+     * Update recent chunks queue
+     */
+    rememberChunk(cleanText, limit = 3) {
+        this.ongoingTranscription.recentChunks = this.ongoingTranscription.recentChunks || [];
+        this.ongoingTranscription.recentChunks.push(cleanText);
+        if (this.ongoingTranscription.recentChunks.length > limit) {
+            this.ongoingTranscription.recentChunks.shift();
+        }
+    }
+
+    /**
+     * Preprocess chunk text: normalize, de-duplicate overlap, drop trivial repeats
+     */
+    preprocessChunkText(text) {
+        if (!text) return '';
+        let t = this.normalizeWhitespace(text);
+        // Sometimes Whisper returns trailing hyphen splits; fix common artifact
+        t = t.replace(/-\s+/g, '');
+        // Dedupe overlap with previous accumulated text
+        t = this.dedupeWithPrevious(t);
+        return t;
+    }
+
+    /**
      * Generate context prompt from previous transcription for better chunk continuity
      * @returns {string|null} - Last 1000 characters of transcribed text, or null if no text
      */
     generateContextPrompt() {
-        if (!this.ongoingTranscription.transcriptionText || this.ongoingTranscription.transcriptionText.length === 0) {
-            console.log('📝 No previous transcription text - no context prompt');
+        const full = this.ongoingTranscription.transcriptionText || '';
+        if (!full) {
             return null;
         }
-        
-        // Get last 1000 characters as context for better transcription continuity
-        const contextPrompt = this.ongoingTranscription.transcriptionText.slice(-1000);
-        
-        if (contextPrompt.length > 0) {
-            console.log(`📝 Generated context prompt (${contextPrompt.length} chars): "${contextPrompt.substring(0, 100)}${contextPrompt.length > 100 ? '...' : ''}"`);
-            return contextPrompt;
+        // Use only a short tail and preferably from the last incomplete sentence
+        const tail = full.slice(-400);
+        const lastBoundary = Math.max(
+            tail.lastIndexOf('. '),
+            tail.lastIndexOf('! '),
+            tail.lastIndexOf('? '),
+            tail.lastIndexOf('\n')
+        );
+        // Take the portion after the last boundary: this is likely the unfinished clause
+        let prompt = lastBoundary >= 0 ? tail.slice(lastBoundary + 1) : tail;
+        // Limit further to avoid over-biasing Whisper's initial prompt
+        if (prompt.length > 200) {
+            prompt = prompt.slice(-200);
         }
-        
-        return null;
+        prompt = this.normalizeWhitespace(prompt);
+        return prompt || null;
     }
 
     /**
@@ -746,15 +839,26 @@ export class RecordingController {
                 const result = await window.electronAPI.transcribeAudio(arrayBuffer, contextPrompt);
                 
                 if (result.success && result.text && result.text.trim()) {
-                    const cleanText = result.text.trim();
-                    console.log(`✓ Chunk ${queueItem.chunkNumber} transcribed: "${cleanText}"`);
+                    // Normalize and dedupe overlapping prefix
+                    let nextText = this.preprocessChunkText(result.text.trim());
+                    if (!nextText) {
+                        console.log(`Chunk ${queueItem.chunkNumber} produced only overlap; skipping`);
+                        continue;
+                    }
+                    // Drop if this chunk is a near-exact repeat of recent ones
+                    if (this.isDuplicateChunk(nextText)) {
+                        console.log(`Chunk ${queueItem.chunkNumber} is duplicate of recent output; skipping`);
+                        continue;
+                    }
+                    console.log(`✓ Chunk ${queueItem.chunkNumber} transcribed: "${nextText}"`);
                     
                     // Add to chunks array for bold formatting
-                    this.ongoingTranscription.chunks.push(cleanText);
+                    this.ongoingTranscription.chunks.push(nextText);
+                    this.rememberChunk(nextText);
                     
                     // Update transcriptionText for backwards compatibility
                     const separator = this.ongoingTranscription.transcriptionText ? ' ' : '';
-                    this.ongoingTranscription.transcriptionText += separator + cleanText;
+                    this.ongoingTranscription.transcriptionText += separator + nextText;
                     
                     // Update the display with latest chunk bold
                     this.updateOngoingTranscriptionDisplay();

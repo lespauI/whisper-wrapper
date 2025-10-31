@@ -54,7 +54,12 @@ export class RecordingController {
             pendingStop: false, // Whether we're waiting for a quiet moment to stop
             // De-duplication helpers
             lastTail: '', // Tail of the accumulated transcript used for overlap matching
-            recentChunks: [] // Track last few chunk texts to detect loops
+            recentChunks: [], // Track last few chunk texts to detect loops
+            // Silence / hallucination control
+            minSpeechLevel: 18, // Level threshold to consider as voice
+            minSpeechRatio: 0.25, // % of samples above level to accept chunk
+            minChunkBytes: 8192, // Minimum bytes for a valid chunk
+            lastChunkWasSilent: false // Used to gate context prompts
         };
 
         this.init();
@@ -633,14 +638,32 @@ export class RecordingController {
     }
 
     /**
+     * Heuristic to filter likely hallucinations:
+     * - Low speech activity in chunk AND very short/simple text
+     * - Repetitive phrase of 2-5 words repeated inside itself
+     */
+    isLikelyHallucination(text, queueItem) {
+        const words = this.normalizeWhitespace(text).split(' ');
+        const shortSimple = words.length <= 6 && /[a-zA-Z]/.test(text);
+        const lowSpeech = (queueItem?.speechRatio ?? 1) < 0.18 && (queueItem?.maxLevel ?? 100) < (this.ongoingTranscription.minSpeechLevel + 6);
+
+        // Detect internal repeats like "It is a church. It is a church."
+        const internalRepeat = /\b(.{2,40}?)\b(?:\W+\1\b){1,}\.?$/i.test(text);
+
+        return (lowSpeech && shortSimple) || internalRepeat;
+    }
+
+    /**
      * Generate context prompt from previous transcription for better chunk continuity
      * @returns {string|null} - Last 1000 characters of transcribed text, or null if no text
      */
     generateContextPrompt() {
-        const full = this.ongoingTranscription.transcriptionText || '';
-        if (!full) {
+        if (this.ongoingTranscription.lastChunkWasSilent) {
+            // Avoid biasing the model during silence spans
             return null;
         }
+        const full = this.ongoingTranscription.transcriptionText || '';
+        if (!full) return null;
         // Use only a short tail and preferably from the last incomplete sentence
         const tail = full.slice(-400);
         const lastBoundary = Math.max(
@@ -707,6 +730,11 @@ export class RecordingController {
             const stream = this.mediaRecorder.stream;
             const chunkRecorder = new MediaRecorder(stream, { mimeType: this.getMimeType() });
             const chunkData = [];
+            const levels = [];
+            // Sample audio level during this chunk
+            const levelSampler = setInterval(() => {
+                levels.push(this.getCurrentAudioLevel());
+            }, 100);
             
             this.ongoingTranscription.currentChunkRecorder = chunkRecorder;
             
@@ -717,6 +745,16 @@ export class RecordingController {
             };
             
             chunkRecorder.onstop = () => {
+                // Stop sampling
+                clearInterval(levelSampler);
+                
+                // Compute activity stats
+                const minLevel = this.ongoingTranscription.minSpeechLevel;
+                const above = levels.filter(v => v >= minLevel).length;
+                const ratio = levels.length > 0 ? above / levels.length : 0;
+                const maxLevel = levels.reduce((a, b) => Math.max(a, b), 0);
+                console.log(`Chunk ${chunkNumber} activity: ratio=${(ratio*100).toFixed(0)}% max=${maxLevel}% samples=${levels.length}`);
+                
                 console.log(`Chunk ${chunkNumber} completed, adding to transcription queue`);
                 
                 // Clear the current recorder reference
@@ -726,7 +764,21 @@ export class RecordingController {
                 
                 // Add completed chunk to processing queue
                 if (chunkData.length > 0) {
-                    this.addChunkToQueue(chunkData, chunkNumber);
+                    // Validate size and speech ratio
+                    const mimeType = this.getMimeType();
+                    const blobPreview = new Blob(chunkData, { type: mimeType });
+                    const isBigEnough = blobPreview.size >= this.ongoingTranscription.minChunkBytes;
+                    const hasSpeech = ratio >= this.ongoingTranscription.minSpeechRatio || maxLevel >= (this.ongoingTranscription.minSpeechLevel + 8);
+                    if (!isBigEnough || !hasSpeech) {
+                        console.log(`Skipping chunk ${chunkNumber} (silence/too small) size=${blobPreview.size} bytes, speechRatio=${ratio.toFixed(2)}, maxLevel=${maxLevel}%`);
+                        this.ongoingTranscription.lastChunkWasSilent = true;
+                        UIHelpers.setText('#ongoing-transcription-status', 'Silence detected (skipped)...');
+                    } else {
+                        this.ongoingTranscription.lastChunkWasSilent = false;
+                        this.addChunkToQueue(chunkData, chunkNumber, { speechRatio: ratio, maxLevel });
+                    }
+                } else {
+                    this.ongoingTranscription.lastChunkWasSilent = true;
                 }
                 
                 // Start next chunk immediately
@@ -775,13 +827,13 @@ export class RecordingController {
     /**
      * Add a completed chunk to the transcription queue
      */
-    addChunkToQueue(chunkData, chunkNumber) {
+    addChunkToQueue(chunkData, chunkNumber, metrics = {}) {
         // Create blob from chunk data
         const mimeType = this.getMimeType();
         const chunkBlob = new Blob(chunkData, { type: mimeType });
         
         // Validate chunk size
-        if (chunkBlob.size < 5120) { // At least 5KB
+        if (chunkBlob.size < this.ongoingTranscription.minChunkBytes) { // Minimum viable size
             console.log(`Chunk ${chunkNumber} too small (${chunkBlob.size} bytes), skipping`);
             return;
         }
@@ -792,7 +844,9 @@ export class RecordingController {
         this.ongoingTranscription.chunkQueue.push({
             chunkNumber,
             blob: chunkBlob,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            speechRatio: metrics.speechRatio ?? null,
+            maxLevel: metrics.maxLevel ?? null
         });
         
         console.log(`Queue now has ${this.ongoingTranscription.chunkQueue.length} chunks waiting`);
@@ -843,6 +897,11 @@ export class RecordingController {
                     let nextText = this.preprocessChunkText(result.text.trim());
                     if (!nextText) {
                         console.log(`Chunk ${queueItem.chunkNumber} produced only overlap; skipping`);
+                        continue;
+                    }
+                    // Heuristic hallucination guard for low-speech chunks
+                    if (this.isLikelyHallucination(nextText, queueItem)) {
+                        console.log(`Chunk ${queueItem.chunkNumber} flagged as likely hallucination; skipping`);
                         continue;
                     }
                     // Drop if this chunk is a near-exact repeat of recent ones

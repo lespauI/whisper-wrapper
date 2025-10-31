@@ -59,7 +59,12 @@ export class RecordingController {
             minSpeechLevel: 18, // Level threshold to consider as voice
             minSpeechRatio: 0.25, // % of samples above level to accept chunk
             minChunkBytes: 8192, // Minimum bytes for a valid chunk
-            lastChunkWasSilent: false // Used to gate context prompts
+            lastChunkWasSilent: false, // Used to gate context prompts
+            voiceStartLevel: 22, // Level to consider start of speech
+            voiceStartConsecutive: 4, // Samples >= level before starting a chunk
+            maxSilenceWaitMs: 5000, // Wait time before giving up starting a chunk
+            hallucinationStreak: 0,
+            suppressContextUntil: 0 // Timestamp until which context is suppressed
         };
 
         this.init();
@@ -624,6 +629,21 @@ export class RecordingController {
         }
     }
 
+    bumpHallucinationGuard() {
+        this.ongoingTranscription.hallucinationStreak = (this.ongoingTranscription.hallucinationStreak || 0) + 1;
+        if (this.ongoingTranscription.hallucinationStreak >= 2) {
+            // Suppress context for a few seconds to break repetition bias
+            this.ongoingTranscription.suppressContextUntil = Date.now() + 6000;
+            this.ongoingTranscription.lastChunkWasSilent = true; // also gate prompt
+            UIHelpers.setText('#ongoing-transcription-status', 'Suppressing context to break repetition...');
+        }
+    }
+
+    resetHallucinationGuard() {
+        this.ongoingTranscription.hallucinationStreak = 0;
+        this.ongoingTranscription.suppressContextUntil = 0;
+    }
+
     /**
      * Preprocess chunk text: normalize, de-duplicate overlap, drop trivial repeats
      */
@@ -660,6 +680,9 @@ export class RecordingController {
     generateContextPrompt() {
         if (this.ongoingTranscription.lastChunkWasSilent) {
             // Avoid biasing the model during silence spans
+            return null;
+        }
+        if (Date.now() < (this.ongoingTranscription.suppressContextUntil || 0)) {
             return null;
         }
         const full = this.ongoingTranscription.transcriptionText || '';
@@ -715,13 +738,24 @@ export class RecordingController {
     /**
      * Start chunk recording with simple sequential approach
      */
-    startChunkRecording() {
+    async startChunkRecording() {
         if (!this.ongoingTranscription.enabled || !this.isRecording || this.isPaused) {
             console.log('Chunk recording stopped - conditions not met');
             return;
         }
 
         try {
+            // Wait for voice before starting a new chunk to avoid transcribing silence
+            const voiceReady = await this.waitForVoiceStart();
+            if (!voiceReady) {
+                // Try again shortly if still recording
+                if (this.ongoingTranscription.enabled && this.isRecording && !this.isPaused) {
+                    UIHelpers.setText('#ongoing-transcription-status', 'Waiting for speech...');
+                    setTimeout(() => this.startChunkRecording(), 400);
+                }
+                return;
+            }
+
             this.ongoingTranscription.chunkCount++;
             const chunkNumber = this.ongoingTranscription.chunkCount;
             console.log(`✓ Starting chunk ${chunkNumber} (${this.ongoingTranscription.chunkDuration}s duration)`);
@@ -825,6 +859,32 @@ export class RecordingController {
     }
 
     /**
+     * Wait until speech is detected before starting a chunk
+     */
+    async waitForVoiceStart() {
+        const start = Date.now();
+        let consec = 0;
+        const need = this.ongoingTranscription.voiceStartConsecutive;
+        const level = this.ongoingTranscription.voiceStartLevel;
+        while (this.ongoingTranscription.enabled && this.isRecording && !this.isPaused) {
+            const l = this.getCurrentAudioLevel();
+            if (l >= level) {
+                consec++;
+                if (consec >= need) {
+                    return true;
+                }
+            } else {
+                consec = 0;
+            }
+            if (Date.now() - start > this.ongoingTranscription.maxSilenceWaitMs) {
+                return false;
+            }
+            await new Promise(r => setTimeout(r, 100));
+        }
+        return false;
+    }
+
+    /**
      * Add a completed chunk to the transcription queue
      */
     addChunkToQueue(chunkData, chunkNumber, metrics = {}) {
@@ -907,6 +967,7 @@ export class RecordingController {
                     // Drop if this chunk is a near-exact repeat of recent ones
                     if (this.isDuplicateChunk(nextText)) {
                         console.log(`Chunk ${queueItem.chunkNumber} is duplicate of recent output; skipping`);
+                        this.bumpHallucinationGuard();
                         continue;
                     }
                     console.log(`✓ Chunk ${queueItem.chunkNumber} transcribed: "${nextText}"`);
@@ -914,6 +975,7 @@ export class RecordingController {
                     // Add to chunks array for bold formatting
                     this.ongoingTranscription.chunks.push(nextText);
                     this.rememberChunk(nextText);
+                    this.resetHallucinationGuard();
                     
                     // Update transcriptionText for backwards compatibility
                     const separator = this.ongoingTranscription.transcriptionText ? ' ' : '';

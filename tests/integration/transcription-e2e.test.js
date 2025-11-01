@@ -3,7 +3,10 @@ const fs = require('fs');
 const { LocalWhisperService } = require('../../src/services/localWhisperService');
 const config = require('../../src/config');
 
-describe('End-to-End Transcription Test', () => {
+// Skip these tests unless explicitly enabled via env
+const whisperDescribe = (process.env.RUN_WHISPER_TESTS === '1' || process.env.RUN_WHISPER_E2E === '1') ? describe : describe.skip;
+
+whisperDescribe('End-to-End Transcription Test', () => {
     let whisperService;
     const testAudioFile = path.join(__dirname, '../data/test.wav');
     const expectedText = "Thank you for contacting us. All lines are currently busy. Your call is very important to us.";

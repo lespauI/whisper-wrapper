@@ -8,7 +8,10 @@ const fs = require('fs');
 const TranscriptionService = require('../../src/services/transcriptionService');
 const FileService = require('../../src/services/fileService');
 
-describe('Real Video Transcription E2E', () => {
+// Skip these tests unless explicitly enabled via env
+const whisperDescribe = (process.env.RUN_WHISPER_TESTS === '1' || process.env.RUN_WHISPER_E2E === '1') ? describe : describe.skip;
+
+whisperDescribe('Real Video Transcription E2E', () => {
     let transcriptionService;
     let fileService;
     const testVideoPath = path.join(process.cwd(), 'tests/data', 'test.wav');

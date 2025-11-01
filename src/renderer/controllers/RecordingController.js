@@ -6,6 +6,12 @@
 import { RECORDING_SETTINGS, TABS, CSS_CLASSES, SELECTORS } from '../utils/Constants.js';
 import { EventHandler } from '../utils/EventHandler.js';
 import { UIHelpers } from '../utils/UIHelpers.js';
+import chunkUtilsModule from '../../utils/transcriptionChunkUtils.js';
+
+// Support CommonJS default export shape
+const chunkUtils = chunkUtilsModule && chunkUtilsModule.normalizeWhitespace
+    ? chunkUtilsModule
+    : (chunkUtilsModule.default || {});
 
 export class RecordingController {
     constructor(appState, statusController, tabController) {
@@ -554,11 +560,7 @@ export class RecordingController {
      * Normalize whitespace in text
      */
     normalizeWhitespace(text) {
-        return (text || '')
-            .replace(/[\t\f\v]+/g, ' ')
-            .replace(/\s{2,}/g, ' ')
-            .replace(/\s+([,.!?;:])/g, '$1')
-            .trim();
+        return chunkUtils.normalizeWhitespace ? chunkUtils.normalizeWhitespace(text) : (text || '').trim();
     }
 
     /**
@@ -574,17 +576,7 @@ export class RecordingController {
      * Find length of the longest overlap where suffix of prevTail equals prefix of nextText
      */
     findOverlap(prevTail, nextText, minChars = 15) {
-        if (!prevTail || !nextText) return 0;
-        const maxLen = Math.min(prevTail.length, nextText.length);
-        // Try longer overlaps first
-        for (let len = maxLen; len >= minChars; len--) {
-            const suffix = prevTail.slice(-len);
-            const prefix = nextText.slice(0, len);
-            if (suffix.toLowerCase() === prefix.toLowerCase()) {
-                return len;
-            }
-        }
-        return 0;
+        return chunkUtils.findOverlap ? chunkUtils.findOverlap(prevTail, nextText, minChars) : 0;
     }
 
     /**
@@ -592,11 +584,11 @@ export class RecordingController {
      */
     dedupeWithPrevious(newText) {
         const prevTail = this.getTranscriptTail(240);
-        const overlap = this.findOverlap(prevTail, newText, 12);
-        if (overlap > 0) {
-            return newText.slice(overlap).trimStart();
+        if (chunkUtils.dedupeWithTail) {
+            return chunkUtils.dedupeWithTail(prevTail, newText, 12);
         }
-        return newText;
+        const overlap = this.findOverlap(prevTail, newText, 12);
+        return overlap > 0 ? newText.slice(overlap).trimStart() : newText;
     }
 
     /**
@@ -623,11 +615,13 @@ export class RecordingController {
      * Preprocess chunk text: normalize, de-duplicate overlap, drop trivial repeats
      */
     preprocessChunkText(text) {
+        if (chunkUtils.preprocessChunkText) {
+            const prevTail = this.getTranscriptTail(240);
+            return chunkUtils.preprocessChunkText(text, prevTail);
+        }
         if (!text) return '';
         let t = this.normalizeWhitespace(text);
-        // Sometimes Whisper returns trailing hyphen splits; fix common artifact
         t = t.replace(/-\s+/g, '');
-        // Dedupe overlap with previous accumulated text
         t = this.dedupeWithPrevious(t);
         return t;
     }

@@ -1,24 +1,21 @@
 Project plan: Implement ONGOING_TRANSCRIPTION solution with tests
 
-Subtasks
+Tasks
 
-1) Locate spec and extract acceptance criteria
-- Check for `ONGOING_TRANSCRIPTION_SOLUTION.md` and related docs
-- If missing, infer criteria from code and UI
+1) Locate spec and extract acceptance criteria [Completed]
+- See: tasks/01-locate-spec.md
 
-2) Verify/implement functionality in code
-- Ensure ongoing transcription pipeline supports per-chunk context prompt
-- Confirm UI shows latest chunk emphasized, with de-duplication of overlaps
+2) Verify/implement functionality in code [Completed]
+- See: tasks/02-verify-implementation.md
 
-3) Add unit tests for IPC context prompt
-- Test that `handleTranscribeAudio` forwards `contextPrompt` when provided
-- Test trimming and omission when prompt is empty
+3) Add unit tests for IPC context prompt [Completed]
+- See: tasks/03-tests-ipc-context.md
 
-4) (Optional) Add unit tests for renderer helpers
-- Validate overlap detection and preprocessing logic independently if feasible
+4) Add unit tests for renderer helpers [Pending]
+- See: tasks/04-tests-renderer-helpers.md
 
-5) Run test suite and adjust
-- Run Jest projects (unit, integration, e2e placeholders) and ensure all pass
+5) Run test suite and adjust [Completed]
+- See: tasks/05-run-tests.md
 
 Notes
-- The spec file `ONGOING_TRANSCRIPTION_SOLUTION.md` is not present in the repo; proceeding based on existing ongoing transcription implementation in `src/renderer/controllers/RecordingController.js` and IPC support in `src/main/ipcHandlers.js`.
+- The spec file `ONGOING_TRANSCRIPTION_SOLUTION.md` is now present and documents scope and verification.

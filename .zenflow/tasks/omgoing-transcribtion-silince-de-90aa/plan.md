@@ -100,7 +100,8 @@ Task instructions
 
 "Step:" prefix is important, do not omit it!
 
-### [ ] Step: Add VAD Config and Presets
+### [x] Step: Add VAD Config and Presets
+<!-- chat-id: 05e24c48-1535-4028-86b2-06272e5db2c6 -->
 Task definition
 - Add VAD configuration with presets and runtime updates.
 
@@ -243,3 +244,7 @@ Deliverable
 
 Verification
 - Toggle settings in UI and confirm behavior changes immediately (e.g., more aggressive skipping). Restart app and confirm settings persist.
+
+### [ ] Step: Add unit tests
+
+Add unit tests for your code to achive 75% coverage and run them

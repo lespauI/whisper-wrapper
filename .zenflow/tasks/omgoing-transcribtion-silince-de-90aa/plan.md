@@ -120,7 +120,8 @@ Verification
 - Temporarily log config in app startup and confirm keys present.
 - Use `node -e "console.log(require('./src/config').get('vad'))"` to read values and verify persistence behavior.
 
-### [ ] Step: Implement Energy VAD and Ring Buffer (+ fixtures and VAD verify script)
+### [x] Step: Implement Energy VAD and Ring Buffer (+ fixtures and VAD verify script)
+<!-- chat-id: 0ba48ae3-1def-4682-8c79-ea68626c5208 -->
 Task definition
 - Implement lightweight energy + zero-crossing-rate VAD with calibration and tunables. Add a small ring buffer utility for lookback/hangover. Create audio fixtures and a verification script.
 
@@ -142,7 +143,8 @@ Verification
 - Run `node scripts/verify-vad.js tests/fixtures/audio/tone_5s.wav` → expect majority voiced frames (depending on sensitivity).
 - Run `node scripts/bench-vad.js` (added later) to ensure decision latency budget.
 
-### [ ] Step: Wire Pre‑capture Gating into RecordingController (+ “Listening…” UI)
+### [x] Step: Wire Pre‑capture Gating into RecordingController (+ “Listening…” UI)
+<!-- chat-id: cc4a7533-2203-4071-ac5c-172ffd08180f -->
 Task definition
 - Replace audio-level thresholding with VAD-driven gating during recording. When input is silent/noise only, do not enqueue chunks. Show “Listening…” indicator when silent.
 

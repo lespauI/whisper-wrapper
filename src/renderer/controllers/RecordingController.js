@@ -6,6 +6,7 @@
 import { RECORDING_SETTINGS, TABS, CSS_CLASSES, SELECTORS } from '../utils/Constants.js';
 import { EventHandler } from '../utils/EventHandler.js';
 import { UIHelpers } from '../utils/UIHelpers.js';
+import { calibrate as vadCalibrate, detect as vadDetect } from '../utils/vad/energyVAD.js';
 
 export class RecordingController {
     constructor(appState, statusController, tabController) {
@@ -26,6 +27,37 @@ export class RecordingController {
         this.recordingStartTime = null;
         this.recordingTimer = null;
         this.animationId = null;
+
+        // VAD gating state (pre-capture gating for ongoing transcription)
+        this._vad = {
+            enabled: false,
+            silenceIndicator: true,
+            processor: null,          // ScriptProcessorNode
+            residual: new Float32Array(0),
+            frameSamples: 0,
+            frameMs: 0,
+            state: null,              // calibration/adaptive state
+            calibrating: false,
+            calibrationFrames: [],
+            calibrationTargetMs: 800,
+            sensitivity: 0.6,
+            adaptive: true,
+            minSpeechMs: 240,
+            minSilenceMs: 350,
+            leadInMs: 200,
+            hangoverMs: 250,
+            voicedRunMs: 0,
+            silenceRunMs: 0,
+        };
+        this._speech = {
+            active: false,            // true when current speech chunk recorder is running
+            startMs: 0,
+            voicedMs: 0,
+            provisional: false,       // until minSpeechMs reached
+            chunkNumber: 0,
+            chunkRecorder: null,
+            chunkData: [],
+        };
         
         // Auto-save state
         this.recordingAutoSave = {
@@ -582,18 +614,48 @@ export class RecordingController {
         // Clear previous transcription
         this.clearOngoingTranscription();
         
+        // Fetch config to determine VAD settings and silence indicator
+        let appConfig = null;
+        try {
+            appConfig = await window.electronAPI.getConfig();
+        } catch (e) {
+            console.warn('Could not load config for VAD; using defaults', e);
+        }
+        const vadCfg = appConfig?.vad || {};
+        const silenceIndicator = appConfig?.recording?.silenceIndicator !== false; // default true
+        
+        // Prepare VAD gating settings
+        this._vad.enabled = !!vadCfg.enabled;
+        this._vad.silenceIndicator = silenceIndicator;
+        this._vad.sensitivity = typeof vadCfg.sensitivity === 'number' ? vadCfg.sensitivity : 0.6;
+        this._vad.adaptive = vadCfg.adaptive !== false;
+        this._vad.calibrationTargetMs = Math.max(200, vadCfg.calibrationMs || 800);
+        this._vad.minSpeechMs = Math.max(80, vadCfg.minSpeechMs || 240);
+        this._vad.minSilenceMs = Math.max(120, vadCfg.minSilenceMs || 350);
+        this._vad.leadInMs = Math.max(0, vadCfg.leadInMs || 200);
+        this._vad.hangoverMs = Math.max(0, vadCfg.hangoverMs || 250);
+        
         // Update status
-        UIHelpers.setText('#ongoing-transcription-status', 'Recording...');
+        if (this._vad.enabled && this._vad.silenceIndicator) {
+            UIHelpers.setText('#ongoing-transcription-status', 'Listening...');
+        } else {
+            UIHelpers.setText('#ongoing-transcription-status', 'Recording...');
+        }
         
         // Start the background transcription processor
         this.startTranscriptionWorker();
         
-        // Start first chunk after initial delay to ensure recording is stable
-        setTimeout(() => {
-            if (this.ongoingTranscription.enabled && this.isRecording) {
-                this.startChunkRecording();
-            }
-        }, 2000);
+        // Start VAD-driven gating if enabled, else fallback to time-based chunking
+        if (this._vad.enabled) {
+            this._setupVADProcessor();
+        } else {
+            // Start first chunk after initial delay to ensure recording is stable
+            setTimeout(() => {
+                if (this.ongoingTranscription.enabled && this.isRecording) {
+                    this.startChunkRecording();
+                }
+            }, 2000);
+        }
     }
 
     /**
@@ -676,6 +738,205 @@ export class RecordingController {
                     this.startChunkRecording();
                 }
             }, 2000);
+        }
+    }
+
+    // ======================== VAD PRE-CAPTURE GATING ========================
+    _setupVADProcessor() {
+        try {
+            if (!this.audioContext || !this.microphone) {
+                console.warn('VAD: AudioContext or microphone not ready');
+                return;
+            }
+            // ScriptProcessorNode fallback (10–30ms frames). Use 1024 buffer for ~23ms @44.1k.
+            const bufferSize = 1024;
+            const processor = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
+            this._vad.processor = processor;
+
+            const sampleRate = this.audioContext.sampleRate || 44100;
+            const targetFrameMs = 20; // default 20 ms frames
+            const frameSamples = Math.max(160, Math.round(sampleRate * (targetFrameMs / 1000)));
+            this._vad.frameSamples = frameSamples;
+            this._vad.frameMs = (frameSamples / sampleRate) * 1000;
+            this._vad.residual = new Float32Array(0);
+            this._vad.calibrating = true;
+            this._vad.calibrationFrames = [];
+            this._vad.voicedRunMs = 0;
+            this._vad.silenceRunMs = 0;
+
+            processor.onaudioprocess = (event) => {
+                if (!this.isRecording || this.isPaused || !this.ongoingTranscription.enabled) return;
+                const input = event.inputBuffer.getChannelData(0);
+                // Append to residual
+                const merged = new Float32Array(this._vad.residual.length + input.length);
+                merged.set(this._vad.residual, 0);
+                merged.set(input, this._vad.residual.length);
+                this._vad.residual = merged;
+
+                // Process in fixed-size frames
+                while (this._vad.residual.length >= this._vad.frameSamples) {
+                    const frame = this._vad.residual.subarray(0, this._vad.frameSamples);
+                    const remainder = this._vad.residual.subarray(this._vad.frameSamples);
+                    const carry = new Float32Array(remainder.length);
+                    carry.set(remainder);
+                    this._vad.residual = carry;
+                    this._processVADFrame(frame, sampleRate);
+                }
+            };
+
+            // Connect nodes; processor must be connected to run in some engines
+            this.microphone.connect(processor);
+            // Connect to destination with zero output to keep graph alive
+            processor.connect(this.audioContext.destination);
+            console.log('VAD: Processor initialized (frameSamples=', this._vad.frameSamples, ', sr=', sampleRate, ')');
+        } catch (err) {
+            console.error('Failed to setup VAD processor:', err);
+            // Fallback to time-based chunking if VAD init fails
+            setTimeout(() => {
+                if (this.ongoingTranscription.enabled && this.isRecording) {
+                    this.startChunkRecording();
+                }
+            }, 1000);
+        }
+    }
+
+    _teardownVADProcessor() {
+        try {
+            if (this._vad.processor) {
+                try { this._vad.processor.disconnect(); } catch {}
+            }
+        } catch {}
+        this._vad.processor = null;
+        this._vad.residual = new Float32Array(0);
+        this._vad.state = null;
+        this._vad.calibrating = false;
+        this._vad.calibrationFrames = [];
+        this._vad.voicedRunMs = 0;
+        this._vad.silenceRunMs = 0;
+        // Ensure UI switches back if needed
+        if (this._vad.silenceIndicator) {
+            UIHelpers.setText('#ongoing-transcription-status', 'Recording...');
+        }
+    }
+
+    _processVADFrame(frame, sampleRate) {
+        const frameMs = this._vad.frameMs;
+        // Calibration phase: accumulate frames until target duration
+        if (this._vad.calibrating) {
+            this._vad.calibrationFrames.push(new Float32Array(frame));
+            const calMs = this._vad.calibrationFrames.length * frameMs;
+            if (calMs >= this._vad.calibrationTargetMs) {
+                this._vad.state = vadCalibrate(this._vad.calibrationFrames, sampleRate, { adaptive: this._vad.adaptive });
+                this._vad.calibrating = false;
+                this._vad.calibrationFrames = [];
+                console.log('VAD: Calibration complete');
+            }
+            // During calibration, show Listening
+            if (this._vad.silenceIndicator) {
+                UIHelpers.setText('#ongoing-transcription-status', 'Listening...');
+            }
+            return;
+        }
+
+        const res = vadDetect(frame, sampleRate, this._vad.state, { sensitivity: this._vad.sensitivity, adaptive: this._vad.adaptive });
+        const isSpeech = !!res.isSpeech;
+
+        if (isSpeech) {
+            this._vad.voicedRunMs += frameMs;
+            this._vad.silenceRunMs = 0;
+
+            // Start recorder on first speech frame to include onset; mark provisional until minSpeechMs reached
+            if (!this._speech.active) {
+                this._startVADChunkRecorder();
+                this._speech.provisional = true;
+                this._speech.voicedMs = 0;
+                if (this._vad.silenceIndicator) {
+                    UIHelpers.setText('#ongoing-transcription-status', 'Recording...');
+                }
+            }
+            this._speech.voicedMs += frameMs;
+            if (this._speech.provisional && this._speech.voicedMs >= this._vad.minSpeechMs) {
+                this._speech.provisional = false;
+            }
+        } else {
+            this._vad.voicedRunMs = 0;
+            this._vad.silenceRunMs += frameMs;
+
+            if (this._speech.active) {
+                // Allow a hangover before stopping to avoid choppy cuts
+                if (this._vad.silenceRunMs >= this._vad.hangoverMs) {
+                    const shouldDrop = this._speech.provisional || this._speech.voicedMs < this._vad.minSpeechMs;
+                    this._stopVADChunkRecorder(shouldDrop);
+                    if (this._vad.silenceIndicator) {
+                        UIHelpers.setText('#ongoing-transcription-status', 'Listening...');
+                    }
+                }
+            } else {
+                // Idle listening
+                if (this._vad.silenceIndicator) {
+                    UIHelpers.setText('#ongoing-transcription-status', 'Listening...');
+                }
+            }
+        }
+    }
+
+    _startVADChunkRecorder() {
+        try {
+            this._speech.chunkNumber = (this.ongoingTranscription.chunkCount || 0) + 1;
+            this.ongoingTranscription.chunkCount = this._speech.chunkNumber;
+
+            const stream = this.mediaRecorder.stream;
+            const chunkRecorder = new MediaRecorder(stream, { mimeType: this.getMimeType() });
+            const chunkData = [];
+            this._speech.chunkRecorder = chunkRecorder;
+            this._speech.chunkData = chunkData;
+            this._speech.active = true;
+            this._speech.startMs = Date.now();
+
+            chunkRecorder.ondataavailable = (event) => {
+                if (event.data && event.data.size > 0) chunkData.push(event.data);
+            };
+            chunkRecorder.onstop = () => {
+                const num = this._speech.chunkNumber;
+                const drop = this._speech._dropOnStop === true;
+                // Reset active BEFORE queueing next to avoid race
+                this._speech.active = false;
+                this._speech._dropOnStop = false;
+                if (!drop && chunkData.length > 0) {
+                    // Create blob and queue
+                    const mimeType = this.getMimeType();
+                    const chunkBlob = new Blob(chunkData, { type: mimeType });
+                    if (chunkBlob.size >= 4096) {
+                        console.log(`VAD chunk ${num} completed, enqueuing (${chunkBlob.size} bytes)`);
+                        this.ongoingTranscription.chunkQueue.push({
+                            chunkNumber: num,
+                            blob: chunkBlob,
+                            timestamp: Date.now(),
+                        });
+                    } else {
+                        console.log(`VAD chunk ${num} too small (${chunkBlob.size} bytes), dropped`);
+                    }
+                } else {
+                    console.log(`VAD chunk ${num} dropped (provisional/too short)`);
+                }
+            };
+            chunkRecorder.start();
+        } catch (err) {
+            console.error('VAD: failed to start chunk recorder:', err);
+        }
+    }
+
+    _stopVADChunkRecorder(drop) {
+        try {
+            if (this._speech.chunkRecorder && this._speech.chunkRecorder.state === 'recording') {
+                this._speech._dropOnStop = !!drop;
+                this._speech.chunkRecorder.stop();
+            }
+        } catch (err) {
+            console.error('VAD: failed to stop chunk recorder:', err);
+        } finally {
+            this._speech.voicedMs = 0;
+            this._speech.provisional = false;
         }
     }
 
@@ -793,6 +1054,15 @@ export class RecordingController {
             }
             this.ongoingTranscription.currentChunkRecorder = null;
         }
+
+        // Also stop VAD-controlled recorder if used
+        if (this._speech?.chunkRecorder && this._speech.chunkRecorder.state === 'recording') {
+            try { this._speech.chunkRecorder.stop(); } catch {}
+            this._speech.active = false;
+            this._speech.chunkRecorder = null;
+        }
+        // Tear down VAD processing graph
+        this._teardownVADProcessor();
         
         // Stop the background worker
         this.stopTranscriptionWorker();
@@ -817,6 +1087,14 @@ export class RecordingController {
             }
             this.ongoingTranscription.currentChunkRecorder = null;
         }
+        // Stop VAD recorder if active
+        if (this._speech?.chunkRecorder && this._speech.chunkRecorder.state === 'recording') {
+            try { this._speech.chunkRecorder.stop(); } catch {}
+            this._speech.active = false;
+            this._speech.chunkRecorder = null;
+        }
+        // Tear down processor during pause
+        this._teardownVADProcessor();
         
         // Reset smart chunking state
         this.ongoingTranscription.pendingStop = false;
@@ -834,17 +1112,25 @@ export class RecordingController {
         }
         
         console.log('Resuming ongoing transcription');
-        UIHelpers.setText('#ongoing-transcription-status', 'Recording...');
+        // If VAD is enabled, show Listening and re-setup processor; else Recording
+        if (this._vad.enabled && this._vad.silenceIndicator) {
+            UIHelpers.setText('#ongoing-transcription-status', 'Listening...');
+            this._setupVADProcessor();
+        } else {
+            UIHelpers.setText('#ongoing-transcription-status', 'Recording...');
+        }
         
         // Restart the background worker if needed
         this.startTranscriptionWorker();
         
-        // Start next chunk after a small delay
-        setTimeout(() => {
-            if (this.ongoingTranscription.enabled && this.isRecording && !this.isPaused) {
-                this.startChunkRecording();
-            }
-        }, 1000);
+        // If no VAD gating, resume time-based chunking
+        if (!this._vad.enabled) {
+            setTimeout(() => {
+                if (this.ongoingTranscription.enabled && this.isRecording && !this.isPaused) {
+                    this.startChunkRecording();
+                }
+            }, 1000);
+        }
     }
 
     /**

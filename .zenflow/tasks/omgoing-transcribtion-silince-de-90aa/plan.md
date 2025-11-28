@@ -163,7 +163,8 @@ Verification
 - Run app (`npm run start:e2e:quick` if available) and keep quiet → expect no text; “Listening…” visible.
 - Speak briefly → expect immediate chunking and transcription without preceding hallucinations.
 
-### [ ] Step: Implement WAV Encoder and Offline Segmenter (+ segmentation verify script)
+### [x] Step: Implement WAV Encoder and Offline Segmenter (+ segmentation verify script)
+<!-- chat-id: 1d5d21cf-0664-47b0-b309-b6bdc9676ddd -->
 Task definition
 - Add WAV encoder to convert Float32 PCM (mono, 16 kHz) to PCM16 WAV buffers. Implement offline segmentation over PCM using the VAD with lead‑in/hangover to preserve phonemes.
 

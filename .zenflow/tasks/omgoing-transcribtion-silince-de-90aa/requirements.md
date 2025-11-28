@@ -70,17 +70,17 @@
 - Extremely noisy environments — allow user to switch to Conservative mode to reduce false negatives.
 
 ### Assumptions (defaults if unspecified)
+- ASR backend is `whisper.cpp`; sub-segmentation and adjusted chunk sizes are allowed.
+- Optimize primarily for P95 latency; budgets defined in Success Criteria apply at P95.
+- On-device VAD is allowed with an optional, non-blocking auto-calibration; if disabled, use adaptive thresholds without blocking the user.
+- During silence, show a non-intrusive “Listening…” indicator in the UI but emit no transcript text.
 - Ongoing transcription is streaming or near-real-time; chunk sizes can be adjusted or sub-segmented internally.
-- On-device VAD is permitted; cloud transcription may be used for ASR, but VAD happens locally.
 - Acceptable to change chunking strategy (e.g., process sub-1s frames internally) while keeping external APIs stable.
 - Multi-platform desktop/laptop support; mobile out of scope for this iteration.
 
 ### [NEEDS CLARIFICATION]
-1. Which transcription backend is in use today (local Whisper/PyTorch, whisper.cpp, OpenAI API, other)? Are we allowed to change chunk sizes and send subsegments?
-2. What is the end-to-end latency budget for “ongoing” updates (target and absolute max at P50/P95)?
-3. Is it acceptable to add an on-device VAD dependency (e.g., WebRTC VAD class) and a brief calibration step at session start?
-4. What should the user-facing behavior be during silence: show a placeholder (e.g., “Listening…”) or emit nothing?
-5. Are there privacy constraints prohibiting sending any non-speech frames to remote services and/or storing audio for debugging/tuning?
+1. End-to-end P95 latency budget value: target and hard cap (ms) for ongoing updates.
+2. Acceptability of an explicit, brief calibration prompt vs fully background (no user prompt) calibration.
 
 ---
 
@@ -91,4 +91,3 @@
 - Efficiency: When idle/silent, CPU usage and remote ASR cost reduced proportionally by skipping ≥80% of non-speech frames.
 - Stability: No crashes/memory growth in 1-hour continuous sessions with mixed silence/speech.
 - Configurability: Thresholds/modes adjustable at runtime; calibration improves performance in noisy environments without manual tuning.
-

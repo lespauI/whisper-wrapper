@@ -275,3 +275,8 @@ Notes:
 <!-- chat-id: 47d57b5d-0313-417e-af48-083a9855f658 -->
 
 I just tested and still can see the halycinations and silince dedection didnt works. For example i will add file silince.waw into the test data folder, grep last code from git abranch online-trans-ench and test your solution with this file
+
+### [x] Step: Create a feature documentation
+<!-- chat-id: 2ce32150-5e9b-47fd-b266-2f5293d1783a -->
+
+Good its works supper cool, now you need do create comprehancive docu,emtation for this feature, add feature description and implementation details docs, update readme and app documentation

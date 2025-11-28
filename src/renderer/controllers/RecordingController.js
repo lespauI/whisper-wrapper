@@ -10,6 +10,7 @@ import { calibrate as energyCalibrate, detect as energyDetect } from '../utils/v
 import { calibrate as webrtcCalibrate, detect as webrtcDetect } from '../utils/vad/webrtcVAD.js';
 import { segment as segmentPCM } from '../utils/vad/segmenter.js';
 import { encodePCM16 } from '../utils/wavEncoder.js';
+import * as VADMetrics from '../utils/metrics.js';
 
 export class RecordingController {
     constructor(appState, statusController, tabController) {
@@ -643,6 +644,12 @@ export class RecordingController {
             this._vad.fn = { calibrate: energyCalibrate, detect: energyDetect };
         }
 
+        // Start per-session VAD metrics (use auto-save sessionId if available)
+        try {
+            const sessId = this.recordingAutoSave?.sessionId || `recording_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+            VADMetrics.startSession(sessId);
+        } catch {}
+
         // Apply strictness mode presets (WebRTC-like), mapping to tunables
         const PRESETS = {
             energy: {
@@ -873,8 +880,13 @@ export class RecordingController {
         }
         const detectOpts = { sensitivity: this._vad.sensitivity, adaptive: this._vad.adaptive };
         if (this._vad.engine === 'webrtc') detectOpts.mode = this._vad.mode;
+        const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         const res = this._vad.fn.detect(frame, sampleRate, this._vad.state, detectOpts);
+        const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         const isSpeech = !!res.isSpeech;
+        try {
+            VADMetrics.onFrameDecision({ isSpeech, confidence: Math.max(0, Math.min(1, Number(res.confidence) || 0)), decisionMs: (t1 - t0) });
+        } catch {}
 
         if (isSpeech) {
             this._vad.voicedRunMs += frameMs;
@@ -970,6 +982,9 @@ export class RecordingController {
         } catch (err) {
             console.error('VAD: failed to stop chunk recorder:', err);
         } finally {
+            if (drop) {
+                try { VADMetrics.onDroppedChunk(); } catch {}
+            }
             this._speech.voicedMs = 0;
             this._speech.provisional = false;
         }
@@ -1132,6 +1147,7 @@ export class RecordingController {
                 const { wavBuffers, segments } = await this._segmentChunkToWavs(arrayBuffer);
                 if (!wavBuffers || wavBuffers.length === 0) {
                     console.log(`🧊 Chunk ${queueItem.chunkNumber} had no voiced segments — skipped`);
+                    try { VADMetrics.onDroppedChunk(); } catch {}
                     continue;
                 }
 
@@ -1144,6 +1160,7 @@ export class RecordingController {
                 let runningPrompt = this.generateContextPrompt();
 
                 for (let i = 0; i < wavBuffers.length; i++) {
+                    try { VADMetrics.onSentSegment(1); } catch {}
                     const subResult = await window.electronAPI.transcribeAudio(wavBuffers[i], runningPrompt || null);
                     if (subResult.success && subResult.text && subResult.text.trim()) {
                         const cleanText = subResult.text.trim();
@@ -1214,6 +1231,7 @@ export class RecordingController {
         this.ongoingTranscription.chunkStartTime = null;
         
         UIHelpers.setText('#ongoing-transcription-status', 'Stopped');
+        try { VADMetrics.endSession(); } catch {}
     }
 
     /**

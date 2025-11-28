@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     loadRecordingChunk: (filePath) => ipcRenderer.invoke('recording:loadChunk', filePath),
     deleteRecordingChunk: (filePath) => ipcRenderer.invoke('recording:deleteChunk', filePath),
     findRecordingChunks: (sessionId) => ipcRenderer.invoke('recording:findChunks', sessionId),
+    // VAD metrics (QA/devtools)
+    getVADMetrics: () => ipcRenderer.invoke('recording:vadMetrics:get'),
+    updateVADMetrics: (metrics) => ipcRenderer.invoke('recording:vadMetrics:set', metrics),
   
     // Local Whisper
     testWhisper: () => ipcRenderer.invoke('whisper:test'),

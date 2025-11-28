@@ -218,7 +218,8 @@ Verification
 - With low‑level background noise playing, toggle modes and engine; observe increased silent frames skipped in aggressive mode. Ensure conservative mode does not materially increase missed speech.
 - Run `node scripts/bench-vad.js` to confirm per‑frame decision time remains within budget.
 
-### [ ] Step: Metrics, Calibration, and IPC Getter
+### [x] Step: Metrics, Calibration, and IPC Getter
+<!-- chat-id: 7625f8d4-ed28-4bcc-a767-87f06d9fc562 -->
 Task definition
 - Add per‑session metrics collection, initial calibration on recording start, optional adaptive updates during long silence windows, and an IPC getter for QA.
 

@@ -37,7 +37,7 @@ export class RecordingController {
             engine: 'energy',        // 'energy' | 'webrtc'
             mode: 'balanced',        // strictness preset
             fn: { calibrate: energyCalibrate, detect: energyDetect },
-            enabled: false,
+            enabled: true,
             silenceIndicator: true,
             processor: null,          // ScriptProcessorNode
             residual: new Float32Array(0),

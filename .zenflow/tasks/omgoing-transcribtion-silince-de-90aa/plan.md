@@ -237,7 +237,8 @@ Verification
 - Start a session in a noisy room and observe decreasing false positives after calibration.
 - Call `recording:vadMetrics:get` from renderer devtools and verify counters increase appropriately during recording.
 
-### [ ] Step: Settings Surface and Persistence
+### [x] Step: Settings Surface and Persistence
+<!-- chat-id: c992dac7-da44-41c7-bccd-2d926f962085 -->
 Task definition
 - Expose minimal settings in the existing recording UI: enable/disable VAD gating, select mode, and choose engine (if available). Ensure changes persist via config.
 
@@ -252,5 +253,6 @@ Verification
 - Toggle settings in UI and confirm behavior changes immediately (e.g., more aggressive skipping). Restart app and confirm settings persist.
 
 ### [ ] Step: Add unit tests
+<!-- chat-id: b52142f9-2611-45bf-8160-0425348d1498 -->
 
 Add unit tests for your code to achive 75% coverage and run them

@@ -466,8 +466,28 @@ class IPCHandlers {
                 }
             }
 
-            // Save configuration
+            // Save configuration (basic Whisper-related fields)
             config.setSimplified(newConfig);
+
+            // Persist VAD settings if provided
+            if (newConfig.vad && typeof newConfig.vad === 'object') {
+                try {
+                    config.updateVADSettings(newConfig.vad);
+                } catch (e) {
+                    console.warn('Failed to update VAD settings:', e?.message);
+                }
+            }
+
+            // Optionally allow updating recording-level flags (e.g., silenceIndicator)
+            if (newConfig.recording && typeof newConfig.recording === 'object') {
+                try {
+                    if (Object.prototype.hasOwnProperty.call(newConfig.recording, 'silenceIndicator')) {
+                        config.set('recording.silenceIndicator', !!newConfig.recording.silenceIndicator);
+                    }
+                } catch (e) {
+                    console.warn('Failed to update recording settings:', e?.message);
+                }
+            }
 
             // Update TranscriptionService with new settings
             this.transcriptionService.updateSettings(newConfig);

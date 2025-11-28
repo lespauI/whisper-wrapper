@@ -218,6 +218,110 @@ export class RecordingController {
                 chunkDuration: parseInt(e.target.value)
             });
         });
+
+        // ---- VAD Settings: enable/disable, mode, engine ----
+        EventHandler.addListener('#vad-enabled', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const enabled = !!e.target.checked;
+            try { await window.electronAPI.setConfig({ vad: { enabled } }); } catch {}
+            this._applyVADRuntime({ enabled });
+        }));
+
+        EventHandler.addListener('#vad-mode', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const mode = String(e.target.value || 'balanced');
+            try { await window.electronAPI.setConfig({ vad: { mode } }); } catch {}
+            this._applyVADRuntime({ mode });
+        }));
+
+        EventHandler.addListener('#vad-engine', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const engine = String(e.target.value || 'energy');
+            try { await window.electronAPI.setConfig({ vad: { engine } }); } catch {}
+            this._applyVADRuntime({ engine });
+        }));
+
+        // Initialize VAD settings UI from persisted config
+        this._loadVADSettingsIntoUI();
+    }
+
+    /**
+     * Load persisted VAD settings into recording UI controls
+     */
+    async _loadVADSettingsIntoUI() {
+        try {
+            const cfg = await window.electronAPI.getConfig();
+            const v = (cfg && cfg.vad) || {};
+            const enabled = !!v.enabled;
+            const mode = (v.mode === 'conservative' || v.mode === 'balanced' || v.mode === 'aggressive') ? v.mode : 'balanced';
+            const engine = (v.engine === 'webrtc' || v.engine === 'energy') ? v.engine : 'energy';
+            const elEnabled = UIHelpers.getElementById('vad-enabled');
+            const elMode = UIHelpers.getElementById('vad-mode');
+            const elEngine = UIHelpers.getElementById('vad-engine');
+            if (elEnabled) elEnabled.checked = enabled;
+            if (elMode) elMode.value = mode;
+            if (elEngine) elEngine.value = engine;
+        } catch (e) {
+            console.warn('Failed to load VAD settings into UI:', e?.message);
+        }
+    }
+
+    /**
+     * Apply VAD partial settings at runtime and reconfigure gating if needed
+     * @param {{enabled?: boolean, mode?: string, engine?: string}} partial
+     */
+    _applyVADRuntime(partial = {}) {
+        // Merge simple fields
+        if (typeof partial.enabled === 'boolean') this._vad.enabled = partial.enabled;
+        if (typeof partial.engine === 'string') this._vad.engine = (partial.engine === 'webrtc' ? 'webrtc' : 'energy');
+        if (typeof partial.mode === 'string') {
+            const m = partial.mode;
+            this._vad.mode = (m === 'conservative' || m === 'aggressive' || m === 'balanced') ? m : 'balanced';
+        }
+
+        // Update engine function mapping
+        if (this._vad.engine === 'webrtc') {
+            this._vad.fn = { calibrate: webrtcCalibrate, detect: webrtcDetect };
+        } else {
+            this._vad.fn = { calibrate: energyCalibrate, detect: energyDetect };
+        }
+
+        // Recompute preset-driven tunables to reflect mode/engine
+        const PRESETS = {
+            energy: {
+                conservative: { sensitivity: 0.70, minSpeechMs: 200, minSilenceMs: 300, hangoverMs: 200 },
+                balanced:     { sensitivity: 0.60, minSpeechMs: 240, minSilenceMs: 350, hangoverMs: 250 },
+                aggressive:   { sensitivity: 0.45, minSpeechMs: 300, minSilenceMs: 450, hangoverMs: 350 },
+            },
+            webrtc: {
+                conservative: { sensitivity: 0.70, minSpeechMs: 200, minSilenceMs: 300, hangoverMs: 200 },
+                balanced:     { sensitivity: 0.55, minSpeechMs: 240, minSilenceMs: 350, hangoverMs: 250 },
+                aggressive:   { sensitivity: 0.40, minSpeechMs: 320, minSilenceMs: 450, hangoverMs: 350 },
+            }
+        };
+        const preset = (PRESETS[this._vad.engine] || PRESETS.energy)[this._vad.mode] || PRESETS.energy.balanced;
+        this._vad.sensitivity = preset.sensitivity;
+        this._vad.minSpeechMs = Math.max(80, preset.minSpeechMs);
+        this._vad.minSilenceMs = Math.max(120, preset.minSilenceMs);
+        this._vad.hangoverMs = Math.max(0, preset.hangoverMs);
+
+        // Live reconfiguration when recording + ongoing transcription is enabled
+        if (this.isRecording && this.ongoingTranscription?.enabled && !this.isPaused) {
+            // Tear down any existing gating graph
+            this._teardownVADProcessor();
+
+            if (this._vad.enabled) {
+                // Switch to listening state and re-setup processor
+                if (this._vad.silenceIndicator) UIHelpers.setText('#ongoing-transcription-status', 'Listening...');
+                this._setupVADProcessor();
+            } else {
+                // Ensure we keep recording via time-based chunking
+                UIHelpers.setText('#ongoing-transcription-status', 'Recording...');
+                // Kick a new chunk if none is running
+                setTimeout(() => {
+                    if (this.ongoingTranscription.enabled && this.isRecording && !this.isPaused) {
+                        this.startChunkRecording();
+                    }
+                }, 200);
+            }
+        }
     }
 
     /**

@@ -183,7 +183,8 @@ Verification
 - Create a mixed file via `scripts/gen-fixtures.sh` (2 s silence + 3 s tone/noise + 2 s silence).
 - Run `node scripts/verify-segmentation.js` → expect one segment ~3 s (± lead‑in/hangover padding) and corresponding WAVs in `tests/fixtures/out/`.
 
-### [ ] Step: Integrate Segmentation and Subsegment Queueing
+### [x] Step: Integrate Segmentation and Subsegment Queueing
+<!-- chat-id: 0e381758-f51f-456e-9362-5085e8556f49 -->
 Task definition
 - On chunk completion, decode chunk to PCM, run `segmenter`, encode voiced subsegments with `wavEncoder`, and enqueue each to Whisper via `transcription:audio` maintaining context continuity.
 

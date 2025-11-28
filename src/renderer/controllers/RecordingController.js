@@ -7,6 +7,8 @@ import { RECORDING_SETTINGS, TABS, CSS_CLASSES, SELECTORS } from '../utils/Const
 import { EventHandler } from '../utils/EventHandler.js';
 import { UIHelpers } from '../utils/UIHelpers.js';
 import { calibrate as vadCalibrate, detect as vadDetect } from '../utils/vad/energyVAD.js';
+import { segment as segmentPCM } from '../utils/vad/segmenter.js';
+import { encodePCM16 } from '../utils/wavEncoder.js';
 
 export class RecordingController {
     constructor(appState, statusController, tabController) {
@@ -967,6 +969,99 @@ export class RecordingController {
     }
 
     /**
+     * Decode a recorded chunk ArrayBuffer into mono Float32 PCM and sample rate.
+     * Uses a temporary AudioContext for robust decoding.
+     * @param {ArrayBuffer} arrayBuffer
+     * @returns {Promise<{ mono: Float32Array, sampleRate: number }>}
+     */
+    async _decodeToMonoPCM(arrayBuffer) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) throw new Error('Web Audio API AudioContext not available');
+        const ctx = new AC();
+        try {
+            const buf = await new Promise((resolve, reject) => {
+                // Some Electron builds still require the callback style
+                try {
+                    const p = ctx.decodeAudioData(arrayBuffer.slice(0));
+                    if (p && typeof p.then === 'function') {
+                        p.then(resolve).catch(reject);
+                    } else {
+                        ctx.decodeAudioData(arrayBuffer.slice(0), resolve, reject);
+                    }
+                } catch (e) {
+                    // Fallback to callback style on sync throw
+                    ctx.decodeAudioData(arrayBuffer.slice(0), resolve, reject);
+                }
+            });
+            const channels = buf.numberOfChannels || 1;
+            const length = buf.length;
+            const sampleRate = buf.sampleRate;
+            if (length === 0) return { mono: new Float32Array(0), sampleRate };
+            if (channels === 1) {
+                return { mono: new Float32Array(buf.getChannelData(0)), sampleRate };
+            }
+            // Downmix to mono (average channels)
+            const mono = new Float32Array(length);
+            for (let ch = 0; ch < channels; ch++) {
+                const data = buf.getChannelData(ch);
+                for (let i = 0; i < length; i++) mono[i] += data[i];
+            }
+            for (let i = 0; i < length; i++) mono[i] /= channels;
+            return { mono, sampleRate };
+        } finally {
+            try { await ctx.close(); } catch {}
+        }
+    }
+
+    /**
+     * Build segmentation options from current VAD config with sane defaults.
+     */
+    _getSegmentationOpts() {
+        const v = this._vad || {};
+        return {
+            frameMs: 20,
+            calibrationMs: Math.max(200, v.calibrationTargetMs || 800),
+            sensitivity: typeof v.sensitivity === 'number' ? v.sensitivity : 0.6,
+            minSpeechMs: Math.max(80, v.minSpeechMs || 240),
+            minSilenceMs: Math.max(120, v.minSilenceMs || 350),
+            leadInMs: Math.max(0, v.leadInMs || 200),
+            hangoverMs: Math.max(0, v.hangoverMs || 250),
+        };
+    }
+
+    /**
+     * Decode and segment a recorded chunk, then encode each voiced subsegment to WAV PCM16.
+     * @param {ArrayBuffer} arrayBuffer
+     * @returns {Promise<{ wavBuffers: ArrayBuffer[], segments: Array<{startMs:number,endMs:number}>, sampleRate: number }>} 
+     */
+    async _segmentChunkToWavs(arrayBuffer) {
+        const { mono, sampleRate } = await this._decodeToMonoPCM(arrayBuffer);
+        if (!mono || mono.length === 0) {
+            return { wavBuffers: [], segments: [], sampleRate: 0 };
+        }
+        const opts = this._getSegmentationOpts();
+        const { segments } = segmentPCM(mono, sampleRate, opts);
+        if (!segments || segments.length === 0) {
+            return { wavBuffers: [], segments: [], sampleRate };
+        }
+        const wavBuffers = [];
+        for (const seg of segments) {
+            const startIdx = Math.max(0, Math.floor((seg.startMs / 1000) * sampleRate));
+            const endIdx = Math.min(mono.length, Math.floor((seg.endMs / 1000) * sampleRate));
+            if (endIdx > startIdx) {
+                const view = mono.subarray(startIdx, endIdx);
+                try {
+                    const wav = encodePCM16(view, sampleRate);
+                    wavBuffers.push(wav);
+                } catch (e) {
+                    console.warn('Failed to encode segment to WAV, skipping:', e);
+                }
+            }
+        }
+        return { wavBuffers, segments, sampleRate };
+    }
+
+    /**
      * Start the background transcription worker
      */
     startTranscriptionWorker() {
@@ -997,30 +1092,44 @@ export class RecordingController {
             console.log(`Processing chunk ${queueItem.chunkNumber} from queue (${this.ongoingTranscription.chunkQueue.length} remaining)`);
             
             try {
-                // Convert blob to array buffer for transcription
+                // Convert blob to array buffer for segmentation
                 const arrayBuffer = await queueItem.blob.arrayBuffer();
-                
-                // Generate context prompt from previous transcription (last 1000 characters)
-                const contextPrompt = this.generateContextPrompt();
-                
-                // Transcribe the chunk with context
-                const result = await window.electronAPI.transcribeAudio(arrayBuffer, contextPrompt);
-                
-                if (result.success && result.text && result.text.trim()) {
-                    const cleanText = result.text.trim();
-                    console.log(`✓ Chunk ${queueItem.chunkNumber} transcribed: "${cleanText}"`);
-                    
-                    // Add to chunks array for bold formatting
-                    this.ongoingTranscription.chunks.push(cleanText);
-                    
-                    // Update transcriptionText for backwards compatibility
-                    const separator = this.ongoingTranscription.transcriptionText ? ' ' : '';
-                    this.ongoingTranscription.transcriptionText += separator + cleanText;
-                    
-                    // Update the display with latest chunk bold
-                    this.updateOngoingTranscriptionDisplay();
-                } else {
-                    console.log(`Chunk ${queueItem.chunkNumber} transcription returned empty (likely silence)`);
+
+                // Decode, segment, and encode voiced subsegments to WAV
+                const { wavBuffers, segments } = await this._segmentChunkToWavs(arrayBuffer);
+                if (!wavBuffers || wavBuffers.length === 0) {
+                    console.log(`🧊 Chunk ${queueItem.chunkNumber} had no voiced segments — skipped`);
+                    continue;
+                }
+
+                console.log(`✂️  Chunk ${queueItem.chunkNumber}: ${segments.length} voiced segment(s)`);
+                segments.forEach((s, i) => {
+                    console.log(`   • seg#${i + 1}: ${Math.round(s.startMs)}ms → ${Math.round(s.endMs)}ms`);
+                });
+
+                // Maintain rolling prompt context across subsegments
+                let runningPrompt = this.generateContextPrompt();
+
+                for (let i = 0; i < wavBuffers.length; i++) {
+                    const subResult = await window.electronAPI.transcribeAudio(wavBuffers[i], runningPrompt || null);
+                    if (subResult.success && subResult.text && subResult.text.trim()) {
+                        const cleanText = subResult.text.trim();
+                        console.log(`✓ Chunk ${queueItem.chunkNumber} seg ${i + 1}/${wavBuffers.length}: "${cleanText}"`);
+
+                        // Treat each subsegment as an incremental chunk for UI continuity
+                        this.ongoingTranscription.chunks.push(cleanText);
+
+                        const sep = this.ongoingTranscription.transcriptionText ? ' ' : '';
+                        this.ongoingTranscription.transcriptionText += sep + cleanText;
+
+                        // Refresh display, bolds the latest segment
+                        this.updateOngoingTranscriptionDisplay();
+
+                        // Update prompt for next subsegment (rollover context)
+                        runningPrompt = this.generateContextPrompt();
+                    } else {
+                        console.log(`Chunk ${queueItem.chunkNumber} seg ${i + 1}/${wavBuffers.length} returned empty (likely silence)`);
+                    }
                 }
                 
             } catch (error) {

@@ -57,6 +57,7 @@ const defaultConfig = {
 
     // Voice Activity Detection (VAD) settings
     vad: {
+        engine: 'energy',
         enabled: true,
         mode: 'balanced', // 'conservative' | 'balanced' | 'aggressive'
         calibrationMs: 800,
@@ -208,6 +209,7 @@ config.updateVADSettings = function(settings) {
     if (!this.vad) this.vad = { ...defaultConfig.vad };
     let changed = false;
     const allowedKeys = [
+        'engine',
         'enabled',
         'mode',
         'calibrationMs',

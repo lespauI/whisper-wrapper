@@ -201,7 +201,8 @@ Verification
 - In app, record a single mixed chunk (silence → speech → silence). Verify only the speech portion is transcribed once; no extraneous tokens before/after.
 - Confirm via logs that fully silent chunks are skipped.
 
-### [ ] Step: WebRTC VAD Adapter and Strictness Modes
+### [x] Step: WebRTC VAD Adapter and Strictness Modes
+<!-- chat-id: 2d236517-e826-4dd6-845d-e9bc8330cba1 -->
 Task definition
 - Add optional WebRTC‑class VAD adapter and strictness modes (conservative/balanced/aggressive) mapping to sensitivity/min durations/hangover. Switchable by config.
 

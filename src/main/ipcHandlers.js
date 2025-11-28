@@ -374,7 +374,17 @@ class IPCHandlers {
 
     async handleGetConfig() {
         try {
-            return config.getSimplified();
+            const base = config.getSimplified();
+            // Extend with VAD + select recording keys needed by renderer
+            const vad = typeof config.get === 'function' ? config.get('vad') : (config.vad || {});
+            const silenceIndicator = typeof config.get === 'function' ? config.get('recording.silenceIndicator') : (config.recording && config.recording.silenceIndicator);
+            return {
+                ...base,
+                vad,
+                recording: {
+                    silenceIndicator: silenceIndicator !== false
+                }
+            };
         } catch (error) {
             console.error('Error getting config:', error);
             return {};

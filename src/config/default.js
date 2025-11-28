@@ -65,6 +65,7 @@ module.exports = {
 
     // Voice Activity Detection (VAD) settings
     vad: {
+        engine: 'energy',
         enabled: true,
         mode: 'balanced', // 'conservative' | 'balanced' | 'aggressive' (presets applied elsewhere)
         calibrationMs: 800,

@@ -6,7 +6,8 @@
 import { RECORDING_SETTINGS, TABS, CSS_CLASSES, SELECTORS } from '../utils/Constants.js';
 import { EventHandler } from '../utils/EventHandler.js';
 import { UIHelpers } from '../utils/UIHelpers.js';
-import { calibrate as vadCalibrate, detect as vadDetect } from '../utils/vad/energyVAD.js';
+import { calibrate as energyCalibrate, detect as energyDetect } from '../utils/vad/energyVAD.js';
+import { calibrate as webrtcCalibrate, detect as webrtcDetect } from '../utils/vad/webrtcVAD.js';
 import { segment as segmentPCM } from '../utils/vad/segmenter.js';
 import { encodePCM16 } from '../utils/wavEncoder.js';
 
@@ -32,6 +33,9 @@ export class RecordingController {
 
         // VAD gating state (pre-capture gating for ongoing transcription)
         this._vad = {
+            engine: 'energy',        // 'energy' | 'webrtc'
+            mode: 'balanced',        // strictness preset
+            fn: { calibrate: energyCalibrate, detect: energyDetect },
             enabled: false,
             silenceIndicator: true,
             processor: null,          // ScriptProcessorNode
@@ -625,17 +629,45 @@ export class RecordingController {
         }
         const vadCfg = appConfig?.vad || {};
         const silenceIndicator = appConfig?.recording?.silenceIndicator !== false; // default true
-        
+
         // Prepare VAD gating settings
         this._vad.enabled = !!vadCfg.enabled;
         this._vad.silenceIndicator = silenceIndicator;
-        this._vad.sensitivity = typeof vadCfg.sensitivity === 'number' ? vadCfg.sensitivity : 0.6;
+        this._vad.engine = (vadCfg.engine === 'webrtc' || vadCfg.engine === 'energy') ? vadCfg.engine : 'energy';
+        this._vad.mode = (vadCfg.mode === 'conservative' || vadCfg.mode === 'aggressive' || vadCfg.mode === 'balanced') ? vadCfg.mode : 'balanced';
+
+        // Select engine functions
+        if (this._vad.engine === 'webrtc') {
+            this._vad.fn = { calibrate: webrtcCalibrate, detect: webrtcDetect };
+        } else {
+            this._vad.fn = { calibrate: energyCalibrate, detect: energyDetect };
+        }
+
+        // Apply strictness mode presets (WebRTC-like), mapping to tunables
+        const PRESETS = {
+            energy: {
+                conservative: { sensitivity: 0.70, minSpeechMs: 200, minSilenceMs: 300, hangoverMs: 200 },
+                balanced:     { sensitivity: 0.60, minSpeechMs: 240, minSilenceMs: 350, hangoverMs: 250 },
+                aggressive:   { sensitivity: 0.45, minSpeechMs: 300, minSilenceMs: 450, hangoverMs: 350 },
+            },
+            webrtc: {
+                conservative: { sensitivity: 0.70, minSpeechMs: 200, minSilenceMs: 300, hangoverMs: 200 },
+                balanced:     { sensitivity: 0.55, minSpeechMs: 240, minSilenceMs: 350, hangoverMs: 250 },
+                aggressive:   { sensitivity: 0.40, minSpeechMs: 320, minSilenceMs: 450, hangoverMs: 350 },
+            }
+        };
+        const preset = (PRESETS[this._vad.engine] || PRESETS.energy)[this._vad.mode] || PRESETS.energy.balanced;
+
+        // Base tunables (calibration/adaptive/lead-in)
         this._vad.adaptive = vadCfg.adaptive !== false;
         this._vad.calibrationTargetMs = Math.max(200, vadCfg.calibrationMs || 800);
-        this._vad.minSpeechMs = Math.max(80, vadCfg.minSpeechMs || 240);
-        this._vad.minSilenceMs = Math.max(120, vadCfg.minSilenceMs || 350);
         this._vad.leadInMs = Math.max(0, vadCfg.leadInMs || 200);
-        this._vad.hangoverMs = Math.max(0, vadCfg.hangoverMs || 250);
+
+        // Strictness-controlled tunables (override with mode)
+        this._vad.sensitivity = preset.sensitivity;
+        this._vad.minSpeechMs = Math.max(80, preset.minSpeechMs);
+        this._vad.minSilenceMs = Math.max(120, preset.minSilenceMs);
+        this._vad.hangoverMs = Math.max(0, preset.hangoverMs);
         
         // Update status
         if (this._vad.enabled && this._vad.silenceIndicator) {
@@ -828,7 +860,7 @@ export class RecordingController {
             this._vad.calibrationFrames.push(new Float32Array(frame));
             const calMs = this._vad.calibrationFrames.length * frameMs;
             if (calMs >= this._vad.calibrationTargetMs) {
-                this._vad.state = vadCalibrate(this._vad.calibrationFrames, sampleRate, { adaptive: this._vad.adaptive });
+                this._vad.state = this._vad.fn.calibrate(this._vad.calibrationFrames, sampleRate, { adaptive: this._vad.adaptive });
                 this._vad.calibrating = false;
                 this._vad.calibrationFrames = [];
                 console.log('VAD: Calibration complete');
@@ -839,8 +871,9 @@ export class RecordingController {
             }
             return;
         }
-
-        const res = vadDetect(frame, sampleRate, this._vad.state, { sensitivity: this._vad.sensitivity, adaptive: this._vad.adaptive });
+        const detectOpts = { sensitivity: this._vad.sensitivity, adaptive: this._vad.adaptive };
+        if (this._vad.engine === 'webrtc') detectOpts.mode = this._vad.mode;
+        const res = this._vad.fn.detect(frame, sampleRate, this._vad.state, detectOpts);
         const isSpeech = !!res.isSpeech;
 
         if (isSpeech) {

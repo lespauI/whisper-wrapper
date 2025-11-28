@@ -270,15 +270,8 @@ Notes:
 - Updated Jest to transpile ESM (`babel-jest`) so renderer utils are testable.
 - Running targeted unit tests: `npx jest --selectProjects unit tests/unit/renderer/**`. Coverage for VAD modules exceeds 75% (e.g., energyVAD ~99%, segmenter ~81%, webrtcVAD ~83%).
 
-### [x] Step: App is not working
-<!-- chat-id: 2fa06305-5d16-49c9-9809-11eecbb89933 -->
 
-When i open the app i imidiatly get Failed to load resource: the server responded with a status of 404 (Not Found)
+### [x] Step: Im not sure your solution works at all
+<!-- chat-id: 47d57b5d-0313-417e-af48-083a9855f658 -->
 
-Resolution
-- Implemented missing renderer orchestrator at `src/renderer/app/App.js` to satisfy `import { App } from './app/App.js'` and wire controllers. This fixes the 404 for `/app/App.js` and initializes the UI correctly.
-- Updated dev server `scripts/start-renderer.js` to serve directly from `src/renderer` during development (falling back to `dist` if present or if `USE_DIST=1`). This removes the need to prebuild the renderer to avoid 404s.
-
-How to verify
-- Run `npm start` and confirm the UI loads without 404 errors. The console should show the renderer path and controllers initialized.
-- Optional: `USE_DIST=1 npm run start:renderer` to serve from built files if needed.
+I just tested and still can see the halycinations and silince dedection didnt works. For example i will add file silince.waw into the test data folder, grep last code from git abranch online-trans-ench and test your solution with this file

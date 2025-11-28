@@ -269,3 +269,16 @@ Notes:
 - Tests live under `tests/unit/renderer/vad/*` and `tests/unit/renderer/utils/*`.
 - Updated Jest to transpile ESM (`babel-jest`) so renderer utils are testable.
 - Running targeted unit tests: `npx jest --selectProjects unit tests/unit/renderer/**`. Coverage for VAD modules exceeds 75% (e.g., energyVAD ~99%, segmenter ~81%, webrtcVAD ~83%).
+
+### [x] Step: App is not working
+<!-- chat-id: 2fa06305-5d16-49c9-9809-11eecbb89933 -->
+
+When i open the app i imidiatly get Failed to load resource: the server responded with a status of 404 (Not Found)
+
+Resolution
+- Implemented missing renderer orchestrator at `src/renderer/app/App.js` to satisfy `import { App } from './app/App.js'` and wire controllers. This fixes the 404 for `/app/App.js` and initializes the UI correctly.
+- Updated dev server `scripts/start-renderer.js` to serve directly from `src/renderer` during development (falling back to `dist` if present or if `USE_DIST=1`). This removes the need to prebuild the renderer to avoid 404s.
+
+How to verify
+- Run `npm start` and confirm the UI loads without 404 errors. The console should show the renderer path and controllers initialized.
+- Optional: `USE_DIST=1 npm run start:renderer` to serve from built files if needed.

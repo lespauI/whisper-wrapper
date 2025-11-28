@@ -290,6 +290,29 @@
                                         </small>
                                     </div>
                                 </div>
+                                
+                                <!-- VAD Settings (Silence/Noise Gating) -->
+                                <div class="settings-row">
+                                    <div class="setting-group">
+                                        <label for="vad-enabled">Skip silence/noise (VAD):</label>
+                                        <input type="checkbox" id="vad-enabled" checked>
+                                    </div>
+                                    <div class="setting-group">
+                                        <label for="vad-mode">VAD mode:</label>
+                                        <select id="vad-mode">
+                                            <option value="conservative">Conservative</option>
+                                            <option value="balanced" selected>Balanced</option>
+                                            <option value="aggressive">Aggressive</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-group">
+                                        <label for="vad-engine">VAD engine:</label>
+                                        <select id="vad-engine">
+                                            <option value="energy" selected>Energy (fast)</option>
+                                            <option value="webrtc">WebRTC-like</option>
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="record-controls">

@@ -6,6 +6,11 @@
 import { RECORDING_SETTINGS, TABS, CSS_CLASSES, SELECTORS } from '../utils/Constants.js';
 import { EventHandler } from '../utils/EventHandler.js';
 import { UIHelpers } from '../utils/UIHelpers.js';
+import { calibrate as energyCalibrate, detect as energyDetect } from '../utils/vad/energyVAD.js';
+import { calibrate as webrtcCalibrate, detect as webrtcDetect } from '../utils/vad/webrtcVAD.js';
+import { segment as segmentPCM } from '../utils/vad/segmenter.js';
+import { encodePCM16 } from '../utils/wavEncoder.js';
+import * as VADMetrics from '../utils/metrics.js';
 
 export class RecordingController {
     constructor(appState, statusController, tabController) {
@@ -26,6 +31,40 @@ export class RecordingController {
         this.recordingStartTime = null;
         this.recordingTimer = null;
         this.animationId = null;
+
+        // VAD gating state (pre-capture gating for ongoing transcription)
+        this._vad = {
+            engine: 'energy',        // 'energy' | 'webrtc'
+            mode: 'balanced',        // strictness preset
+            fn: { calibrate: energyCalibrate, detect: energyDetect },
+            enabled: true,
+            silenceIndicator: true,
+            processor: null,          // ScriptProcessorNode
+            residual: new Float32Array(0),
+            frameSamples: 0,
+            frameMs: 0,
+            state: null,              // calibration/adaptive state
+            calibrating: false,
+            calibrationFrames: [],
+            calibrationTargetMs: 800,
+            sensitivity: 0.6,
+            adaptive: true,
+            minSpeechMs: 240,
+            minSilenceMs: 350,
+            leadInMs: 200,
+            hangoverMs: 250,
+            voicedRunMs: 0,
+            silenceRunMs: 0,
+        };
+        this._speech = {
+            active: false,            // true when current speech chunk recorder is running
+            startMs: 0,
+            voicedMs: 0,
+            provisional: false,       // until minSpeechMs reached
+            chunkNumber: 0,
+            chunkRecorder: null,
+            chunkData: [],
+        };
         
         // Auto-save state
         this.recordingAutoSave = {
@@ -179,6 +218,110 @@ export class RecordingController {
                 chunkDuration: parseInt(e.target.value)
             });
         });
+
+        // ---- VAD Settings: enable/disable, mode, engine ----
+        EventHandler.addListener('#vad-enabled', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const enabled = !!e.target.checked;
+            try { await window.electronAPI.setConfig({ vad: { enabled } }); } catch {}
+            this._applyVADRuntime({ enabled });
+        }));
+
+        EventHandler.addListener('#vad-mode', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const mode = String(e.target.value || 'balanced');
+            try { await window.electronAPI.setConfig({ vad: { mode } }); } catch {}
+            this._applyVADRuntime({ mode });
+        }));
+
+        EventHandler.addListener('#vad-engine', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const engine = String(e.target.value || 'energy');
+            try { await window.electronAPI.setConfig({ vad: { engine } }); } catch {}
+            this._applyVADRuntime({ engine });
+        }));
+
+        // Initialize VAD settings UI from persisted config
+        this._loadVADSettingsIntoUI();
+    }
+
+    /**
+     * Load persisted VAD settings into recording UI controls
+     */
+    async _loadVADSettingsIntoUI() {
+        try {
+            const cfg = await window.electronAPI.getConfig();
+            const v = (cfg && cfg.vad) || {};
+            const enabled = !!v.enabled;
+            const mode = (v.mode === 'conservative' || v.mode === 'balanced' || v.mode === 'aggressive') ? v.mode : 'balanced';
+            const engine = (v.engine === 'webrtc' || v.engine === 'energy') ? v.engine : 'energy';
+            const elEnabled = UIHelpers.getElementById('vad-enabled');
+            const elMode = UIHelpers.getElementById('vad-mode');
+            const elEngine = UIHelpers.getElementById('vad-engine');
+            if (elEnabled) elEnabled.checked = enabled;
+            if (elMode) elMode.value = mode;
+            if (elEngine) elEngine.value = engine;
+        } catch (e) {
+            console.warn('Failed to load VAD settings into UI:', e?.message);
+        }
+    }
+
+    /**
+     * Apply VAD partial settings at runtime and reconfigure gating if needed
+     * @param {{enabled?: boolean, mode?: string, engine?: string}} partial
+     */
+    _applyVADRuntime(partial = {}) {
+        // Merge simple fields
+        if (typeof partial.enabled === 'boolean') this._vad.enabled = partial.enabled;
+        if (typeof partial.engine === 'string') this._vad.engine = (partial.engine === 'webrtc' ? 'webrtc' : 'energy');
+        if (typeof partial.mode === 'string') {
+            const m = partial.mode;
+            this._vad.mode = (m === 'conservative' || m === 'aggressive' || m === 'balanced') ? m : 'balanced';
+        }
+
+        // Update engine function mapping
+        if (this._vad.engine === 'webrtc') {
+            this._vad.fn = { calibrate: webrtcCalibrate, detect: webrtcDetect };
+        } else {
+            this._vad.fn = { calibrate: energyCalibrate, detect: energyDetect };
+        }
+
+        // Recompute preset-driven tunables to reflect mode/engine
+        const PRESETS = {
+            energy: {
+                conservative: { sensitivity: 0.70, minSpeechMs: 200, minSilenceMs: 300, hangoverMs: 200 },
+                balanced:     { sensitivity: 0.60, minSpeechMs: 240, minSilenceMs: 350, hangoverMs: 250 },
+                aggressive:   { sensitivity: 0.45, minSpeechMs: 300, minSilenceMs: 450, hangoverMs: 350 },
+            },
+            webrtc: {
+                conservative: { sensitivity: 0.70, minSpeechMs: 200, minSilenceMs: 300, hangoverMs: 200 },
+                balanced:     { sensitivity: 0.55, minSpeechMs: 240, minSilenceMs: 350, hangoverMs: 250 },
+                aggressive:   { sensitivity: 0.40, minSpeechMs: 320, minSilenceMs: 450, hangoverMs: 350 },
+            }
+        };
+        const preset = (PRESETS[this._vad.engine] || PRESETS.energy)[this._vad.mode] || PRESETS.energy.balanced;
+        this._vad.sensitivity = preset.sensitivity;
+        this._vad.minSpeechMs = Math.max(80, preset.minSpeechMs);
+        this._vad.minSilenceMs = Math.max(120, preset.minSilenceMs);
+        this._vad.hangoverMs = Math.max(0, preset.hangoverMs);
+
+        // Live reconfiguration when recording + ongoing transcription is enabled
+        if (this.isRecording && this.ongoingTranscription?.enabled && !this.isPaused) {
+            // Tear down any existing gating graph
+            this._teardownVADProcessor();
+
+            if (this._vad.enabled) {
+                // Switch to listening state and re-setup processor
+                if (this._vad.silenceIndicator) UIHelpers.setText('#ongoing-transcription-status', 'Listening...');
+                this._setupVADProcessor();
+            } else {
+                // Ensure we keep recording via time-based chunking
+                UIHelpers.setText('#ongoing-transcription-status', 'Recording...');
+                // Kick a new chunk if none is running
+                setTimeout(() => {
+                    if (this.ongoingTranscription.enabled && this.isRecording && !this.isPaused) {
+                        this.startChunkRecording();
+                    }
+                }, 200);
+            }
+        }
     }
 
     /**
@@ -582,18 +725,82 @@ export class RecordingController {
         // Clear previous transcription
         this.clearOngoingTranscription();
         
+        // Fetch config to determine VAD settings and silence indicator
+        let appConfig = null;
+        try {
+            appConfig = await window.electronAPI.getConfig();
+        } catch (e) {
+            console.warn('Could not load config for VAD; using defaults', e);
+        }
+        const vadCfg = appConfig?.vad || {};
+        const silenceIndicator = appConfig?.recording?.silenceIndicator !== false; // default true
+
+        // Prepare VAD gating settings
+        this._vad.enabled = !!vadCfg.enabled;
+        this._vad.silenceIndicator = silenceIndicator;
+        this._vad.engine = (vadCfg.engine === 'webrtc' || vadCfg.engine === 'energy') ? vadCfg.engine : 'energy';
+        this._vad.mode = (vadCfg.mode === 'conservative' || vadCfg.mode === 'aggressive' || vadCfg.mode === 'balanced') ? vadCfg.mode : 'balanced';
+
+        // Select engine functions
+        if (this._vad.engine === 'webrtc') {
+            this._vad.fn = { calibrate: webrtcCalibrate, detect: webrtcDetect };
+        } else {
+            this._vad.fn = { calibrate: energyCalibrate, detect: energyDetect };
+        }
+
+        // Start per-session VAD metrics (use auto-save sessionId if available)
+        try {
+            const sessId = this.recordingAutoSave?.sessionId || `recording_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+            VADMetrics.startSession(sessId);
+        } catch {}
+
+        // Apply strictness mode presets (WebRTC-like), mapping to tunables
+        const PRESETS = {
+            energy: {
+                conservative: { sensitivity: 0.70, minSpeechMs: 200, minSilenceMs: 300, hangoverMs: 200 },
+                balanced:     { sensitivity: 0.60, minSpeechMs: 240, minSilenceMs: 350, hangoverMs: 250 },
+                aggressive:   { sensitivity: 0.45, minSpeechMs: 300, minSilenceMs: 450, hangoverMs: 350 },
+            },
+            webrtc: {
+                conservative: { sensitivity: 0.70, minSpeechMs: 200, minSilenceMs: 300, hangoverMs: 200 },
+                balanced:     { sensitivity: 0.55, minSpeechMs: 240, minSilenceMs: 350, hangoverMs: 250 },
+                aggressive:   { sensitivity: 0.40, minSpeechMs: 320, minSilenceMs: 450, hangoverMs: 350 },
+            }
+        };
+        const preset = (PRESETS[this._vad.engine] || PRESETS.energy)[this._vad.mode] || PRESETS.energy.balanced;
+
+        // Base tunables (calibration/adaptive/lead-in)
+        this._vad.adaptive = vadCfg.adaptive !== false;
+        this._vad.calibrationTargetMs = Math.max(200, vadCfg.calibrationMs || 800);
+        this._vad.leadInMs = Math.max(0, vadCfg.leadInMs || 200);
+
+        // Strictness-controlled tunables (override with mode)
+        this._vad.sensitivity = preset.sensitivity;
+        this._vad.minSpeechMs = Math.max(80, preset.minSpeechMs);
+        this._vad.minSilenceMs = Math.max(120, preset.minSilenceMs);
+        this._vad.hangoverMs = Math.max(0, preset.hangoverMs);
+        
         // Update status
-        UIHelpers.setText('#ongoing-transcription-status', 'Recording...');
+        if (this._vad.enabled && this._vad.silenceIndicator) {
+            UIHelpers.setText('#ongoing-transcription-status', 'Listening...');
+        } else {
+            UIHelpers.setText('#ongoing-transcription-status', 'Recording...');
+        }
         
         // Start the background transcription processor
         this.startTranscriptionWorker();
         
-        // Start first chunk after initial delay to ensure recording is stable
-        setTimeout(() => {
-            if (this.ongoingTranscription.enabled && this.isRecording) {
-                this.startChunkRecording();
-            }
-        }, 2000);
+        // Start VAD-driven gating if enabled, else fallback to time-based chunking
+        if (this._vad.enabled) {
+            this._setupVADProcessor();
+        } else {
+            // Start first chunk after initial delay to ensure recording is stable
+            setTimeout(() => {
+                if (this.ongoingTranscription.enabled && this.isRecording) {
+                    this.startChunkRecording();
+                }
+            }, 2000);
+        }
     }
 
     /**
@@ -679,6 +886,214 @@ export class RecordingController {
         }
     }
 
+    // ======================== VAD PRE-CAPTURE GATING ========================
+    _setupVADProcessor() {
+        try {
+            if (!this.audioContext || !this.microphone) {
+                console.warn('VAD: AudioContext or microphone not ready');
+                return;
+            }
+            // ScriptProcessorNode fallback (10–30ms frames). Use 1024 buffer for ~23ms @44.1k.
+            const bufferSize = 1024;
+            const processor = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
+            this._vad.processor = processor;
+
+            const sampleRate = this.audioContext.sampleRate || 44100;
+            const targetFrameMs = 20; // default 20 ms frames
+            const frameSamples = Math.max(160, Math.round(sampleRate * (targetFrameMs / 1000)));
+            this._vad.frameSamples = frameSamples;
+            this._vad.frameMs = (frameSamples / sampleRate) * 1000;
+            this._vad.residual = new Float32Array(0);
+            this._vad.calibrating = true;
+            this._vad.calibrationFrames = [];
+            this._vad.voicedRunMs = 0;
+            this._vad.silenceRunMs = 0;
+
+            processor.onaudioprocess = (event) => {
+                if (!this.isRecording || this.isPaused || !this.ongoingTranscription.enabled) return;
+                const input = event.inputBuffer.getChannelData(0);
+                // Append to residual
+                const merged = new Float32Array(this._vad.residual.length + input.length);
+                merged.set(this._vad.residual, 0);
+                merged.set(input, this._vad.residual.length);
+                this._vad.residual = merged;
+
+                // Process in fixed-size frames
+                while (this._vad.residual.length >= this._vad.frameSamples) {
+                    const frame = this._vad.residual.subarray(0, this._vad.frameSamples);
+                    const remainder = this._vad.residual.subarray(this._vad.frameSamples);
+                    const carry = new Float32Array(remainder.length);
+                    carry.set(remainder);
+                    this._vad.residual = carry;
+                    this._processVADFrame(frame, sampleRate);
+                }
+            };
+
+            // Connect nodes; processor must be connected to run in some engines
+            this.microphone.connect(processor);
+            // Connect to destination with zero output to keep graph alive
+            processor.connect(this.audioContext.destination);
+            console.log('VAD: Processor initialized (frameSamples=', this._vad.frameSamples, ', sr=', sampleRate, ')');
+        } catch (err) {
+            console.error('Failed to setup VAD processor:', err);
+            // Fallback to time-based chunking if VAD init fails
+            setTimeout(() => {
+                if (this.ongoingTranscription.enabled && this.isRecording) {
+                    this.startChunkRecording();
+                }
+            }, 1000);
+        }
+    }
+
+    _teardownVADProcessor() {
+        try {
+            if (this._vad.processor) {
+                try { this._vad.processor.disconnect(); } catch {}
+            }
+        } catch {}
+        this._vad.processor = null;
+        this._vad.residual = new Float32Array(0);
+        this._vad.state = null;
+        this._vad.calibrating = false;
+        this._vad.calibrationFrames = [];
+        this._vad.voicedRunMs = 0;
+        this._vad.silenceRunMs = 0;
+        // Ensure UI switches back if needed
+        if (this._vad.silenceIndicator) {
+            UIHelpers.setText('#ongoing-transcription-status', 'Recording...');
+        }
+    }
+
+    _processVADFrame(frame, sampleRate) {
+        const frameMs = this._vad.frameMs;
+        // Calibration phase: accumulate frames until target duration
+        if (this._vad.calibrating) {
+            this._vad.calibrationFrames.push(new Float32Array(frame));
+            const calMs = this._vad.calibrationFrames.length * frameMs;
+            if (calMs >= this._vad.calibrationTargetMs) {
+                this._vad.state = this._vad.fn.calibrate(this._vad.calibrationFrames, sampleRate, { adaptive: this._vad.adaptive });
+                this._vad.calibrating = false;
+                this._vad.calibrationFrames = [];
+                console.log('VAD: Calibration complete');
+            }
+            // During calibration, show Listening
+            if (this._vad.silenceIndicator) {
+                UIHelpers.setText('#ongoing-transcription-status', 'Listening...');
+            }
+            return;
+        }
+        const detectOpts = { sensitivity: this._vad.sensitivity, adaptive: this._vad.adaptive };
+        if (this._vad.engine === 'webrtc') detectOpts.mode = this._vad.mode;
+        const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        const res = this._vad.fn.detect(frame, sampleRate, this._vad.state, detectOpts);
+        const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        const isSpeech = !!res.isSpeech;
+        try {
+            VADMetrics.onFrameDecision({ isSpeech, confidence: Math.max(0, Math.min(1, Number(res.confidence) || 0)), decisionMs: (t1 - t0) });
+        } catch {}
+
+        if (isSpeech) {
+            this._vad.voicedRunMs += frameMs;
+            this._vad.silenceRunMs = 0;
+
+            // Start recorder on first speech frame to include onset; mark provisional until minSpeechMs reached
+            if (!this._speech.active) {
+                this._startVADChunkRecorder();
+                this._speech.provisional = true;
+                this._speech.voicedMs = 0;
+                if (this._vad.silenceIndicator) {
+                    UIHelpers.setText('#ongoing-transcription-status', 'Recording...');
+                }
+            }
+            this._speech.voicedMs += frameMs;
+            if (this._speech.provisional && this._speech.voicedMs >= this._vad.minSpeechMs) {
+                this._speech.provisional = false;
+            }
+        } else {
+            this._vad.voicedRunMs = 0;
+            this._vad.silenceRunMs += frameMs;
+
+            if (this._speech.active) {
+                // Allow a hangover before stopping to avoid choppy cuts
+                if (this._vad.silenceRunMs >= this._vad.hangoverMs) {
+                    const shouldDrop = this._speech.provisional || this._speech.voicedMs < this._vad.minSpeechMs;
+                    this._stopVADChunkRecorder(shouldDrop);
+                    if (this._vad.silenceIndicator) {
+                        UIHelpers.setText('#ongoing-transcription-status', 'Listening...');
+                    }
+                }
+            } else {
+                // Idle listening
+                if (this._vad.silenceIndicator) {
+                    UIHelpers.setText('#ongoing-transcription-status', 'Listening...');
+                }
+            }
+        }
+    }
+
+    _startVADChunkRecorder() {
+        try {
+            this._speech.chunkNumber = (this.ongoingTranscription.chunkCount || 0) + 1;
+            this.ongoingTranscription.chunkCount = this._speech.chunkNumber;
+
+            const stream = this.mediaRecorder.stream;
+            const chunkRecorder = new MediaRecorder(stream, { mimeType: this.getMimeType() });
+            const chunkData = [];
+            this._speech.chunkRecorder = chunkRecorder;
+            this._speech.chunkData = chunkData;
+            this._speech.active = true;
+            this._speech.startMs = Date.now();
+
+            chunkRecorder.ondataavailable = (event) => {
+                if (event.data && event.data.size > 0) chunkData.push(event.data);
+            };
+            chunkRecorder.onstop = () => {
+                const num = this._speech.chunkNumber;
+                const drop = this._speech._dropOnStop === true;
+                // Reset active BEFORE queueing next to avoid race
+                this._speech.active = false;
+                this._speech._dropOnStop = false;
+                if (!drop && chunkData.length > 0) {
+                    // Create blob and queue
+                    const mimeType = this.getMimeType();
+                    const chunkBlob = new Blob(chunkData, { type: mimeType });
+                    if (chunkBlob.size >= 4096) {
+                        console.log(`VAD chunk ${num} completed, enqueuing (${chunkBlob.size} bytes)`);
+                        this.ongoingTranscription.chunkQueue.push({
+                            chunkNumber: num,
+                            blob: chunkBlob,
+                            timestamp: Date.now(),
+                        });
+                    } else {
+                        console.log(`VAD chunk ${num} too small (${chunkBlob.size} bytes), dropped`);
+                    }
+                } else {
+                    console.log(`VAD chunk ${num} dropped (provisional/too short)`);
+                }
+            };
+            chunkRecorder.start();
+        } catch (err) {
+            console.error('VAD: failed to start chunk recorder:', err);
+        }
+    }
+
+    _stopVADChunkRecorder(drop) {
+        try {
+            if (this._speech.chunkRecorder && this._speech.chunkRecorder.state === 'recording') {
+                this._speech._dropOnStop = !!drop;
+                this._speech.chunkRecorder.stop();
+            }
+        } catch (err) {
+            console.error('VAD: failed to stop chunk recorder:', err);
+        } finally {
+            if (drop) {
+                try { VADMetrics.onDroppedChunk(); } catch {}
+            }
+            this._speech.voicedMs = 0;
+            this._speech.provisional = false;
+        }
+    }
+
     /**
      * Add a completed chunk to the transcription queue
      */
@@ -703,6 +1118,99 @@ export class RecordingController {
         });
         
         console.log(`Queue now has ${this.ongoingTranscription.chunkQueue.length} chunks waiting`);
+    }
+
+    /**
+     * Decode a recorded chunk ArrayBuffer into mono Float32 PCM and sample rate.
+     * Uses a temporary AudioContext for robust decoding.
+     * @param {ArrayBuffer} arrayBuffer
+     * @returns {Promise<{ mono: Float32Array, sampleRate: number }>}
+     */
+    async _decodeToMonoPCM(arrayBuffer) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) throw new Error('Web Audio API AudioContext not available');
+        const ctx = new AC();
+        try {
+            const buf = await new Promise((resolve, reject) => {
+                // Some Electron builds still require the callback style
+                try {
+                    const p = ctx.decodeAudioData(arrayBuffer.slice(0));
+                    if (p && typeof p.then === 'function') {
+                        p.then(resolve).catch(reject);
+                    } else {
+                        ctx.decodeAudioData(arrayBuffer.slice(0), resolve, reject);
+                    }
+                } catch (e) {
+                    // Fallback to callback style on sync throw
+                    ctx.decodeAudioData(arrayBuffer.slice(0), resolve, reject);
+                }
+            });
+            const channels = buf.numberOfChannels || 1;
+            const length = buf.length;
+            const sampleRate = buf.sampleRate;
+            if (length === 0) return { mono: new Float32Array(0), sampleRate };
+            if (channels === 1) {
+                return { mono: new Float32Array(buf.getChannelData(0)), sampleRate };
+            }
+            // Downmix to mono (average channels)
+            const mono = new Float32Array(length);
+            for (let ch = 0; ch < channels; ch++) {
+                const data = buf.getChannelData(ch);
+                for (let i = 0; i < length; i++) mono[i] += data[i];
+            }
+            for (let i = 0; i < length; i++) mono[i] /= channels;
+            return { mono, sampleRate };
+        } finally {
+            try { await ctx.close(); } catch {}
+        }
+    }
+
+    /**
+     * Build segmentation options from current VAD config with sane defaults.
+     */
+    _getSegmentationOpts() {
+        const v = this._vad || {};
+        return {
+            frameMs: 20,
+            calibrationMs: Math.max(200, v.calibrationTargetMs || 800),
+            sensitivity: typeof v.sensitivity === 'number' ? v.sensitivity : 0.6,
+            minSpeechMs: Math.max(80, v.minSpeechMs || 240),
+            minSilenceMs: Math.max(120, v.minSilenceMs || 350),
+            leadInMs: Math.max(0, v.leadInMs || 200),
+            hangoverMs: Math.max(0, v.hangoverMs || 250),
+        };
+    }
+
+    /**
+     * Decode and segment a recorded chunk, then encode each voiced subsegment to WAV PCM16.
+     * @param {ArrayBuffer} arrayBuffer
+     * @returns {Promise<{ wavBuffers: ArrayBuffer[], segments: Array<{startMs:number,endMs:number}>, sampleRate: number }>} 
+     */
+    async _segmentChunkToWavs(arrayBuffer) {
+        const { mono, sampleRate } = await this._decodeToMonoPCM(arrayBuffer);
+        if (!mono || mono.length === 0) {
+            return { wavBuffers: [], segments: [], sampleRate: 0 };
+        }
+        const opts = this._getSegmentationOpts();
+        const { segments } = segmentPCM(mono, sampleRate, opts);
+        if (!segments || segments.length === 0) {
+            return { wavBuffers: [], segments: [], sampleRate };
+        }
+        const wavBuffers = [];
+        for (const seg of segments) {
+            const startIdx = Math.max(0, Math.floor((seg.startMs / 1000) * sampleRate));
+            const endIdx = Math.min(mono.length, Math.floor((seg.endMs / 1000) * sampleRate));
+            if (endIdx > startIdx) {
+                const view = mono.subarray(startIdx, endIdx);
+                try {
+                    const wav = encodePCM16(view, sampleRate);
+                    wavBuffers.push(wav);
+                } catch (e) {
+                    console.warn('Failed to encode segment to WAV, skipping:', e);
+                }
+            }
+        }
+        return { wavBuffers, segments, sampleRate };
     }
 
     /**
@@ -736,30 +1244,46 @@ export class RecordingController {
             console.log(`Processing chunk ${queueItem.chunkNumber} from queue (${this.ongoingTranscription.chunkQueue.length} remaining)`);
             
             try {
-                // Convert blob to array buffer for transcription
+                // Convert blob to array buffer for segmentation
                 const arrayBuffer = await queueItem.blob.arrayBuffer();
-                
-                // Generate context prompt from previous transcription (last 1000 characters)
-                const contextPrompt = this.generateContextPrompt();
-                
-                // Transcribe the chunk with context
-                const result = await window.electronAPI.transcribeAudio(arrayBuffer, contextPrompt);
-                
-                if (result.success && result.text && result.text.trim()) {
-                    const cleanText = result.text.trim();
-                    console.log(`✓ Chunk ${queueItem.chunkNumber} transcribed: "${cleanText}"`);
-                    
-                    // Add to chunks array for bold formatting
-                    this.ongoingTranscription.chunks.push(cleanText);
-                    
-                    // Update transcriptionText for backwards compatibility
-                    const separator = this.ongoingTranscription.transcriptionText ? ' ' : '';
-                    this.ongoingTranscription.transcriptionText += separator + cleanText;
-                    
-                    // Update the display with latest chunk bold
-                    this.updateOngoingTranscriptionDisplay();
-                } else {
-                    console.log(`Chunk ${queueItem.chunkNumber} transcription returned empty (likely silence)`);
+
+                // Decode, segment, and encode voiced subsegments to WAV
+                const { wavBuffers, segments } = await this._segmentChunkToWavs(arrayBuffer);
+                if (!wavBuffers || wavBuffers.length === 0) {
+                    console.log(`🧊 Chunk ${queueItem.chunkNumber} had no voiced segments — skipped`);
+                    try { VADMetrics.onDroppedChunk(); } catch {}
+                    continue;
+                }
+
+                console.log(`✂️  Chunk ${queueItem.chunkNumber}: ${segments.length} voiced segment(s)`);
+                segments.forEach((s, i) => {
+                    console.log(`   • seg#${i + 1}: ${Math.round(s.startMs)}ms → ${Math.round(s.endMs)}ms`);
+                });
+
+                // Maintain rolling prompt context across subsegments
+                let runningPrompt = this.generateContextPrompt();
+
+                for (let i = 0; i < wavBuffers.length; i++) {
+                    try { VADMetrics.onSentSegment(1); } catch {}
+                    const subResult = await window.electronAPI.transcribeAudio(wavBuffers[i], runningPrompt || null);
+                    if (subResult.success && subResult.text && subResult.text.trim()) {
+                        const cleanText = subResult.text.trim();
+                        console.log(`✓ Chunk ${queueItem.chunkNumber} seg ${i + 1}/${wavBuffers.length}: "${cleanText}"`);
+
+                        // Treat each subsegment as an incremental chunk for UI continuity
+                        this.ongoingTranscription.chunks.push(cleanText);
+
+                        const sep = this.ongoingTranscription.transcriptionText ? ' ' : '';
+                        this.ongoingTranscription.transcriptionText += sep + cleanText;
+
+                        // Refresh display, bolds the latest segment
+                        this.updateOngoingTranscriptionDisplay();
+
+                        // Update prompt for next subsegment (rollover context)
+                        runningPrompt = this.generateContextPrompt();
+                    } else {
+                        console.log(`Chunk ${queueItem.chunkNumber} seg ${i + 1}/${wavBuffers.length} returned empty (likely silence)`);
+                    }
                 }
                 
             } catch (error) {
@@ -793,6 +1317,15 @@ export class RecordingController {
             }
             this.ongoingTranscription.currentChunkRecorder = null;
         }
+
+        // Also stop VAD-controlled recorder if used
+        if (this._speech?.chunkRecorder && this._speech.chunkRecorder.state === 'recording') {
+            try { this._speech.chunkRecorder.stop(); } catch {}
+            this._speech.active = false;
+            this._speech.chunkRecorder = null;
+        }
+        // Tear down VAD processing graph
+        this._teardownVADProcessor();
         
         // Stop the background worker
         this.stopTranscriptionWorker();
@@ -802,6 +1335,7 @@ export class RecordingController {
         this.ongoingTranscription.chunkStartTime = null;
         
         UIHelpers.setText('#ongoing-transcription-status', 'Stopped');
+        try { VADMetrics.endSession(); } catch {}
     }
 
     /**
@@ -817,6 +1351,14 @@ export class RecordingController {
             }
             this.ongoingTranscription.currentChunkRecorder = null;
         }
+        // Stop VAD recorder if active
+        if (this._speech?.chunkRecorder && this._speech.chunkRecorder.state === 'recording') {
+            try { this._speech.chunkRecorder.stop(); } catch {}
+            this._speech.active = false;
+            this._speech.chunkRecorder = null;
+        }
+        // Tear down processor during pause
+        this._teardownVADProcessor();
         
         // Reset smart chunking state
         this.ongoingTranscription.pendingStop = false;
@@ -834,17 +1376,25 @@ export class RecordingController {
         }
         
         console.log('Resuming ongoing transcription');
-        UIHelpers.setText('#ongoing-transcription-status', 'Recording...');
+        // If VAD is enabled, show Listening and re-setup processor; else Recording
+        if (this._vad.enabled && this._vad.silenceIndicator) {
+            UIHelpers.setText('#ongoing-transcription-status', 'Listening...');
+            this._setupVADProcessor();
+        } else {
+            UIHelpers.setText('#ongoing-transcription-status', 'Recording...');
+        }
         
         // Restart the background worker if needed
         this.startTranscriptionWorker();
         
-        // Start next chunk after a small delay
-        setTimeout(() => {
-            if (this.ongoingTranscription.enabled && this.isRecording && !this.isPaused) {
-                this.startChunkRecording();
-            }
-        }, 1000);
+        // If no VAD gating, resume time-based chunking
+        if (!this._vad.enabled) {
+            setTimeout(() => {
+                if (this.ongoingTranscription.enabled && this.isRecording && !this.isPaused) {
+                    this.startChunkRecording();
+                }
+            }, 1000);
+        }
     }
 
     /**

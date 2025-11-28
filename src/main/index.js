@@ -5,6 +5,7 @@ const path = require('path');
 const isDev = process.env.NODE_ENV === 'production' ? false : (process.env.NODE_ENV === 'development' || !app.isPackaged);
 const IPCHandlers = require('./ipcHandlers');
 const RefinementHandlers = require('./refinementHandlers');
+const config = require('../config');
 
 // Keep a global reference of the window object
 let mainWindow;
@@ -74,6 +75,17 @@ app.whenReady().then(() => {
     // Set up application menu
     const menu = require('./menu');
     Menu.setApplicationMenu(menu);
+
+    // Temporary: log VAD configuration to confirm presence/persistence during startup
+    try {
+        // Prefer dot-path getter if available
+        const vadCfg = typeof config.get === 'function' ? config.get('vad') : (config.vad || {});
+        const silenceIndicator = typeof config.get === 'function' ? config.get('recording.silenceIndicator') : (config.recording && config.recording.silenceIndicator);
+        console.log('🗣️ VAD config at startup:', vadCfg);
+        console.log('🔇 Recording.silenceIndicator:', silenceIndicator);
+    } catch (e) {
+        console.warn('VAD config log skipped:', e && e.message);
+    }
 
     app.on('activate', () => {
     // On macOS, re-create window when dock icon is clicked

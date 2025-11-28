@@ -16,6 +16,7 @@ class IPCHandlers {
         this.fileService = new FileService();
         this.transcriptionService = new TranscriptionService();
         this.recordingService = new RecordingService();
+        this.vadMetrics = null; // non-persistent in-memory snapshot
         this.setupHandlers();
     }
 
@@ -38,6 +39,9 @@ class IPCHandlers {
         ipcMain.handle('recording:updateSettings', this.handleUpdateRecordingSettings.bind(this));
         ipcMain.handle('recording:history', this.handleGetRecordingHistory.bind(this));
         ipcMain.handle('recording:constraints', this.handleGetRecordingConstraints.bind(this));
+        // VAD metrics
+        ipcMain.handle('recording:vadMetrics:get', this.handleGetVADMetrics.bind(this));
+        ipcMain.handle('recording:vadMetrics:set', this.handleSetVADMetrics.bind(this));
 
         // Configuration handlers
         ipcMain.handle('config:get', this.handleGetConfig.bind(this));
@@ -105,6 +109,42 @@ class IPCHandlers {
         } catch (error) {
             console.error('Error opening file dialog:', error);
             throw new Error(`Failed to open file dialog: ${error.message}`);
+        }
+    }
+
+    // VAD Metrics Handlers (non-persistent; for QA/devtools)
+    async handleGetVADMetrics() {
+        try {
+            return this.vadMetrics || {};
+        } catch (error) {
+            console.error('Error getting VAD metrics:', error);
+            return {};
+        }
+    }
+
+    async handleSetVADMetrics(event, metrics) {
+        try {
+            if (metrics && typeof metrics === 'object') {
+                this.vadMetrics = { ...metrics };
+                // Small log for visibility in dev
+                if (process.env.NODE_ENV !== 'production') {
+                    console.log('Updated VAD metrics snapshot:', {
+                        sessionId: this.vadMetrics.sessionId,
+                        analyzedFrames: this.vadMetrics.analyzedFrames,
+                        voicedFrames: this.vadMetrics.voicedFrames,
+                        silentFrames: this.vadMetrics.silentFrames,
+                        droppedChunks: this.vadMetrics.droppedChunks,
+                        sentSegments: this.vadMetrics.sentSegments,
+                        avgDecisionMs: this.vadMetrics.avgDecisionMs,
+                        ambiguousDecisions: this.vadMetrics.ambiguousDecisions,
+                    });
+                }
+                return { success: true };
+            }
+            return { success: false };
+        } catch (error) {
+            console.error('Error updating VAD metrics:', error);
+            return { success: false };
         }
     }
 
@@ -374,7 +414,17 @@ class IPCHandlers {
 
     async handleGetConfig() {
         try {
-            return config.getSimplified();
+            const base = config.getSimplified();
+            // Extend with VAD + select recording keys needed by renderer
+            const vad = typeof config.get === 'function' ? config.get('vad') : (config.vad || {});
+            const silenceIndicator = typeof config.get === 'function' ? config.get('recording.silenceIndicator') : (config.recording && config.recording.silenceIndicator);
+            return {
+                ...base,
+                vad,
+                recording: {
+                    silenceIndicator: silenceIndicator !== false
+                }
+            };
         } catch (error) {
             console.error('Error getting config:', error);
             return {};
@@ -416,8 +466,28 @@ class IPCHandlers {
                 }
             }
 
-            // Save configuration
+            // Save configuration (basic Whisper-related fields)
             config.setSimplified(newConfig);
+
+            // Persist VAD settings if provided
+            if (newConfig.vad && typeof newConfig.vad === 'object') {
+                try {
+                    config.updateVADSettings(newConfig.vad);
+                } catch (e) {
+                    console.warn('Failed to update VAD settings:', e?.message);
+                }
+            }
+
+            // Optionally allow updating recording-level flags (e.g., silenceIndicator)
+            if (newConfig.recording && typeof newConfig.recording === 'object') {
+                try {
+                    if (Object.prototype.hasOwnProperty.call(newConfig.recording, 'silenceIndicator')) {
+                        config.set('recording.silenceIndicator', !!newConfig.recording.silenceIndicator);
+                    }
+                } catch (e) {
+                    console.warn('Failed to update recording settings:', e?.message);
+                }
+            }
 
             // Update TranscriptionService with new settings
             this.transcriptionService.updateSettings(newConfig);

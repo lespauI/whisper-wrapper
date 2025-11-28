@@ -11,6 +11,7 @@ A Node.js desktop application that provides a user-friendly interface for OpenAI
 - **Export Options**: Download transcriptions in various formats
 - **Local Processing**: Runs entirely on your local machine
 - **Initial Prompt**: Provide custom vocabulary or context to improve transcription accuracy
+- **Silence/Noise Detection (VAD)**: Real‑time gating and offline segmentation to skip silence/noise and reduce hallucinations (configurable engine and modes)
 
 ## Getting Started
 
@@ -62,6 +63,19 @@ A Node.js desktop application that provides a user-friendly interface for OpenAI
 5. View and edit the transcription in the editor
 6. Download the transcription using the "Download" button
 
+### Ongoing Transcription with Silence/Noise Detection
+
+- Enable "Ongoing transcription" in the Recording tab for streaming updates.
+- During silence/noise the app shows "Listening…" and avoids sending audio to Whisper.
+- Speech triggers chunking with lead‑in; sustained silence stops the chunk with hangover.
+- Only voiced subsegments are sent to Whisper — reducing hallucinations from quiet parts.
+
+Configure under Settings:
+- VAD Engine: `energy` (default) or `webrtc`
+- VAD Mode: `conservative`, `balanced` (default), or `aggressive`
+
+More details and guidance: `docs/features/ongoing-transcription-silence-detection.md`
+
 ### Using Initial Prompt for Better Accuracy
 
 You can provide an initial prompt to help the transcription model better recognize specific terms, names, or context:
@@ -102,6 +116,8 @@ The application follows a client-side MVC architecture with the following compon
 - **Data Layer**: File storage and configuration management
 
 For more details, see the [architecture documentation](./.architecture/whisper-wrapper/).
+
+VAD design and integration details: `docs/architecture/vad-silence-detection-implementation.md`
 
 ## Development Status
 

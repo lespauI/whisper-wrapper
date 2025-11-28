@@ -58,7 +58,23 @@ module.exports = {
         bitDepth: 16,
         format: 'wav',
         maxDuration: 3600, // 1 hour in seconds
-        autoSave: true
+        autoSave: true,
+        // Show a UI indicator when input is silent
+        silenceIndicator: true
+    },
+
+    // Voice Activity Detection (VAD) settings
+    vad: {
+        engine: 'energy',
+        enabled: true,
+        mode: 'balanced', // 'conservative' | 'balanced' | 'aggressive' (presets applied elsewhere)
+        calibrationMs: 800,
+        adaptive: true,
+        sensitivity: 0.6,
+        minSpeechMs: 240,
+        minSilenceMs: 350,
+        leadInMs: 200,
+        hangoverMs: 250
     },
 
     // Transcription settings

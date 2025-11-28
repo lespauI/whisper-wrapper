@@ -21,12 +21,15 @@
     "uuid": "^9.0.0"
   },
   "devDependencies": {
+    "@babel/core": "^7.28.5",
+    "@babel/preset-env": "^7.28.5",
     "@playwright/test": "^1.52.0",
     "@types/fluent-ffmpeg": "^2.1.20",
     "@types/jest": "^27.5.2",
     "@types/lodash": "^4.14.191",
     "@types/node": "^16.18.126",
     "@types/uuid": "^9.0.0",
+    "babel-jest": "^30.2.0",
     "concurrently": "^7.6.0",
     "electron-builder": "^24.0.0",
     "eslint": "^8.30.0",

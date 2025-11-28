@@ -50,7 +50,23 @@ const defaultConfig = {
         quality: "medium",
         format: "wav",
         autoTranscribe: true,
-        autoSaveInterval: 60000
+        autoSaveInterval: 60000,
+        // Show a UI indicator when input is silent
+        silenceIndicator: true
+    },
+
+    // Voice Activity Detection (VAD) settings
+    vad: {
+        engine: 'energy',
+        enabled: true,
+        mode: 'balanced', // 'conservative' | 'balanced' | 'aggressive'
+        calibrationMs: 800,
+        adaptive: true,
+        sensitivity: 0.6,
+        minSpeechMs: 240,
+        minSilenceMs: 350,
+        leadInMs: 200,
+        hangoverMs: 250
     }
 };
 
@@ -91,6 +107,34 @@ function saveConfig(configToSave) {
 
 // Load the configuration from file or use default
 const config = loadConfig();
+
+// --- helpers for nested get/set (dot-path) ---
+function getByPath(obj, keyPath, defaultValue) {
+    if (!keyPath) return obj;
+    const parts = keyPath.split('.');
+    let cur = obj;
+    for (const part of parts) {
+        if (cur && Object.prototype.hasOwnProperty.call(cur, part)) {
+            cur = cur[part];
+        } else {
+            return defaultValue;
+        }
+    }
+    return cur;
+}
+
+function setByPath(obj, keyPath, value) {
+    const parts = keyPath.split('.');
+    let cur = obj;
+    for (let i = 0; i < parts.length - 1; i++) {
+        const k = parts[i];
+        if (!cur[k] || typeof cur[k] !== 'object') {
+            cur[k] = {};
+        }
+        cur = cur[k];
+    }
+    cur[parts[parts.length - 1]] = value;
+}
 
 // Add methods to the config object
 config.getSimplified = function() {
@@ -142,6 +186,51 @@ config.setSimplified = function(newConfig) {
     if (changed) {
         saveConfig(this);
     }
+};
+
+// Generic get/set to support runtime reads/updates (dot-path)
+config.get = function(path, defaultValue = undefined) {
+    return getByPath(this, path, defaultValue);
+};
+
+config.set = function(path, value) {
+    setByPath(this, path, value);
+    saveConfig(this);
+};
+
+// Specialized VAD getters/setters
+config.getVADSettings = function() {
+    // Ensure defaults filled when missing
+    if (!this.vad) this.vad = { ...defaultConfig.vad };
+    return this.vad;
+};
+
+config.updateVADSettings = function(settings) {
+    if (!this.vad) this.vad = { ...defaultConfig.vad };
+    let changed = false;
+    const allowedKeys = [
+        'engine',
+        'enabled',
+        'mode',
+        'calibrationMs',
+        'adaptive',
+        'sensitivity',
+        'minSpeechMs',
+        'minSilenceMs',
+        'leadInMs',
+        'hangoverMs'
+    ];
+    for (const [k, v] of Object.entries(settings || {})) {
+        if (!allowedKeys.includes(k)) continue;
+        if (this.vad[k] !== v) {
+            this.vad[k] = v;
+            changed = true;
+        }
+    }
+    if (changed) {
+        saveConfig(this);
+    }
+    return changed;
 };
 
 // Save any settings method to update arbitrary settings

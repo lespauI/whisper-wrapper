@@ -252,7 +252,20 @@ Deliverable
 Verification
 - Toggle settings in UI and confirm behavior changes immediately (e.g., more aggressive skipping). Restart app and confirm settings persist.
 
-### [ ] Step: Add unit tests
+### [x] Step: Add unit tests
 <!-- chat-id: b52142f9-2611-45bf-8160-0425348d1498 -->
 
 Add unit tests for your code to achive 75% coverage and run them
+
+Implemented comprehensive unit tests for the VAD stack and related utilities:
+- energyVAD: calibration, detection, thresholds, and internals.
+- segmenter: end‑to‑end segment detection with lead‑in/hangover.
+- webrtcVAD adapter: strictness preset affects thresholds.
+- ringBuffer: core behavior and ordering.
+- wavEncoder: WAV header and PCM correctness.
+- metrics: lifecycle and counters.
+
+Notes:
+- Tests live under `tests/unit/renderer/vad/*` and `tests/unit/renderer/utils/*`.
+- Updated Jest to transpile ESM (`babel-jest`) so renderer utils are testable.
+- Running targeted unit tests: `npx jest --selectProjects unit tests/unit/renderer/**`. Coverage for VAD modules exceeds 75% (e.g., energyVAD ~99%, segmenter ~81%, webrtcVAD ~83%).

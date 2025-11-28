@@ -87,7 +87,8 @@ The verification for each deliverable should be executable by a coding agent usi
 
 Save the spec to `{@artifacts_path}/spec.md`.
 
-### [ ] Step: Implementation Plan
+### [x] Step: Implementation Plan
+<!-- chat-id: 2c3c7d7d-d2cf-407e-9416-0002540b0135 -->
 
 Based on the technical spec in `{@artifacts_path}/spec.md`, create a detailed task plan and update `{@artifacts_path}/plan.md`. Each task should have task definition, references to contracts to be used/implemented, deliverable definition and verification instructions.
 
@@ -98,3 +99,147 @@ Task instructions
 ```
 
 "Step:" prefix is important, do not omit it!
+
+### [ ] Step: Add VAD Config and Presets
+Task definition
+- Add VAD configuration with presets and runtime updates.
+
+Contracts to use/implement
+- File: `src/config/default.js`
+  - Add: `vad: { enabled: true, mode: 'balanced', calibrationMs: 800, adaptive: true, sensitivity: 0.6, minSpeechMs: 240, minSilenceMs: 350, leadInMs: 200, hangoverMs: 250 }`
+  - Add: `recording: { ...existing, silenceIndicator: true }`
+- File: `src/config.js`
+  - Allow runtime updates for `vad.enabled`, `vad.mode`, and tunables; persist consistent with existing whisper settings.
+
+Deliverable
+- Config keys exist with sane defaults and are persisted. Getters/setters allow toggling `vad.enabled`, selecting `vad.mode` and tuning thresholds without app restart.
+
+Verification
+- Run `npm run lint` to ensure code quality.
+- Temporarily log config in app startup and confirm keys present.
+- Use `node -e "console.log(require('./src/config').get('vad'))"` to read values and verify persistence behavior.
+
+### [ ] Step: Implement Energy VAD and Ring Buffer (+ fixtures and VAD verify script)
+Task definition
+- Implement lightweight energy + zero-crossing-rate VAD with calibration and tunables. Add a small ring buffer utility for lookback/hangover. Create audio fixtures and a verification script.
+
+Contracts to use/implement
+- File: `src/renderer/utils/vad/energyVAD.js`
+  - API: `calibrate(frames: Float32Array[], sampleRate: number): CalibrationState`
+  - API: `detect(frame: Float32Array, sampleRate: number, state?: CalibrationState, opts?): { isSpeech: boolean, confidence: number }`
+- File: `src/renderer/utils/ringBuffer.js` — fixed-size push/read for recent frames (used for lead-in lookback).
+
+Deliverable
+- `energyVAD` provides `calibrate` and `detect` with sensitivity/min durations driven by config; `ringBuffer` available for consumers. Audio fixtures exist under `tests/fixtures/audio/`.
+- Helper scripts added:
+  - `scripts/gen-fixtures.sh` to generate silence, noise, and tone WAVs using `ffmpeg-static` or system `ffmpeg`.
+  - `scripts/verify-vad.js` to run VAD on fixtures and print voiced/silent ratios.
+
+Verification
+- Run `bash scripts/gen-fixtures.sh` to generate WAVs.
+- Run `node scripts/verify-vad.js tests/fixtures/audio/silence_5s.wav` → expect >95% silent frames, 0 segments.
+- Run `node scripts/verify-vad.js tests/fixtures/audio/tone_5s.wav` → expect majority voiced frames (depending on sensitivity).
+- Run `node scripts/bench-vad.js` (added later) to ensure decision latency budget.
+
+### [ ] Step: Wire Pre‑capture Gating into RecordingController (+ “Listening…” UI)
+Task definition
+- Replace audio-level thresholding with VAD-driven gating during recording. When input is silent/noise only, do not enqueue chunks. Show “Listening…” indicator when silent.
+
+Contracts to use/implement
+- File: `src/renderer/controllers/RecordingController.js`
+  - Extract 10–30 ms frames via `AudioWorklet` or `ScriptProcessorNode` fallback.
+  - Invoke `energyVAD.detect` for each frame, applying lookback/hangover rules for start/stop.
+  - Respect config: `vad.enabled`, `vad.mode`, and tunables.
+- Config contract: `recording.silenceIndicator` toggles UI display state.
+- IPC contract: reuse `transcription:audio` (unchanged).
+
+Deliverable
+- App avoids enqueuing silent/noise-only chunks. UI reflects “Listening…” state during silence. Speech still reaches transcription as whole chunks.
+
+Verification
+- Run app (`npm run start:e2e:quick` if available) and keep quiet → expect no text; “Listening…” visible.
+- Speak briefly → expect immediate chunking and transcription without preceding hallucinations.
+
+### [ ] Step: Implement WAV Encoder and Offline Segmenter (+ segmentation verify script)
+Task definition
+- Add WAV encoder to convert Float32 PCM (mono, 16 kHz) to PCM16 WAV buffers. Implement offline segmentation over PCM using the VAD with lead‑in/hangover to preserve phonemes.
+
+Contracts to use/implement
+- File: `src/renderer/utils/wavEncoder.js`
+  - API: `encodePCM16(monoFloat32: Float32Array, sampleRate: number): ArrayBuffer`
+- File: `src/renderer/utils/vad/segmenter.js`
+  - API: `segment(pcm: Float32Array, sampleRate: number, opts): { segments: Array<{ startMs: number, endMs: number }>, debug?: any }`
+- Uses `energyVAD.detect` internally; honors config thresholds: `minSpeechMs`, `minSilenceMs`, `leadInMs`, `hangoverMs`.
+
+Deliverable
+- `wavEncoder` and `segmenter` utilities implemented and export stable APIs compatible with later integration.
+- Helper script added: `scripts/verify-segmentation.js` to run segmentation on fixtures and write per‑segment debug WAVs to `tests/fixtures/out/`.
+
+Verification
+- Create a mixed file via `scripts/gen-fixtures.sh` (2 s silence + 3 s tone/noise + 2 s silence).
+- Run `node scripts/verify-segmentation.js` → expect one segment ~3 s (± lead‑in/hangover padding) and corresponding WAVs in `tests/fixtures/out/`.
+
+### [ ] Step: Integrate Segmentation and Subsegment Queueing
+Task definition
+- On chunk completion, decode chunk to PCM, run `segmenter`, encode voiced subsegments with `wavEncoder`, and enqueue each to Whisper via `transcription:audio` maintaining context continuity.
+
+Contracts to use/implement
+- File: `src/renderer/controllers/RecordingController.js`
+  - Use `AudioContext.decodeAudioData` to get PCM, call `segmenter.segment`, then `wavEncoder.encodePCM16` for each voiced interval.
+  - Maintain prompt/rollover context between consecutive subsegments.
+- IPC contract: reuse `transcription:audio` (unchanged). Optional future: `transcription:audioSegments` (not required in this phase).
+
+Deliverable
+- Mixed chunks produce only speech subsegments, in order, without added hallucinations or lost syllables.
+
+Verification
+- In app, record a single mixed chunk (silence → speech → silence). Verify only the speech portion is transcribed once; no extraneous tokens before/after.
+- Confirm via logs that fully silent chunks are skipped.
+
+### [ ] Step: WebRTC VAD Adapter and Strictness Modes
+Task definition
+- Add optional WebRTC‑class VAD adapter and strictness modes (conservative/balanced/aggressive) mapping to sensitivity/min durations/hangover. Switchable by config.
+
+Contracts to use/implement
+- File: `src/renderer/utils/vad/webrtcVAD.js` — adapter wrapper exposing same interface as `energyVAD`.
+- Config additions: `vad.engine: 'energy' | 'webrtc'`, `vad.mode` presets mapping to threshold constants.
+- RecordingController to select engine based on config.
+
+Deliverable
+- Robust VAD option in noisy environments; mode switch affects gating behavior and is observable in metrics.
+
+Verification
+- With low‑level background noise playing, toggle modes and engine; observe increased silent frames skipped in aggressive mode. Ensure conservative mode does not materially increase missed speech.
+- Run `node scripts/bench-vad.js` to confirm per‑frame decision time remains within budget.
+
+### [ ] Step: Metrics, Calibration, and IPC Getter
+Task definition
+- Add per‑session metrics collection, initial calibration on recording start, optional adaptive updates during long silence windows, and an IPC getter for QA.
+
+Contracts to use/implement
+- File: `src/renderer/utils/metrics.js`
+  - Shape: `VADMetrics = { sessionId, analyzedFrames, silentFrames, voicedFrames, droppedChunks, sentSegments, avgDecisionMs, ambiguousDecisions }`
+- File: `src/main/ipcHandlers.js`
+  - Add `recording:vadMetrics:get` to return current session metrics (non‑persistent).
+- RecordingController to call calibration for 500–1000 ms at session start and update metrics per frame/segment.
+
+Deliverable
+- Metrics visible in console during dev and retrievable via IPC; calibration reduces false positives in noisy rooms.
+
+Verification
+- Start a session in a noisy room and observe decreasing false positives after calibration.
+- Call `recording:vadMetrics:get` from renderer devtools and verify counters increase appropriately during recording.
+
+### [ ] Step: Settings Surface and Persistence
+Task definition
+- Expose minimal settings in the existing recording UI: enable/disable VAD gating, select mode, and choose engine (if available). Ensure changes persist via config.
+
+Contracts to use/implement
+- Config getters/setters from `src/config.js` for `vad.enabled`, `vad.mode`, `vad.engine`.
+- Recording UI component to read/apply current config.
+
+Deliverable
+- Users can adjust gating behavior without code changes; settings persist across app restarts.
+
+Verification
+- Toggle settings in UI and confirm behavior changes immediately (e.g., more aggressive skipping). Restart app and confirm settings persist.

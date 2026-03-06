@@ -68,7 +68,8 @@ Create `src/services/transcriptionStoreService.js` with full CRUD and search sup
 - Write unit tests in `tests/unit/services/transcriptionStoreService.test.js`
 - Run `npm run lint` and `npm run test:unit`
 
-### [ ] Step: Wire IPC handlers and preload
+### [x] Step: Wire IPC handlers and preload
+<!-- chat-id: 452339b8-9c37-46ee-be7b-fd0e83fbac2f -->
 
 Expose the store service to the renderer via IPC.
 - Instantiate `TranscriptionStoreService` in `src/main/ipcHandlers.js`

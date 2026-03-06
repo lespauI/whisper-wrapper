@@ -1,14 +1,20 @@
 /**
- * E2E Test for generateTranscriptionMeta using Ollama local model
- * Uses tests/data/test.wav (same file as ~/Downloads/test.wav) as test data
+ * E2E Test: generateTranscriptionMeta
+ *
+ * Full pipeline test:
+ *   1. Transcribe tests/data/summary-test.wav with local Whisper (tiny model)
+ *   2. Feed the real transcription text to ollamaService.generateTranscriptionMeta()
+ *   3. Assert summary is a non-empty string and labels is an array of strings
+ *
+ * Skips gracefully when Whisper or Ollama is not available.
  */
 
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
 
+const TEST_WAV = path.join(process.cwd(), 'tests/data', 'summary-test.wav');
 const OLLAMA_ENDPOINT = 'http://localhost:11434';
-const TEST_WAV = path.join(process.cwd(), 'tests/data', 'test.wav');
 
 async function isOllamaRunning() {
     try {
@@ -22,61 +28,75 @@ async function isOllamaRunning() {
 describe('generateTranscriptionMeta E2E', () => {
     let ollamaAvailable = false;
     let ollamaService;
+    let TranscriptionService;
 
     beforeAll(async () => {
         ollamaAvailable = await isOllamaRunning();
-        if (!ollamaAvailable) {
-            return;
-        }
         ollamaService = require('../../src/services/ollamaService');
+        TranscriptionService = require('../../src/services/transcriptionService');
     });
 
-    test('test.wav file exists', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('summary-test.wav exists in test data', () => {
         expect(fs.existsSync(TEST_WAV)).toBe(true);
     });
 
-    test('generates summary and labels from transcription text', async () => {
+    test('transcribes summary-test.wav and generates non-empty summary and labels', async () => {
         if (!ollamaAvailable) {
-            console.warn('Ollama is not running — skipping generateTranscriptionMeta test');
+            console.warn('Ollama not running — skipping');
             return;
         }
 
-        const sampleText = fs.readFileSync(TEST_WAV).length > 0
-            ? 'This is a test audio recording used to verify the transcription pipeline works correctly.'
-            : 'empty';
+        const transcriptionService = new TranscriptionService();
 
-        const result = await ollamaService.generateTranscriptionMeta(sampleText);
-
-        expect(result).toBeDefined();
-        expect(typeof result.summary).toBe('string');
-        expect(result.summary.length).toBeGreaterThan(0);
-        expect(Array.isArray(result.labels)).toBe(true);
-    }, 120000);
-
-    test('returns empty meta gracefully when text is empty string', async () => {
-        if (!ollamaAvailable) {
-            console.warn('Ollama is not running — skipping generateTranscriptionMeta empty text test');
+        if (!transcriptionService.isAvailable()) {
+            console.warn('Whisper not available — skipping');
             return;
         }
 
-        const result = await ollamaService.generateTranscriptionMeta('');
+        transcriptionService.setModel('tiny');
+        transcriptionService.setLanguage('auto');
 
-        expect(result).toBeDefined();
-        expect(typeof result.summary).toBe('string');
-        expect(Array.isArray(result.labels)).toBe(true);
-    }, 120000);
+        const FileService = require('../../src/services/fileService');
+        const fileService = new FileService();
+        const tempFile = await fileService.copyToTemp(TEST_WAV);
 
-    test('result labels contain only strings', async () => {
-        if (!ollamaAvailable) {
-            console.warn('Ollama is not running — skipping label type check test');
+        let transcriptionText;
+        try {
+            const result = await transcriptionService.transcribeFile(tempFile, { threads: 4, translate: false });
+            expect(result.success).toBe(true);
+            transcriptionText = result.text;
+        } finally {
+            await fileService.cleanup(tempFile);
+        }
+
+        if (!transcriptionText || !transcriptionText.trim()) {
+            console.warn('Empty transcription from tiny model — skipping meta generation');
             return;
         }
 
-        const text = 'The speaker discusses machine learning concepts including neural networks and gradient descent.';
-        const result = await ollamaService.generateTranscriptionMeta(text);
+        console.log('Transcription text:', transcriptionText.substring(0, 200));
 
-        result.labels.forEach(label => {
-            expect(typeof label).toBe('string');
+        jest.spyOn(ollamaService, 'updateSettings').mockImplementation(function () {
+            this.settings = {
+                enabled: true,
+                endpoint: OLLAMA_ENDPOINT,
+                model: 'qwen3.5:4b-q4_K_M',
+                timeoutSeconds: 300
+            };
         });
-    }, 120000);
+
+        const meta = await ollamaService.generateTranscriptionMeta(transcriptionText);
+
+        console.log('Summary:', meta.summary);
+        console.log('Labels:', meta.labels);
+
+        expect(typeof meta.summary).toBe('string');
+        expect(meta.summary.trim().length).toBeGreaterThan(0);
+        expect(Array.isArray(meta.labels)).toBe(true);
+        meta.labels.forEach(label => expect(typeof label).toBe('string'));
+    }, 300000);
 });

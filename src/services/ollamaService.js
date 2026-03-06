@@ -864,9 +864,12 @@ class OllamaService {
   async generateTranscriptionMeta(text, model) {
     try {
       this.updateSettings();
+      if (!this.settings.enabled) {
+        return { summary: '', labels: [] };
+      }
       const endpoint = this.settings.endpoint || 'http://localhost:11434';
 
-      const chosenModel = model || 'qwen3.5:9b-q4_K_M';
+      const chosenModel = model || this.settings.model || 'qwen3.5:9b-q4_K_M';
 
       const timeout = (this.settings.timeoutSeconds || 60) * 1000;
 

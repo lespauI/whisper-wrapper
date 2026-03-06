@@ -249,4 +249,53 @@ describe('Ollama Service', () => {
       ollamaService.updateSettings();
     });
   });
+
+  describe('generateTranscriptionMeta', () => {
+    const mockAxios = axios;
+
+    it('parses clean JSON response', async () => {
+      mockAxios.mockResolvedValueOnce({
+        data: { response: '{"summary":"A meeting about budgets","labels":["meeting","budget"]}' }
+      });
+      const result = await ollamaService.generateTranscriptionMeta('text', 'qwen3.5:0.8b');
+      expect(result.summary).toBe('A meeting about budgets');
+      expect(result.labels).toEqual(['meeting', 'budget']);
+    });
+
+    it('strips <think>...</think> blocks before parsing (thinking models)', async () => {
+      mockAxios.mockResolvedValueOnce({
+        data: {
+          response: '<think>\nLet me analyse this transcription carefully.\n</think>\n{"summary":"Budget discussion","labels":["finance","q1"]}'
+        }
+      });
+      const result = await ollamaService.generateTranscriptionMeta('text', 'qwen3.5:0.8b');
+      expect(result.summary).toBe('Budget discussion');
+      expect(result.labels).toEqual(['finance', 'q1']);
+    });
+
+    it('handles multi-block thinking output', async () => {
+      mockAxios.mockResolvedValueOnce({
+        data: {
+          response: '<think>First pass</think><think>Second pass</think>{"summary":"Summary here","labels":["a"]}'
+        }
+      });
+      const result = await ollamaService.generateTranscriptionMeta('text', 'qwen3.5:0.8b');
+      expect(result.summary).toBe('Summary here');
+      expect(result.labels).toEqual(['a']);
+    });
+
+    it('returns empty fallback when no JSON found after stripping thinking', async () => {
+      mockAxios.mockResolvedValueOnce({
+        data: { response: '<think>I cannot produce JSON right now.</think>Sorry, I cannot help.' }
+      });
+      const result = await ollamaService.generateTranscriptionMeta('text', 'qwen3.5:0.8b');
+      expect(result).toEqual({ summary: '', labels: [] });
+    });
+
+    it('returns empty fallback on network error', async () => {
+      mockAxios.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+      const result = await ollamaService.generateTranscriptionMeta('text', 'qwen3.5:0.8b');
+      expect(result).toEqual({ summary: '', labels: [] });
+    });
+  });
 });

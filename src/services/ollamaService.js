@@ -888,7 +888,8 @@ ${truncated}`;
       });
 
       const raw = (response.data && response.data.response) ? response.data.response.trim() : '';
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      const withoutThinking = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      const jsonMatch = withoutThinking.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error('No JSON found in response');
       const parsed = JSON.parse(jsonMatch[0]);
       return {

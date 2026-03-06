@@ -5,3 +5,4 @@ export { FileUploadPage } from './FileUploadPage';
 export { TranscriptionPage } from './TranscriptionPage';
 export { RecordingPage } from './RecordingPage';
 export { TabNavigationPage, type TabName } from './TabNavigationPage';
+export { LibraryPage } from './LibraryPage';

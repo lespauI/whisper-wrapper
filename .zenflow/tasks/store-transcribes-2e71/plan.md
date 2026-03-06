@@ -94,6 +94,9 @@ Add a basic "Library" tab to the renderer for browsing and searching transcripti
 - Run lint: `npm run lint`
 - Manual smoke test: transcribe a file, verify `data/transcriptions/` populated, search in Library tab finds it, confirm `git status` shows no data files staged
 - Write `{@artifacts_path}/report.md`
+<<<<<<< HEAD
 
 ### [x] Step: What model we use for samary?
 <!-- chat-id: 9d04ec54-0f4e-448a-bfb3-d8768dc6ce24 -->
+=======
+>>>>>>> origin/master

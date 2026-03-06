@@ -885,13 +885,16 @@ ${truncated}`;
           model: chosenModel,
           prompt,
           stream: false,
-          options: { temperature: 0.3, num_predict: 256 }
+          format: 'json',
+          options: { temperature: 0.3, num_predict: 512 }
         }
       });
 
       const raw = (response.data && response.data.response) ? response.data.response.trim() : '';
-      const withoutThinking = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-      const jsonMatch = withoutThinking.match(/\{[\s\S]*\}/);
+      let cleaned = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      cleaned = cleaned.replace(/<think>[\s\S]*/i, '').trim();
+      cleaned = cleaned.replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1').trim();
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error('No JSON found in response');
       const parsed = JSON.parse(jsonMatch[0]);
       const result = {

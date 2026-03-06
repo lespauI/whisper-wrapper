@@ -853,6 +853,53 @@ class OllamaService {
   hasActiveRequests() {
     return this.activeRequests.size > 0;
   }
+
+  /**
+   * Generate a summary and labels for a transcription using Ollama.
+   * Falls back gracefully if Ollama is unavailable.
+   * @param {string} text - The transcription text
+   * @param {string} [model] - Optional model override
+   * @returns {Promise<{summary: string, labels: string[]}>}
+   */
+  async generateTranscriptionMeta(text, model) {
+    try {
+      this.updateSettings();
+      const endpoint = this.settings.endpoint || 'http://localhost:11434';
+      const chosenModel = model || this.settings.model || 'gemma3:12b';
+      const timeout = (this.settings.timeoutSeconds || 60) * 1000;
+
+      const truncated = text.length > 4000 ? text.slice(0, 4000) + '...' : text;
+      const prompt = `You are a transcription archivist. Given the transcription below, respond ONLY with valid JSON (no markdown, no extra text) in this exact format:
+{"summary":"2-3 sentence summary of the transcription","labels":["label1","label2","label3"]}
+
+Transcription:
+${truncated}`;
+
+      const response = await axios({
+        method: 'POST',
+        url: `${endpoint}/api/generate`,
+        timeout,
+        data: {
+          model: chosenModel,
+          prompt,
+          stream: false,
+          options: { temperature: 0.3, num_predict: 256 }
+        }
+      });
+
+      const raw = (response.data && response.data.response) ? response.data.response.trim() : '';
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('No JSON found in response');
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        summary: typeof parsed.summary === 'string' ? parsed.summary : '',
+        labels: Array.isArray(parsed.labels) ? parsed.labels.filter(l => typeof l === 'string') : []
+      };
+    } catch (error) {
+      console.error('generateTranscriptionMeta failed, using empty meta:', error.message);
+      return { summary: '', labels: [] };
+    }
+  }
 }
 
 module.exports = new OllamaService();

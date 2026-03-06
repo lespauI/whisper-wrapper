@@ -55,7 +55,8 @@ Save to `{@artifacts_path}/plan.md`. If the feature is trivial and doesn't warra
 
 ---
 
-### [ ] Step: Implement TranscriptionStoreService
+### [x] Step: Implement TranscriptionStoreService
+<!-- chat-id: 695239ea-511e-4c77-aab6-3e69b02d17de -->
 
 Create `src/services/transcriptionStoreService.js` with full CRUD and search support, plus Ollama meta-generation.
 - Implement `store(text, metadata)` — save `.txt`, call Ollama for summary/labels, update `index.json`

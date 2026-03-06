@@ -1,0 +1,228 @@
+/**
+ * Unit tests for TranscriptionStoreService
+ */
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+jest.mock('../../../src/config', () => {
+  const tmpDir = require('os').tmpdir();
+  return {
+    get: jest.fn((key) => {
+      if (key === 'app.dataDirectory') return require('path').join(tmpDir, 'tss-test-data');
+      return undefined;
+    })
+  };
+});
+
+jest.mock('../../../src/services/ollamaService', () => ({
+  generateTranscriptionMeta: jest.fn().mockResolvedValue({
+    summary: 'Test summary.',
+    labels: ['test', 'unit']
+  })
+}));
+
+const ollamaService = require('../../../src/services/ollamaService');
+const TranscriptionStoreService = require('../../../src/services/transcriptionStoreService');
+
+describe('TranscriptionStoreService', () => {
+  let service;
+  let testDataDir;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    testDataDir = path.join(os.tmpdir(), 'tss-test-data', 'transcriptions');
+    if (fs.existsSync(testDataDir)) {
+      fs.rmSync(testDataDir, { recursive: true });
+    }
+    service = new TranscriptionStoreService();
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(testDataDir)) {
+      fs.rmSync(testDataDir, { recursive: true });
+    }
+  });
+
+  describe('store()', () => {
+    it('saves a .txt file and updates index.json', async () => {
+      const entry = await service.store('Hello world transcription', { sourceFile: 'audio.wav' });
+
+      expect(entry.id).toBeDefined();
+      expect(entry.summary).toBe('Test summary.');
+      expect(entry.labels).toEqual(['test', 'unit']);
+      expect(entry.wordCount).toBe(3);
+
+      const txtPath = path.join(testDataDir, `${entry.id}.txt`);
+      expect(fs.existsSync(txtPath)).toBe(true);
+      expect(fs.readFileSync(txtPath, 'utf8')).toBe('Hello world transcription');
+
+      const indexPath = path.join(testDataDir, 'index.json');
+      const idx = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+      expect(idx).toHaveLength(1);
+      expect(idx[0].id).toBe(entry.id);
+    });
+
+    it('stores transcription even when Ollama fails (graceful fallback)', async () => {
+      ollamaService.generateTranscriptionMeta.mockRejectedValueOnce(new Error('Ollama down'));
+
+      const entry = await service.store('Some text', {});
+
+      expect(entry.id).toBeDefined();
+      expect(entry.summary).toBe('');
+      expect(entry.labels).toEqual([]);
+
+      const txtPath = path.join(testDataDir, `${entry.id}.txt`);
+      expect(fs.existsSync(txtPath)).toBe(true);
+    });
+
+    it('uses title from metadata when provided', async () => {
+      const entry = await service.store('Text', { title: 'My Custom Title' });
+      expect(entry.title).toBe('My Custom Title');
+    });
+
+    it('derives title from sourceFile when no title given', async () => {
+      const entry = await service.store('Text', { sourceFile: '/path/to/meeting.wav' });
+      expect(entry.title).toBe('meeting.wav');
+    });
+  });
+
+  describe('list()', () => {
+    let e1, e2, e3;
+
+    beforeEach(async () => {
+      ollamaService.generateTranscriptionMeta
+        .mockResolvedValueOnce({ summary: 'Alpha summary', labels: ['alpha', 'meeting'] })
+        .mockResolvedValueOnce({ summary: 'Beta summary', labels: ['beta'] })
+        .mockResolvedValueOnce({ summary: 'Gamma summary', labels: ['alpha', 'beta'] });
+
+      e1 = await service.store('alpha text content', { title: 'Alpha', sourceFile: 'alpha.wav' });
+      e2 = await service.store('beta text content', { title: 'Beta', sourceFile: 'beta.wav' });
+      e3 = await service.store('gamma text content', { title: 'Gamma', sourceFile: 'gamma.wav' });
+    });
+
+    it('returns all entries sorted by date descending with no filters', () => {
+      const results = service.list();
+      expect(results).toHaveLength(3);
+      const ids = results.map(r => r.id);
+      expect(ids).toContain(e1.id);
+      expect(ids).toContain(e2.id);
+      expect(ids).toContain(e3.id);
+      for (let i = 0; i < results.length - 1; i++) {
+        expect(new Date(results[i].date).getTime()).toBeGreaterThanOrEqual(new Date(results[i + 1].date).getTime());
+      }
+    });
+
+    it('filters by query string (matches title)', () => {
+      const results = service.list({ query: 'alpha.wav' });
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe(e1.id);
+    });
+
+    it('filters by query string (matches summary)', () => {
+      const results = service.list({ query: 'Beta summary' });
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe(e2.id);
+    });
+
+    it('filters by label', () => {
+      const results = service.list({ labels: ['alpha'] });
+      expect(results).toHaveLength(2);
+      const ids = results.map(r => r.id);
+      expect(ids).toContain(e1.id);
+      expect(ids).toContain(e3.id);
+    });
+
+    it('filters by multiple labels (AND logic)', () => {
+      const results = service.list({ labels: ['alpha', 'beta'] });
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe(e3.id);
+    });
+
+    it('filters by dateFrom and dateTo', async () => {
+      const before = new Date(Date.now() - 2000).toISOString();
+      const after = new Date(Date.now() + 2000).toISOString();
+      const results = service.list({ dateFrom: before, dateTo: after });
+      expect(results).toHaveLength(3);
+    });
+
+    it('returns empty array when nothing matches', () => {
+      const results = service.list({ query: 'nonexistent_xyz' });
+      expect(results).toHaveLength(0);
+    });
+  });
+
+  describe('get()', () => {
+    it('returns entry and text for a valid id', async () => {
+      const entry = await service.store('Full content here', {});
+      const result = await service.get(entry.id);
+      expect(result).not.toBeNull();
+      expect(result.entry.id).toBe(entry.id);
+      expect(result.text).toBe('Full content here');
+    });
+
+    it('returns null for unknown id', async () => {
+      const result = await service.get('non-existent-id');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('delete()', () => {
+    it('removes the txt file and index entry', async () => {
+      const entry = await service.store('Delete me', {});
+      const txtPath = path.join(testDataDir, `${entry.id}.txt`);
+      expect(fs.existsSync(txtPath)).toBe(true);
+
+      const deleted = await service.delete(entry.id);
+      expect(deleted).toBe(true);
+      expect(fs.existsSync(txtPath)).toBe(false);
+      expect(service.list()).toHaveLength(0);
+    });
+
+    it('returns false for unknown id', async () => {
+      const deleted = await service.delete('does-not-exist');
+      expect(deleted).toBe(false);
+    });
+  });
+
+  describe('reindex()', () => {
+    it('rebuilds index from txt files on disk', async () => {
+      const entry = await service.store('Reindex me', {});
+
+      const count = await service.reindex();
+      expect(count).toBe(1);
+      expect(service.index[0].id).toBe(entry.id);
+    });
+
+    it('preserves existing metadata for known ids', async () => {
+      const entry = await service.store('Keep my meta', {});
+      const originalTitle = entry.title;
+      const originalSummary = entry.summary;
+
+      await service.reindex();
+      const found = service.index.find(e => e.id === entry.id);
+      expect(found.title).toBe(originalTitle);
+      expect(found.summary).toBe(originalSummary);
+    });
+
+    it('creates stub entry for orphaned txt files (no existing index entry)', async () => {
+      const id = 'orphan-id-1234';
+      const txtPath = path.join(testDataDir, `${id}.txt`);
+      if (!fs.existsSync(testDataDir)) fs.mkdirSync(testDataDir, { recursive: true });
+      fs.writeFileSync(txtPath, 'orphan transcription content', 'utf8');
+
+      service.index = [];
+
+      const count = await service.reindex();
+      expect(count).toBe(1);
+      expect(service.index[0].id).toBe(id);
+      expect(service.index[0].title).toContain(id.slice(0, 8));
+    });
+
+    it('returns 0 when no txt files present', async () => {
+      const count = await service.reindex();
+      expect(count).toBe(0);
+    });
+  });
+});

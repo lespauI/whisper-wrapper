@@ -20,7 +20,8 @@ If you are blocked and need user clarification, mark the current step with `[!]`
 
 ## Workflow Steps
 
-### [ ] Step: Technical Specification
+### [x] Step: Technical Specification
+<!-- chat-id: b3007786-e965-4425-aa88-74a88151a73e -->
 
 Assess the task's difficulty, as underestimating it leads to poor outcomes.
 - easy: Straightforward implementation, trivial bug fix or feature
@@ -54,16 +55,38 @@ Save to `{@artifacts_path}/plan.md`. If the feature is trivial and doesn't warra
 
 ---
 
-### [ ] Step: Implementation
+### [ ] Step: Implement TranscriptionStoreService
 
-Implement the task according to the technical specification and general engineering best practices.
+Create `src/services/transcriptionStoreService.js` with full CRUD and search support, plus Ollama meta-generation.
+- Implement `store(text, metadata)` — save `.txt`, call Ollama for summary/labels, update `index.json`
+- Implement `list(filters)` — in-memory search by query, date range, labels
+- Implement `get(id)` — return index entry + file contents
+- Implement `delete(id)` — remove file + index entry
+- Implement `reindex()` — rebuild index from disk
+- Add `generateTranscriptionMeta(text)` method to `OllamaService` (structured prompt → summary + labels; graceful fallback)
+- Write unit tests in `tests/unit/services/transcriptionStoreService.test.js`
+- Run `npm run lint` and `npm run test:unit`
 
-1. Break the task into steps where possible.
-2. Implement the required changes in the codebase
-3. If relevant, write unit tests alongside each change.
-4. Run relevant tests and linters in the end of each step.
-5. Perform basic manual verification if applicable.
-6. After completion, write a report to `{@artifacts_path}/report.md` describing:
-   - What was implemented
-   - How the solution was tested
-   - The biggest issues or challenges encountered
+### [ ] Step: Wire IPC handlers and preload
+
+Expose the store service to the renderer via IPC.
+- Instantiate `TranscriptionStoreService` in `src/main/ipcHandlers.js`
+- Register handlers: `transcriptions:store`, `transcriptions:list`, `transcriptions:get`, `transcriptions:delete`, `transcriptions:reindex`
+- Hook auto-store into `handleTranscribeFile`, `handleTranscribeAudio`, and recording stop path
+- Expose `window.electronAPI.transcriptions.*` in `src/main/preload.js`
+- Run `npm run lint`
+
+### [ ] Step: Add Library UI tab
+
+Add a basic "Library" tab to the renderer for browsing and searching transcriptions.
+- Add Library tab button and panel to `src/renderer/index.html`
+- Create `src/renderer/controllers/libraryController.js` with search input, results list, detail view
+- Wire to `window.electronAPI.transcriptions.list` / `.get` / `.delete`
+- Run `npm run lint`
+
+### [ ] Step: Final verification and report
+
+- Run full test suite: `npm run test:unit`
+- Run lint: `npm run lint`
+- Manual smoke test: transcribe a file, verify `data/transcriptions/` populated, search in Library tab finds it, confirm `git status` shows no data files staged
+- Write `{@artifacts_path}/report.md`

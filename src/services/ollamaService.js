@@ -865,11 +865,9 @@ class OllamaService {
     try {
       this.updateSettings();
       const endpoint = this.settings.endpoint || 'http://localhost:11434';
-<<<<<<< HEAD
+
       const chosenModel = model || 'qwen3.5:9b-q4_K_M';
-=======
-      const chosenModel = model || this.settings.model || 'gemma3:12b';
->>>>>>> origin/master
+
       const timeout = (this.settings.timeoutSeconds || 60) * 1000;
 
       const truncated = text.length > 4000 ? text.slice(0, 4000) + '...' : text;

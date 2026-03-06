@@ -2,6 +2,7 @@ const IPCHandlers = require('../../src/main/ipcHandlers');
 const { dialog, shell } = require('electron');
 const TranscriptionService = require('../../src/services/transcriptionService');
 const FileService = require('../../src/services/fileService');
+const TranscriptionStoreService = require('../../src/services/transcriptionStoreService');
 const config = require('../../src/config');
 const fs = require('fs');
 
@@ -21,6 +22,7 @@ jest.mock('electron', () => ({
 
 jest.mock('../../src/services/transcriptionService');
 jest.mock('../../src/services/fileService');
+jest.mock('../../src/services/transcriptionStoreService');
 jest.mock('../../src/config');
 jest.mock('fs', () => ({
     writeFileSync: jest.fn(),
@@ -48,6 +50,7 @@ describe('IPCHandlers', () => {
     let handlers;
     let mockTranscriptionService;
     let mockFileService;
+    let mockTranscriptionStoreService;
     let originalConsoleError;
 
     beforeEach(() => {
@@ -73,8 +76,18 @@ describe('IPCHandlers', () => {
             cleanup: jest.fn()
         };
 
+        mockTranscriptionStoreService = {
+            store: jest.fn(),
+            list: jest.fn().mockReturnValue([]),
+            get: jest.fn(),
+            update: jest.fn(),
+            delete: jest.fn(),
+            reindex: jest.fn()
+        };
+
         TranscriptionService.mockImplementation(() => mockTranscriptionService);
         FileService.mockImplementation(() => mockFileService);
+        TranscriptionStoreService.mockImplementation(() => mockTranscriptionStoreService);
 
         config.getSimplified.mockReturnValue({
             model: 'base',
@@ -468,6 +481,75 @@ describe('IPCHandlers', () => {
             const result = await handlers.handleSaveFile(null, 'content', 'file.txt');
 
             expect(result).toEqual({ canceled: true });
+        });
+    });
+
+    describe('handleTranscriptionsUpdate', () => {
+        it('returns success with updated entry when valid id and changes are provided', async () => {
+            const mockEntry = { id: 'abc-123', title: 'New Title', labels: [] };
+            mockTranscriptionStoreService.update.mockResolvedValue(mockEntry);
+
+            const result = await handlers.handleTranscriptionsUpdate(null, { id: 'abc-123', changes: { title: 'New Title' } });
+
+            expect(mockTranscriptionStoreService.update).toHaveBeenCalledWith('abc-123', { title: 'New Title' });
+            expect(result).toEqual({ success: true, entry: mockEntry });
+        });
+
+        it('updates labels when provided', async () => {
+            const mockEntry = { id: 'abc-123', title: 'T', labels: ['a', 'b'] };
+            mockTranscriptionStoreService.update.mockResolvedValue(mockEntry);
+
+            const result = await handlers.handleTranscriptionsUpdate(null, { id: 'abc-123', changes: { labels: ['a', 'b'] } });
+
+            expect(mockTranscriptionStoreService.update).toHaveBeenCalledWith('abc-123', { labels: ['a', 'b'] });
+            expect(result.success).toBe(true);
+        });
+
+        it('strips unknown keys from changes (whitelist enforcement)', async () => {
+            const mockEntry = { id: 'abc-123', title: 'T', labels: [] };
+            mockTranscriptionStoreService.update.mockResolvedValue(mockEntry);
+
+            await handlers.handleTranscriptionsUpdate(null, {
+                id: 'abc-123',
+                changes: { title: 'Safe', malicious: 'payload', __proto__: 'bad' }
+            });
+
+            expect(mockTranscriptionStoreService.update).toHaveBeenCalledWith('abc-123', { title: 'Safe' });
+        });
+
+        it('returns error when id is missing', async () => {
+            const result = await handlers.handleTranscriptionsUpdate(null, { changes: { title: 'X' } });
+
+            expect(result).toEqual({ success: false, error: 'Invalid id' });
+            expect(mockTranscriptionStoreService.update).not.toHaveBeenCalled();
+        });
+
+        it('returns error when id is not a string', async () => {
+            const result = await handlers.handleTranscriptionsUpdate(null, { id: 42, changes: { title: 'X' } });
+
+            expect(result).toEqual({ success: false, error: 'Invalid id' });
+        });
+
+        it('returns error when changes is missing', async () => {
+            const result = await handlers.handleTranscriptionsUpdate(null, { id: 'abc-123' });
+
+            expect(result).toEqual({ success: false, error: 'Invalid changes' });
+        });
+
+        it('returns not-found error when service returns null', async () => {
+            mockTranscriptionStoreService.update.mockResolvedValue(null);
+
+            const result = await handlers.handleTranscriptionsUpdate(null, { id: 'abc-123', changes: { title: 'X' } });
+
+            expect(result).toEqual({ success: false, error: 'Not found' });
+        });
+
+        it('returns error when service throws', async () => {
+            mockTranscriptionStoreService.update.mockRejectedValue(new Error('disk full'));
+
+            const result = await handlers.handleTranscriptionsUpdate(null, { id: 'abc-123', changes: { title: 'X' } });
+
+            expect(result).toEqual({ success: false, error: 'disk full' });
         });
     });
 

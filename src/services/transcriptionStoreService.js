@@ -143,6 +143,21 @@ class TranscriptionStoreService {
   }
 
   /**
+   * Update a transcription's mutable fields (title, labels).
+   * @param {string} id
+   * @param {Object} changes - { title?, labels? }
+   * @returns {Promise<Object|null>} Updated entry or null if not found.
+   */
+  async update(id, changes = {}) {
+    const entry = this.index.find(e => e.id === id);
+    if (!entry) return null;
+    if (changes.title !== undefined) entry.title = String(changes.title).trim() || entry.title;
+    if (changes.labels !== undefined) entry.labels = Array.isArray(changes.labels) ? changes.labels : entry.labels;
+    this._saveIndex();
+    return entry;
+  }
+
+  /**
    * Delete a transcription by id.
    * @param {string} id
    * @returns {Promise<boolean>} True if found and deleted.

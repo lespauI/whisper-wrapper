@@ -509,13 +509,35 @@
                                     <div id="library-detail-content" class="hidden">
                                         <div class="library-detail-header">
                                             <div class="library-detail-meta">
-                                                <h4 id="library-detail-title"></h4>
+                                                <div class="library-title-row">
+                                                    <h4 id="library-detail-title"></h4>
+                                                    <button id="library-rename-btn" class="btn-icon" title="Rename">✏️</button>
+                                                </div>
+                                                <div id="library-rename-form" class="library-rename-form hidden">
+                                                    <input id="library-rename-input" class="form-control" type="text" placeholder="Enter new title…">
+                                                    <button id="library-rename-save-btn" class="btn btn-primary btn-small">Save</button>
+                                                    <button id="library-rename-cancel-btn" class="btn btn-secondary btn-small">Cancel</button>
+                                                </div>
                                                 <div class="library-detail-info">
                                                     <span id="library-detail-date" class="library-meta-tag"></span>
                                                     <span id="library-detail-source" class="library-meta-tag"></span>
                                                     <span id="library-detail-words" class="library-meta-tag"></span>
                                                 </div>
-                                                <div id="library-detail-labels" class="library-labels"></div>
+                                                <div class="library-labels-row">
+                                                    <div id="library-detail-labels" class="library-labels"></div>
+                                                    <button id="library-edit-tags-btn" class="btn-icon" title="Edit tags">🏷️</button>
+                                                </div>
+                                                <div id="library-tags-form" class="library-tags-form hidden">
+                                                    <div id="library-tags-list" class="library-tags-edit-list"></div>
+                                                    <div class="library-tags-add-row">
+                                                        <input id="library-tag-input" class="form-control" type="text" placeholder="Add tag…">
+                                                        <button id="library-tag-add-btn" class="btn btn-secondary btn-small">Add</button>
+                                                    </div>
+                                                    <div class="library-tags-actions">
+                                                        <button id="library-tags-save-btn" class="btn btn-primary btn-small">Save tags</button>
+                                                        <button id="library-tags-cancel-btn" class="btn btn-secondary btn-small">Cancel</button>
+                                                    </div>
+                                                </div>
                                             </div>
                                             <div class="library-detail-actions">
                                                 <button id="library-copy-btn" class="btn btn-secondary btn-small">📋 Copy</button>

@@ -69,6 +69,7 @@ class IPCHandlers {
         ipcMain.handle('transcriptions:store', this.handleTranscriptionsStore.bind(this));
         ipcMain.handle('transcriptions:list', this.handleTranscriptionsList.bind(this));
         ipcMain.handle('transcriptions:get', this.handleTranscriptionsGet.bind(this));
+        ipcMain.handle('transcriptions:update', this.handleTranscriptionsUpdate.bind(this));
         ipcMain.handle('transcriptions:delete', this.handleTranscriptionsDelete.bind(this));
         ipcMain.handle('transcriptions:reindex', this.handleTranscriptionsReindex.bind(this));
     }
@@ -822,6 +823,24 @@ class IPCHandlers {
         } catch (error) {
             console.error('Error getting transcription:', error);
             return { entry: null, text: '' };
+        }
+    }
+
+    async handleTranscriptionsUpdate(event, { id, changes } = {}) {
+        if (!id || typeof id !== 'string') return { success: false, error: 'Invalid id' };
+        if (!changes || typeof changes !== 'object') return { success: false, error: 'Invalid changes' };
+        const allowedKeys = new Set(['title', 'labels']);
+        const sanitized = {};
+        for (const key of Object.keys(changes)) {
+            if (allowedKeys.has(key)) sanitized[key] = changes[key];
+        }
+        try {
+            const entry = await this.transcriptionStoreService.update(id, sanitized);
+            if (!entry) return { success: false, error: 'Not found' };
+            return { success: true, entry };
+        } catch (error) {
+            console.error('Error updating transcription:', error);
+            return { success: false, error: error.message };
         }
     }
 

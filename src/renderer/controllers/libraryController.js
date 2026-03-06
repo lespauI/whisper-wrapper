@@ -2,6 +2,7 @@ class LibraryController {
     constructor() {
         this.currentEntryId = null;
         this.entries = [];
+        this._pendingTags = [];
 
         this.searchInput = document.getElementById('library-search-input');
         this.dateFrom = document.getElementById('library-date-from');
@@ -22,6 +23,20 @@ class LibraryController {
         this.detailText = document.getElementById('library-detail-text');
         this.copyBtn = document.getElementById('library-copy-btn');
         this.deleteBtn = document.getElementById('library-delete-btn');
+
+        this.renameBtn = document.getElementById('library-rename-btn');
+        this.renameForm = document.getElementById('library-rename-form');
+        this.renameInput = document.getElementById('library-rename-input');
+        this.renameSaveBtn = document.getElementById('library-rename-save-btn');
+        this.renameCancelBtn = document.getElementById('library-rename-cancel-btn');
+
+        this.editTagsBtn = document.getElementById('library-edit-tags-btn');
+        this.tagsForm = document.getElementById('library-tags-form');
+        this.tagsList = document.getElementById('library-tags-list');
+        this.tagInput = document.getElementById('library-tag-input');
+        this.tagAddBtn = document.getElementById('library-tag-add-btn');
+        this.tagsSaveBtn = document.getElementById('library-tags-save-btn');
+        this.tagsCancelBtn = document.getElementById('library-tags-cancel-btn');
 
         this.init();
     }
@@ -46,6 +61,131 @@ class LibraryController {
         }
         if (this.deleteBtn) {
             this.deleteBtn.addEventListener('click', () => this.deleteCurrentEntry());
+        }
+
+        if (this.renameBtn) {
+            this.renameBtn.addEventListener('click', () => this.openRenameForm());
+        }
+        if (this.renameSaveBtn) {
+            this.renameSaveBtn.addEventListener('click', () => this.saveRename());
+        }
+        if (this.renameCancelBtn) {
+            this.renameCancelBtn.addEventListener('click', () => this.closeRenameForm());
+        }
+        if (this.renameInput) {
+            this.renameInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') this.saveRename();
+                if (e.key === 'Escape') this.closeRenameForm();
+            });
+        }
+
+        if (this.editTagsBtn) {
+            this.editTagsBtn.addEventListener('click', () => this.openTagsForm());
+        }
+        if (this.tagAddBtn) {
+            this.tagAddBtn.addEventListener('click', () => this.addPendingTag());
+        }
+        if (this.tagInput) {
+            this.tagInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') this.addPendingTag();
+                if (e.key === 'Escape') this.closeTagsForm();
+            });
+        }
+        if (this.tagsSaveBtn) {
+            this.tagsSaveBtn.addEventListener('click', () => this.saveTags());
+        }
+        if (this.tagsCancelBtn) {
+            this.tagsCancelBtn.addEventListener('click', () => this.closeTagsForm());
+        }
+    }
+
+    openRenameForm() {
+        if (!this.renameForm || !this.renameInput || !this.detailTitle) return;
+        this.renameInput.value = this.detailTitle.textContent;
+        this.renameForm.classList.remove('hidden');
+        this.renameInput.focus();
+        this.renameInput.select();
+    }
+
+    closeRenameForm() {
+        if (this.renameForm) this.renameForm.classList.add('hidden');
+    }
+
+    async saveRename() {
+        if (!this.currentEntryId || !this.renameInput) return;
+        const newTitle = this.renameInput.value.trim();
+        if (!newTitle) return;
+        try {
+            const result = await window.electronAPI.transcriptions.update(this.currentEntryId, { title: newTitle });
+            if (result && result.success) {
+                if (this.detailTitle) this.detailTitle.textContent = newTitle;
+                this.closeRenameForm();
+                await this.search();
+            }
+        } catch (err) {
+            this.closeRenameForm();
+        }
+    }
+
+    openTagsForm() {
+        if (!this.tagsForm) return;
+        const entry = this.entries.find(e => e.id === this.currentEntryId);
+        this._pendingTags = entry ? [...(entry.labels || [])] : [];
+        this.renderPendingTags();
+        this.tagsForm.classList.remove('hidden');
+        if (this.tagInput) {
+            this.tagInput.value = '';
+            this.tagInput.focus();
+        }
+    }
+
+    closeTagsForm() {
+        if (this.tagsForm) this.tagsForm.classList.add('hidden');
+        this._pendingTags = [];
+    }
+
+    renderPendingTags() {
+        if (!this.tagsList) return;
+        this.tagsList.innerHTML = this._pendingTags.map((tag, i) =>
+            `<span class="library-tag-edit-item">${this.escapeHtml(tag)}<button class="library-tag-remove-btn" data-index="${i}" title="Remove">×</button></span>`
+        ).join('');
+        this.tagsList.querySelectorAll('.library-tag-remove-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.index, 10);
+                this._pendingTags.splice(idx, 1);
+                this.renderPendingTags();
+            });
+        });
+    }
+
+    addPendingTag() {
+        if (!this.tagInput) return;
+        const val = this.tagInput.value.trim();
+        if (!val) return;
+        if (!this._pendingTags.includes(val)) {
+            this._pendingTags.push(val);
+            this.renderPendingTags();
+        }
+        this.tagInput.value = '';
+        this.tagInput.focus();
+    }
+
+    async saveTags() {
+        if (!this.currentEntryId) return;
+        try {
+            const result = await window.electronAPI.transcriptions.update(this.currentEntryId, { labels: this._pendingTags });
+            if (result && result.success) {
+                if (this.detailLabels) {
+                    const labels = this._pendingTags.map(l => `<span class="library-label">${this.escapeHtml(l)}</span>`).join('');
+                    this.detailLabels.innerHTML = labels;
+                }
+                const entry = this.entries.find(e => e.id === this.currentEntryId);
+                if (entry) entry.labels = [...this._pendingTags];
+                this.closeTagsForm();
+                await this.search();
+            }
+        } catch (err) {
+            this.closeTagsForm();
         }
     }
 
@@ -146,6 +286,8 @@ class LibraryController {
         if (!window.electronAPI || !window.electronAPI.transcriptions) return;
 
         this.currentEntryId = id;
+        this.closeRenameForm();
+        this.closeTagsForm();
 
         try {
             const result = await window.electronAPI.transcriptions.get(id);

@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         store: (text, metadata) => ipcRenderer.invoke('transcriptions:store', { text, metadata }),
         list: (filters) => ipcRenderer.invoke('transcriptions:list', filters || {}),
         get: (id) => ipcRenderer.invoke('transcriptions:get', { id }),
+        update: (id, changes) => ipcRenderer.invoke('transcriptions:update', { id, changes }),
         delete: (id) => ipcRenderer.invoke('transcriptions:delete', { id }),
         reindex: () => ipcRenderer.invoke('transcriptions:reindex')
     }

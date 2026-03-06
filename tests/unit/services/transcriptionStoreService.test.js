@@ -186,6 +186,67 @@ describe('TranscriptionStoreService', () => {
     });
   });
 
+  describe('update()', () => {
+    it('updates the title of an existing entry', async () => {
+      const entry = await service.store('Some text', { title: 'Old Title' });
+      const updated = await service.update(entry.id, { title: 'New Title' });
+
+      expect(updated).not.toBeNull();
+      expect(updated.title).toBe('New Title');
+
+      const indexPath = path.join(testDataDir, 'index.json');
+      const idx = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+      expect(idx[0].title).toBe('New Title');
+    });
+
+    it('updates the labels of an existing entry', async () => {
+      const entry = await service.store('Some text', {});
+      const updated = await service.update(entry.id, { labels: ['foo', 'bar'] });
+
+      expect(updated.labels).toEqual(['foo', 'bar']);
+
+      const indexPath = path.join(testDataDir, 'index.json');
+      const idx = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+      expect(idx[0].labels).toEqual(['foo', 'bar']);
+    });
+
+    it('updates both title and labels together', async () => {
+      const entry = await service.store('Some text', { title: 'Original' });
+      const updated = await service.update(entry.id, { title: 'Renamed', labels: ['x'] });
+
+      expect(updated.title).toBe('Renamed');
+      expect(updated.labels).toEqual(['x']);
+    });
+
+    it('ignores whitespace-only title and keeps the original', async () => {
+      const entry = await service.store('Some text', { title: 'Keep Me' });
+      const updated = await service.update(entry.id, { title: '   ' });
+
+      expect(updated.title).toBe('Keep Me');
+    });
+
+    it('ignores labels if value is not an array', async () => {
+      const entry = await service.store('Some text', {});
+      const originalLabels = [...entry.labels];
+      const updated = await service.update(entry.id, { labels: 'not-an-array' });
+
+      expect(updated.labels).toEqual(originalLabels);
+    });
+
+    it('returns null for an unknown id', async () => {
+      const result = await service.update('non-existent-id', { title: 'X' });
+      expect(result).toBeNull();
+    });
+
+    it('does not modify the txt content file', async () => {
+      const entry = await service.store('Original text', {});
+      const txtPath = path.join(testDataDir, `${entry.id}.txt`);
+      await service.update(entry.id, { title: 'New Title' });
+
+      expect(fs.readFileSync(txtPath, 'utf8')).toBe('Original text');
+    });
+  });
+
   describe('reindex()', () => {
     it('rebuilds index from txt files on disk', async () => {
       const entry = await service.store('Reindex me', {});

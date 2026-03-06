@@ -2654,3 +2654,213 @@ textarea.disabled {
         backdrop-filter: blur(8px); /* Enhanced text area blur */
     }
 }
+
+/* Library tab */
+.library-section {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 1rem;
+}
+
+.library-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.library-header h3 {
+    margin: 0;
+    color: white;
+}
+
+.library-search {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.library-search-filters {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.library-search-filters span {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+}
+
+.library-body {
+    display: flex;
+    gap: 1rem;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.library-list-panel {
+    flex: 0 0 35%;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.library-results {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.library-empty {
+    color: rgba(255, 255, 255, 0.6);
+    text-align: center;
+    padding: 2rem 1rem;
+    font-size: 0.9rem;
+}
+
+.library-error {
+    color: #fc8181;
+}
+
+.library-result-item {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    padding: 0.75rem;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.library-result-item:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.library-result-item.active {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+.library-result-title {
+    font-weight: 600;
+    color: white;
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+    word-break: break-word;
+}
+
+.library-result-meta {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.25rem;
+}
+
+.library-result-summary {
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+    line-height: 1.4;
+}
+
+.library-meta-tag {
+    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.1);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+}
+
+.library-labels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+}
+
+.library-label {
+    font-size: 0.75rem;
+    background: rgba(99, 179, 237, 0.25);
+    color: #90cdf4;
+    padding: 0.1rem 0.5rem;
+    border-radius: 12px;
+    border: 1px solid rgba(99, 179, 237, 0.3);
+}
+
+.library-detail-panel {
+    flex: 1;
+    overflow-y: auto;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.library-detail-empty {
+    color: rgba(255, 255, 255, 0.5);
+    text-align: center;
+    padding: 2rem;
+    margin: auto;
+}
+
+.library-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.library-detail-meta h4 {
+    margin: 0 0 0.5rem;
+    color: white;
+}
+
+.library-detail-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+}
+
+.library-detail-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.library-detail-summary {
+    margin-bottom: 1rem;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.library-detail-summary strong,
+.library-detail-text-section strong {
+    display: block;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.4rem;
+}
+
+.library-detail-text {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 0.75rem;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: inherit;
+}

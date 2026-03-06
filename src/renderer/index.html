@@ -202,6 +202,9 @@
                     <button class="tab-btn" data-tab="transcription">
                         📝 Transcription
                     </button>
+                    <button class="tab-btn" data-tab="library">
+                        📚 Library
+                    </button>
                 </nav>
 
                 <!-- Tab Content -->
@@ -477,6 +480,61 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Library Tab -->
+                    <div id="library-tab" class="tab-pane">
+                        <div class="library-section">
+                            <div class="library-header">
+                                <h3>Transcription Library</h3>
+                                <button id="library-reindex-btn" class="btn btn-secondary btn-small" title="Rebuild index from disk">🔄 Reindex</button>
+                            </div>
+                            <div class="library-search">
+                                <input type="text" id="library-search-input" class="form-control" placeholder="Search transcriptions by keyword, label, or source file...">
+                                <div class="library-search-filters">
+                                    <input type="date" id="library-date-from" class="form-control" title="From date">
+                                    <span>to</span>
+                                    <input type="date" id="library-date-to" class="form-control" title="To date">
+                                    <button id="library-search-btn" class="btn btn-primary btn-small">Search</button>
+                                    <button id="library-clear-btn" class="btn btn-secondary btn-small">Clear</button>
+                                </div>
+                            </div>
+                            <div class="library-body">
+                                <div class="library-list-panel">
+                                    <div id="library-results" class="library-results">
+                                        <div class="library-empty">No transcriptions found. Transcribe a file or recording to get started.</div>
+                                    </div>
+                                </div>
+                                <div class="library-detail-panel" id="library-detail-panel">
+                                    <div id="library-detail-empty" class="library-detail-empty">Select a transcription to view details.</div>
+                                    <div id="library-detail-content" class="hidden">
+                                        <div class="library-detail-header">
+                                            <div class="library-detail-meta">
+                                                <h4 id="library-detail-title"></h4>
+                                                <div class="library-detail-info">
+                                                    <span id="library-detail-date" class="library-meta-tag"></span>
+                                                    <span id="library-detail-source" class="library-meta-tag"></span>
+                                                    <span id="library-detail-words" class="library-meta-tag"></span>
+                                                </div>
+                                                <div id="library-detail-labels" class="library-labels"></div>
+                                            </div>
+                                            <div class="library-detail-actions">
+                                                <button id="library-copy-btn" class="btn btn-secondary btn-small">📋 Copy</button>
+                                                <button id="library-delete-btn" class="btn btn-danger btn-small">🗑️ Delete</button>
+                                            </div>
+                                        </div>
+                                        <div class="library-detail-summary">
+                                            <strong>Summary:</strong>
+                                            <p id="library-detail-summary-text"></p>
+                                        </div>
+                                        <div class="library-detail-text-section">
+                                            <strong>Transcription:</strong>
+                                            <pre id="library-detail-text" class="library-detail-text"></pre>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>
@@ -726,6 +784,8 @@
     <!-- Load controller scripts using proper relative paths -->
     <!-- Legacy refinement controller (will be refactored later) -->
     <script src="controllers/refinementController.js"></script>
+    <!-- Library controller -->
+    <script src="controllers/libraryController.js"></script>
     
     <!-- New modular application -->
     <script type="module" src="index.js"></script>

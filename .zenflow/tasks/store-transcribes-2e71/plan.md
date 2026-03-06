@@ -78,7 +78,8 @@ Expose the store service to the renderer via IPC.
 - Expose `window.electronAPI.transcriptions.*` in `src/main/preload.js`
 - Run `npm run lint`
 
-### [ ] Step: Add Library UI tab
+### [x] Step: Add Library UI tab
+<!-- chat-id: 7b57c3ce-67df-4cd6-ab67-4449e20a20af -->
 
 Add a basic "Library" tab to the renderer for browsing and searching transcriptions.
 - Add Library tab button and panel to `src/renderer/index.html`

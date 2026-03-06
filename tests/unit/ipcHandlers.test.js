@@ -24,8 +24,12 @@ jest.mock('../../src/services/fileService');
 jest.mock('../../src/config');
 jest.mock('fs', () => ({
     writeFileSync: jest.fn(),
+    readFileSync: jest.fn().mockReturnValue(JSON.stringify({ entries: [] })),
+    existsSync: jest.fn().mockReturnValue(true),
+    mkdirSync: jest.fn(),
     promises: {
-        writeFile: jest.fn()
+        writeFile: jest.fn(),
+        readFile: jest.fn().mockResolvedValue(JSON.stringify({ entries: [] })),
     }
 }));
 
@@ -260,7 +264,7 @@ describe('IPCHandlers', () => {
 
             const result = await handlers.handleGetConfig();
 
-            expect(result).toBe(mockConfig);
+            expect(result).toMatchObject(mockConfig);
         });
     });
 

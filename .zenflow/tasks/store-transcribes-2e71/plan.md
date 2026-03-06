@@ -87,7 +87,8 @@ Add a basic "Library" tab to the renderer for browsing and searching transcripti
 - Wire to `window.electronAPI.transcriptions.list` / `.get` / `.delete`
 - Run `npm run lint`
 
-### [ ] Step: Final verification and report
+### [x] Step: Final verification and report
+<!-- chat-id: 3229db8f-1725-4590-9729-7a3f499643b0 -->
 
 - Run full test suite: `npm run test:unit`
 - Run lint: `npm run lint`

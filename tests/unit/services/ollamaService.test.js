@@ -257,6 +257,7 @@ describe('Ollama Service', () => {
       mockAxios.mockResolvedValueOnce({
         data: { response: '{"summary":"A meeting about budgets","labels":["meeting","budget"]}' }
       });
+      mockAxios.mockResolvedValueOnce({ data: {} });
       const result = await ollamaService.generateTranscriptionMeta('text', 'qwen3.5:0.8b');
       expect(result.summary).toBe('A meeting about budgets');
       expect(result.labels).toEqual(['meeting', 'budget']);
@@ -268,6 +269,7 @@ describe('Ollama Service', () => {
           response: '<think>\nLet me analyse this transcription carefully.\n</think>\n{"summary":"Budget discussion","labels":["finance","q1"]}'
         }
       });
+      mockAxios.mockResolvedValueOnce({ data: {} });
       const result = await ollamaService.generateTranscriptionMeta('text', 'qwen3.5:0.8b');
       expect(result.summary).toBe('Budget discussion');
       expect(result.labels).toEqual(['finance', 'q1']);
@@ -279,9 +281,47 @@ describe('Ollama Service', () => {
           response: '<think>First pass</think><think>Second pass</think>{"summary":"Summary here","labels":["a"]}'
         }
       });
+      mockAxios.mockResolvedValueOnce({ data: {} });
       const result = await ollamaService.generateTranscriptionMeta('text', 'qwen3.5:0.8b');
       expect(result.summary).toBe('Summary here');
       expect(result.labels).toEqual(['a']);
+    });
+
+    it('extracts JSON from Ollama thinking field when response is empty (thinking model)', async () => {
+      mockAxios.mockResolvedValueOnce({
+        data: {
+          response: '',
+          thinking: '{"summary":"Busy day with meetings and task planning","labels":["project management","planning"]}'
+        }
+      });
+      mockAxios.mockResolvedValueOnce({ data: {} });
+      const result = await ollamaService.generateTranscriptionMeta('text', 'qwen3.5:4b-q4_K_M');
+      expect(result.summary).toBe('Busy day with meetings and task planning');
+      expect(result.labels).toEqual(['project management', 'planning']);
+    });
+
+    it('extracts JSON when it appears inside a closed <think> block (Scenario A)', async () => {
+      mockAxios.mockResolvedValueOnce({
+        data: {
+          response: '<think>\n{"summary":"Budget meeting summary","labels":["budget","meeting"]}\n</think>'
+        }
+      });
+      mockAxios.mockResolvedValueOnce({ data: {} });
+      const result = await ollamaService.generateTranscriptionMeta('text', 'qwen3.5:0.8b');
+      expect(result.summary).toBe('Budget meeting summary');
+      expect(result.labels).toEqual(['budget', 'meeting']);
+    });
+
+    it('extracts JSON when it appears inside an unclosed <think> block (Scenario B)', async () => {
+      mockAxios.mockResolvedValueOnce({
+        data: {
+          response: '<think>\n{"summary":"Project update","labels":["project","update"]}'
+        }
+      });
+      mockAxios.mockResolvedValueOnce({ data: {} });
+      const result = await ollamaService.generateTranscriptionMeta('text', 'qwen3.5:0.8b');
+      expect(result.summary).toBe('Project update');
+      expect(result.labels).toEqual(['project', 'update']);
     });
 
     it('returns empty fallback when no JSON found after stripping thinking', async () => {

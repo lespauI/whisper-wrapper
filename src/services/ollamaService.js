@@ -894,10 +894,18 @@ ${truncated}`;
       });
 
       const raw = (response.data && response.data.response) ? response.data.response.trim() : '';
+      const thinking = (response.data && response.data.thinking) ? String(response.data.thinking).trim() : '';
       let cleaned = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
       cleaned = cleaned.replace(/<think>[\s\S]*/i, '').trim();
       cleaned = cleaned.replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1').trim();
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      let jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        const withoutThinkTags = raw.replace(/<\/?think>/gi, '');
+        jsonMatch = withoutThinkTags.replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1').match(/\{[\s\S]*\}/);
+      }
+      if (!jsonMatch && thinking) {
+        jsonMatch = thinking.replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1').match(/\{[\s\S]*\}/);
+      }
       if (!jsonMatch) throw new Error('No JSON found in response');
       const parsed = JSON.parse(jsonMatch[0]);
       const result = {
@@ -909,7 +917,7 @@ ${truncated}`;
         method: 'POST',
         url: `${endpoint}/api/generate`,
         timeout: 10000,
-        data: { model: chosenModel, prompt: '', keep_alive: 0 }
+        data: { model: chosenModel, keep_alive: 0 }
       }).catch(() => {});
 
       return result;

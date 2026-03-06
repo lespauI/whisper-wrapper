@@ -7,7 +7,8 @@
 export const TABS = {
     UPLOAD: 'upload',
     RECORD: 'record',
-    TRANSCRIPTION: 'transcription'
+    TRANSCRIPTION: 'transcription',
+    LIBRARY: 'library'
 };
 
 // Recording settings

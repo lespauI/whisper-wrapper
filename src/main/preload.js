@@ -89,6 +89,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Remove listeners
     removeAllListeners: (channel) => {
         ipcRenderer.removeAllListeners(channel);
+    },
+
+    // Transcription library
+    transcriptions: {
+        store: (text, metadata) => ipcRenderer.invoke('transcriptions:store', { text, metadata }),
+        list: (filters) => ipcRenderer.invoke('transcriptions:list', filters || {}),
+        get: (id) => ipcRenderer.invoke('transcriptions:get', { id }),
+        delete: (id) => ipcRenderer.invoke('transcriptions:delete', { id }),
+        reindex: () => ipcRenderer.invoke('transcriptions:reindex')
     }
 });
 

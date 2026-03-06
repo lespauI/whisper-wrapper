@@ -8,6 +8,7 @@ const fs = require('fs');
 const FileService = require('../services/fileService');
 const TranscriptionService = require('../services/transcriptionService');
 const RecordingService = require('../services/recordingService');
+const TranscriptionStoreService = require('../services/transcriptionStoreService');
 const config = require('../config');
 
 class IPCHandlers {
@@ -16,6 +17,7 @@ class IPCHandlers {
         this.fileService = new FileService();
         this.transcriptionService = new TranscriptionService();
         this.recordingService = new RecordingService();
+        this.transcriptionStoreService = new TranscriptionStoreService();
         this.vadMetrics = null; // non-persistent in-memory snapshot
         this.setupHandlers();
     }
@@ -62,6 +64,13 @@ class IPCHandlers {
         // Model download handlers
         ipcMain.handle('model:download', this.handleDownloadModel.bind(this));
         ipcMain.handle('model:info', this.handleGetModelInfo.bind(this));
+
+        // Transcription store handlers
+        ipcMain.handle('transcriptions:store', this.handleTranscriptionsStore.bind(this));
+        ipcMain.handle('transcriptions:list', this.handleTranscriptionsList.bind(this));
+        ipcMain.handle('transcriptions:get', this.handleTranscriptionsGet.bind(this));
+        ipcMain.handle('transcriptions:delete', this.handleTranscriptionsDelete.bind(this));
+        ipcMain.handle('transcriptions:reindex', this.handleTranscriptionsReindex.bind(this));
     }
 
     async handleOpenFile() {
@@ -301,6 +310,13 @@ class IPCHandlers {
                     segments: result.segments || []
                 };
 
+                this.transcriptionStoreService.store(result.text, {
+                    sourceFile: path.basename(filePath),
+                    language: result.language,
+                    duration: result.duration,
+                    model: currentConfig.model || ''
+                }).catch(err => console.error('Failed to auto-store transcription:', err));
+
                 console.log('🎉 IPC: handleTranscribeFile completed successfully!');
                 return finalResult;
 
@@ -390,6 +406,12 @@ class IPCHandlers {
                 status: 'completed', 
                 message: 'Transcription completed successfully' 
             });
+
+            this.transcriptionStoreService.store(result.text, {
+                language: result.language,
+                duration: result.duration,
+                model: currentConfig.model || ''
+            }).catch(err => console.error('Failed to auto-store transcription:', err));
 
             return {
                 success: true,
@@ -768,6 +790,58 @@ class IPCHandlers {
         } catch (error) {
             console.error('Error finding recording chunks:', error);
             return [];
+        }
+    }
+
+    // Transcription Store Handlers
+
+    async handleTranscriptionsStore(event, { text, metadata } = {}) {
+        try {
+            const entry = await this.transcriptionStoreService.store(text, metadata || {});
+            return { success: true, entry };
+        } catch (error) {
+            console.error('Error storing transcription:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleTranscriptionsList(event, filters = {}) {
+        try {
+            const entries = this.transcriptionStoreService.list(filters);
+            return { entries };
+        } catch (error) {
+            console.error('Error listing transcriptions:', error);
+            return { entries: [] };
+        }
+    }
+
+    async handleTranscriptionsGet(event, { id } = {}) {
+        try {
+            const result = await this.transcriptionStoreService.get(id);
+            return result || { entry: null, text: '' };
+        } catch (error) {
+            console.error('Error getting transcription:', error);
+            return { entry: null, text: '' };
+        }
+    }
+
+    async handleTranscriptionsDelete(event, { id } = {}) {
+        try {
+            const deleted = await this.transcriptionStoreService.delete(id);
+            return { success: deleted };
+        } catch (error) {
+            console.error('Error deleting transcription:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleTranscriptionsReindex() {
+        try {
+            const count = await this.transcriptionStoreService.reindex();
+            return { count };
+        } catch (error) {
+            console.error('Error reindexing transcriptions:', error);
+            return { count: 0, error: error.message };
         }
     }
 }

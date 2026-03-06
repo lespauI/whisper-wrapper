@@ -303,6 +303,11 @@ export class SettingsController {
                 if (aiSettings.model) {
                     UIHelpers.setValue('#ollama-model-select', aiSettings.model);
                 }
+                // If the saved model is not in the dropdown (e.g. uninstalled), sync config
+                const modelSelect = UIHelpers.getElementById('ollama-model-select');
+                if (modelSelect && modelSelect.value && aiSettings.model && modelSelect.value !== aiSettings.model) {
+                    await window.electronAPI.saveAIRefinementSettings({ model: modelSelect.value });
+                }
                 
                 console.log('AI Refinement settings loaded successfully');
             }

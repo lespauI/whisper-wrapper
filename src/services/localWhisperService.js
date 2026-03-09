@@ -871,8 +871,17 @@ class LocalWhisperService {
                     console.log('📄 STDERR:', stderr);
                     console.log('📄 STDOUT:', stdout);
                     
-                    // Extract the specific error message if possible
-                    const errorLine = stderr.split('\n').find(line => line.includes('error:')) || stderr;
+                    // Check if failure is GPU-related; if so, retry with fallback
+                    const isGpuError = gpuArgs.length > 0 && (
+                        stderr.includes('unknown argument') ||
+                        stderr.includes('failed to init') ||
+                        stderr.includes('CUDA') ||
+                        stderr.includes('Metal') ||
+                        stderr.includes('Vulkan') ||
+                        stderr.includes('CoreML') ||
+                        stderr.includes('not supported') ||
+                        stderr.includes('not compiled')
+                    );
                     
                     // Clean up extracted audio file if needed
                     if (needsCleanup && fs.existsSync(audioFilePath)) {
@@ -880,6 +889,22 @@ class LocalWhisperService {
                         fs.unlinkSync(audioFilePath);
                     }
                     
+                    if (isGpuError) {
+                        const effectiveBackend = gpuBackend === 'auto'
+                            ? LocalWhisperService.detectSuggestedBackend()
+                            : gpuBackend;
+                        if (effectiveBackend === 'cuda' && (process.platform === 'win32' || process.platform === 'linux')) {
+                            console.log('⚠️ LocalWhisperService: CUDA failed, retrying with Vulkan...');
+                            resolve(this.transcribeFile(filePath, { ...options, gpuBackend: 'vulkan' }));
+                        } else {
+                            console.log('⚠️ LocalWhisperService: GPU acceleration failed, retrying with CPU-only mode...');
+                            resolve(this.transcribeFile(filePath, { ...options, hardwareAcceleration: false }));
+                        }
+                        return;
+                    }
+                    
+                    // Extract the specific error message if possible
+                    const errorLine = stderr.split('\n').find(line => line.includes('error:')) || stderr;
                     reject(new Error(`whisper.cpp failed: ${errorLine}`));
                 } else {
                     console.log(`❌ LocalWhisperService: whisper.cpp failed with code ${code}`);

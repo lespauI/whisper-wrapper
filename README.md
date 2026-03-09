@@ -12,6 +12,7 @@ A Node.js desktop application that provides a user-friendly interface for OpenAI
 - **Local Processing**: Runs entirely on your local machine
 - **Initial Prompt**: Provide custom vocabulary or context to improve transcription accuracy
 - **Silence/Noise Detection (VAD)**: Real‑time gating and offline segmentation to skip silence/noise and reduce hallucinations (configurable engine and modes)
+- **System Audio Capture (Loopback)**: Capture audio playing through your speakers — record meetings, video calls, or any system audio — in addition to or instead of microphone input
 
 ## Getting Started
 
@@ -62,6 +63,31 @@ A Node.js desktop application that provides a user-friendly interface for OpenAI
 4. Wait for the transcription to complete
 5. View and edit the transcription in the editor
 6. Download the transcription using the "Download" button
+
+### System Audio Capture (Loopback)
+
+Capture audio playing through your speakers in addition to, or instead of, microphone input — useful for transcribing meetings, video calls, and any audio playing on your computer.
+
+1. In the Recording tab, open the **Audio Source** dropdown
+2. Choose a capture mode:
+   - **Microphone only** (default) — standard mic recording
+   - **System audio only** — captures speaker/loopback output
+   - **Both (mic + system)** — mixes microphone and system audio using the Web Audio API
+3. Start recording as normal; the selected mode is shown in the status bar
+4. Your preference is saved and restored across sessions
+
+#### Platform support
+
+| Platform | System Audio | Notes |
+|---|---|---|
+| Windows | Native (WASAPI loopback) | Works out of the box |
+| macOS 14.2+ | Native (ScreenCaptureKit) | Requires Electron 28+ |
+| macOS < 14.2 | Requires virtual driver | Install [BlackHole](https://github.com/ExistingMatt/BlackHole) (free) |
+| Linux | PulseAudio/PipeWire monitor | Select the loopback monitor device |
+
+On macOS, when **System audio** or **Both** mode is selected, the app shows an informational message explaining driver requirements and links to BlackHole if needed.
+
+More details: `docs/features/system-audio-capture.md`
 
 ### Ongoing Transcription with Silence/Noise Detection
 
@@ -161,7 +187,15 @@ VAD design and integration details: `docs/architecture/vad-silence-detection-imp
 - ✅ Copy to clipboard functionality
 - ✅ Comprehensive testing (33 tests passing)
 
-### 📋 Phase 5: UI Refinement and Testing (PLANNED)
+### ✅ Phase 5: System Audio Capture (COMPLETED)
+- ✅ `get-audio-sources` IPC handler using Electron `desktopCapturer`
+- ✅ Audio source selector (mic only / system only / both) in Recording tab
+- ✅ Web Audio API mixing for combined mic + system audio with clipping prevention
+- ✅ `captureMode` config key persisted via `electron-store`
+- ✅ macOS informational message for BlackHole requirement
+- ✅ VAD works correctly across all capture modes
+
+### 📋 Phase 6: UI Refinement and Testing (PLANNED)
 - UI polish and animations
 - Comprehensive testing
 - Performance optimization

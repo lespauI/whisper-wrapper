@@ -38,7 +38,8 @@ Rule of thumb for step size: each step = a coherent unit of work (component, end
 
 Update `{@artifacts_path}/plan.md`.
 
-### [ ] Step: Update documentation
+### [x] Step: Update documentation
+<!-- chat-id: b96e3cfb-a710-4fa2-b457-2161972c7aa4 -->
 
 You need to update readme files and other documentation with that feature
 

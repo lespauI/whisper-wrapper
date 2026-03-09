@@ -160,8 +160,10 @@ The `data/` directory is gitignored (`/data/*`) but exists in the repo as an emp
 - Ran `npm install` — 162 packages removed
 - No test or lint regressions (pre-existing failures unchanged)
 
-### [ ] Step: Clean up ESLint duplication
-- Remove `eslintConfig` block from `package.json`
+### [x] Step: Clean up ESLint duplication
+<!-- chat-id: 45580c54-c7c3-43d2-b88d-b531db8a0efc -->
+- Removed `eslintConfig` block from `package.json` (`.eslintrc.js` is the authoritative config)
+- Lint output unchanged (no regressions)
 
 ### [ ] Step: Clean up test artifacts and stale docs
 - Audit and fix `tests/data/` files (rename `silince.waw`, remove orphans)

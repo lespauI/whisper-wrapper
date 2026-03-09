@@ -9,6 +9,7 @@ const config = require('../config');
 
 // Keep a global reference of the window object
 let mainWindow;
+let isQuitting = false;
 
 function createWindow() {
     // Create the browser window
@@ -55,12 +56,16 @@ function createWindow() {
 
     // Handle window controls on macOS
     mainWindow.on('close', (event) => {
-        if (process.platform === 'darwin') {
+        if (process.platform === 'darwin' && !isQuitting) {
             event.preventDefault();
             mainWindow.hide();
         }
     });
 }
+
+app.on('before-quit', () => {
+    isQuitting = true;
+});
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {

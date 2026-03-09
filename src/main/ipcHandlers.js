@@ -72,6 +72,9 @@ class IPCHandlers {
         ipcMain.handle('transcriptions:update', this.handleTranscriptionsUpdate.bind(this));
         ipcMain.handle('transcriptions:delete', this.handleTranscriptionsDelete.bind(this));
         ipcMain.handle('transcriptions:reindex', this.handleTranscriptionsReindex.bind(this));
+
+        // GPU backend detection
+        ipcMain.handle('whisper:detectGpuBackend', this.handleDetectGpuBackend.bind(this));
     }
 
     async handleOpenFile() {
@@ -271,7 +274,9 @@ class IPCHandlers {
                 console.log('🎤 IPC: Starting transcription...');
                 const transcriptionOptions = {
                     threads: currentConfig.threads || 4,
-                    translate: currentConfig.translate || false
+                    translate: currentConfig.translate || false,
+                    hardwareAcceleration: currentConfig.hardwareAcceleration !== undefined ? currentConfig.hardwareAcceleration : true,
+                    gpuBackend: currentConfig.gpuBackend || 'auto'
                 };
                 
                 // Always pass both the useInitialPrompt flag and initialPrompt
@@ -380,7 +385,9 @@ class IPCHandlers {
             // Prepare transcription options
             const transcriptionOptions = {
                 threads: currentConfig.threads || 4,
-                translate: currentConfig.translate || false
+                translate: currentConfig.translate || false,
+                hardwareAcceleration: currentConfig.hardwareAcceleration !== undefined ? currentConfig.hardwareAcceleration : true,
+                gpuBackend: currentConfig.gpuBackend || 'auto'
             };
             
             // Always pass both the useInitialPrompt flag and initialPrompt
@@ -546,6 +553,17 @@ class IPCHandlers {
                 success: false,
                 message: `Test failed: ${error.message}`
             };
+        }
+    }
+
+    async handleDetectGpuBackend() {
+        try {
+            const { LocalWhisperService } = require('../services/localWhisperService');
+            const suggestedBackend = LocalWhisperService.detectSuggestedBackend();
+            return { success: true, suggestedBackend };
+        } catch (error) {
+            console.error('Error detecting GPU backend:', error);
+            return { success: false, suggestedBackend: 'cpu', message: error.message };
         }
     }
 

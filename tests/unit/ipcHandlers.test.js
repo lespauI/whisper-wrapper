@@ -187,7 +187,7 @@ describe('IPCHandlers', () => {
 
             expect(mockFileService.validateFile).toHaveBeenCalledWith('/path/to/audio.wav');
             expect(mockTranscriptionService.setModel).toHaveBeenCalledWith('base');
-            expect(mockTranscriptionService.transcribeFile).toHaveBeenCalledWith('/temp/audio.wav', { threads: 4, translate: false });
+            expect(mockTranscriptionService.transcribeFile).toHaveBeenCalledWith('/temp/audio.wav', expect.objectContaining({ threads: 4, translate: false, useGpu: true, flashAttn: true, gpuDevice: 0 }));
             expect(result).toEqual(expect.objectContaining(mockResult));
         });
 
@@ -255,7 +255,7 @@ describe('IPCHandlers', () => {
 
             const result = await handlers.handleTranscribeAudio(mockEvent, audioData);
 
-            expect(mockTranscriptionService.transcribeBuffer).toHaveBeenCalledWith(audioData, { threads: 4, translate: false });
+            expect(mockTranscriptionService.transcribeBuffer).toHaveBeenCalledWith(audioData, expect.objectContaining({ threads: 4, translate: false, useGpu: true, flashAttn: true, gpuDevice: 0 }));
             expect(result).toEqual(expect.objectContaining(mockResult));
         });
 

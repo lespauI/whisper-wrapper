@@ -45,3 +45,28 @@ You need to update readme files and other documentation with that feature
 ### [ ] Step: Test covverage
 
 you need to achive 80% Test coverage based on test pyramid for that feature
+
+### [x] Step: review
+<!-- chat-id: 3a53b19d-8fb3-40ea-8bcc-9d2c2e4d5267 -->
+<!-- agent: opus-4-6-think -->
+
+I need you to review this solution and update plan if changes are requred
+
+#### Review Findings
+
+**Verdict: REQUEST CHANGES** — 2 P1 issues, 2 P2, 2 P3
+
+- **P1 — Variable shadowing** (`RecordingController.js:233`): `catch (e)` shadows the outer event handler parameter `e`. Rename to `catch (err)`.
+- **P1 — Thumbnails serialized but unused** (`ipcHandlers.js:878`): `toDataURL()` on every source thumbnail adds hundreds of KB to IPC payload. Renderer never uses thumbnails. Remove the `thumbnail` field.
+- **P2 — macOS BlackHole warning never triggers** (`RecordingController.js:435`): `sources.length === 0` is never true because screen sources always exist. Show an informational warning on macOS whenever system/both mode is selected.
+- **P2 — Double-stop of tracks** (`RecordingController.js:598-607`): In mic-only and system-only modes, `_micStream`/`_systemAudioStream` is the same object as `mediaRecorder.stream`, causing double `.stop()`. Harmless but indicates logic gap.
+- **P3 — BlackHole URL incomplete** (`RecordingController.js:436`): Missing `https://` prefix.
+- **P3 — `systemAudioSupported` always true** (`ipcHandlers.js:885`): Flag covers all desktop platforms, never returns false in practice.
+
+### [ ] Step: Fix review findings
+
+Apply the P1 and P2 fixes identified in the review step:
+- [ ] Rename `catch (e)` to `catch (err)` in capture mode handler
+- [ ] Remove thumbnail serialization from `handleGetAudioSources`
+- [ ] Fix macOS warning to always show informational note when system/both mode on darwin
+- [ ] Avoid double-stop: only set `_micStream`/`_systemAudioStream` when they differ from the recorder stream

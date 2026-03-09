@@ -282,8 +282,9 @@ class IPCHandlers {
                 const transcriptionOptions = {
                     threads: currentConfig.threads || 4,
                     translate: currentConfig.translate || false,
-                    hardwareAcceleration: currentConfig.hardwareAcceleration !== undefined ? currentConfig.hardwareAcceleration : true,
-                    gpuBackend: currentConfig.gpuBackend || 'auto'
+                    useGpu: currentConfig.useGpu !== undefined ? currentConfig.useGpu : true,
+                    flashAttn: currentConfig.flashAttn !== undefined ? currentConfig.flashAttn : true,
+                    gpuDevice: currentConfig.gpuDevice || 0
                 };
                 
                 // Always pass both the useInitialPrompt flag and initialPrompt
@@ -395,18 +396,17 @@ class IPCHandlers {
             const transcriptionOptions = {
                 threads: currentConfig.threads || 4,
                 translate: currentConfig.translate || false,
-                hardwareAcceleration: currentConfig.hardwareAcceleration !== undefined ? currentConfig.hardwareAcceleration : true,
-                gpuBackend: currentConfig.gpuBackend || 'auto'
+                useGpu: currentConfig.useGpu !== undefined ? currentConfig.useGpu : true,
+                flashAttn: currentConfig.flashAttn !== undefined ? currentConfig.flashAttn : true,
+                gpuDevice: currentConfig.gpuDevice || 0
             };
             
-            // Always pass both the useInitialPrompt flag and initialPrompt
             transcriptionOptions.useInitialPrompt = currentConfig.useInitialPrompt;
             if (currentConfig.initialPrompt) {
                 transcriptionOptions.initialPrompt = currentConfig.initialPrompt;
                 console.log(`🔤 IPC: Initial prompt ${currentConfig.useInitialPrompt ? 'ENABLED' : 'DISABLED'} (${currentConfig.initialPrompt.length} chars)`);
             }
             
-            // Add context prompt for ongoing transcription chunks
             if (prompt && prompt.trim()) {
                 transcriptionOptions.contextPrompt = prompt.trim();
                 console.log(`📝 IPC: Context prompt provided (${prompt.trim().length} chars): "${prompt.trim().substring(0, 100)}..."`);
@@ -568,11 +568,11 @@ class IPCHandlers {
     async handleDetectGpuBackend() {
         try {
             const { LocalWhisperService } = require('../services/localWhisperService');
-            const suggestedBackend = LocalWhisperService.detectSuggestedBackend();
-            return { success: true, suggestedBackend };
+            const gpuInfo = LocalWhisperService.detectGpuInfo();
+            return { success: true, ...gpuInfo };
         } catch (error) {
-            console.error('Error detecting GPU backend:', error);
-            return { success: false, suggestedBackend: 'cpu', message: error.message };
+            console.error('Error detecting GPU info:', error);
+            return { success: false, gpuLikely: false, expectedBackend: 'cpu', message: error.message };
         }
     }
 

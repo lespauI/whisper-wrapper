@@ -86,8 +86,9 @@ module.exports = {
         translate: false,
         useInitialPrompt: true, // Whether to use initial prompt
         initialPrompt: '', // Initial prompt to guide transcription
-        hardwareAcceleration: true, // Enable hardware/GPU acceleration
-        gpuBackend: 'auto' // GPU backend: 'auto' | 'metal' | 'coreml' | 'cuda' | 'vulkan' | 'cpu'
+        useGpu: true,
+        flashAttn: true,
+        gpuDevice: 0
     },
 
     // Export settings

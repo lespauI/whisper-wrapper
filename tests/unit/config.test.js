@@ -116,23 +116,27 @@ describe('Configuration System', () => {
     });
 
     describe('GPU acceleration configuration', () => {
-        it('should have hardwareAcceleration enabled by default', () => {
+        it('should have useGpu enabled by default', () => {
             expect(defaultConfig.transcription).toBeDefined();
-            expect(defaultConfig.transcription.hardwareAcceleration).toBe(true);
+            expect(defaultConfig.transcription.useGpu).toBe(true);
         });
 
-        it('should have gpuBackend set to auto by default', () => {
+        it('should have flashAttn enabled by default', () => {
             expect(defaultConfig.transcription).toBeDefined();
-            expect(defaultConfig.transcription.gpuBackend).toBe('auto');
+            expect(defaultConfig.transcription.flashAttn).toBe(true);
+        });
+
+        it('should have gpuDevice set to 0 by default', () => {
+            expect(defaultConfig.transcription).toBeDefined();
+            expect(defaultConfig.transcription.gpuDevice).toBe(0);
         });
 
         it('should have transcription settings with GPU fields', () => {
             const t = defaultConfig.transcription;
             expect(t).toBeDefined();
-            expect(typeof t.hardwareAcceleration).toBe('boolean');
-            expect(typeof t.gpuBackend).toBe('string');
-            const validBackends = ['auto', 'metal', 'coreml', 'cuda', 'vulkan', 'cpu'];
-            expect(validBackends).toContain(t.gpuBackend);
+            expect(typeof t.useGpu).toBe('boolean');
+            expect(typeof t.flashAttn).toBe('boolean');
+            expect(typeof t.gpuDevice).toBe('number');
         });
     });
 });

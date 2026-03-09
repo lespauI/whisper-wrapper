@@ -23,7 +23,6 @@ const requiredFiles = [
     'src/services/recordingService.js',
     'src/services/transcriptionService.js',
     'src/services/exportService.js',
-    'src/config/index.js',
     'src/config/default.js',
     'src/utils/formatters.js',
     'scripts/start-renderer.js',

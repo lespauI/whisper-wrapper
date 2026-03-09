@@ -649,7 +649,7 @@ ${text}
             
             paragraph.forEach((segment, segmentIndex) => {
                 const segmentDiv = document.createElement('div');
-                segmentDiv.className = 'transcript-segment';
+                segmentDiv.className = 'transcription-segment';
                 segmentDiv.setAttribute('data-start', segment.start);
                 segmentDiv.setAttribute('data-end', segment.end);
                 
@@ -816,6 +816,233 @@ ${text}
     }
 
     /**
+     * Load audio from a file path via IPC and set up the player
+     * @param {string} filePath - Absolute path to the audio file
+     */
+    async loadAudio(filePath) {
+        if (!filePath) {
+            this.hideAudioPlayer();
+            return;
+        }
+        try {
+            const result = await window.electronAPI.readAudioFile(filePath);
+            if (!result || !result.success) {
+                this.hideAudioPlayer();
+                return;
+            }
+            const player = document.getElementById('audio-player');
+            if (!player) return;
+            player.src = result.dataUrl;
+            this.showAudioPlayer();
+            this._setupAudioPlayerEvents(player);
+        } catch (err) {
+            this.hideAudioPlayer();
+        }
+    }
+
+    /**
+     * Load audio from a Blob URL (for recorded audio)
+     * @param {string} blobUrl - Blob URL to play
+     */
+    loadAudioFromBlobUrl(blobUrl) {
+        if (!blobUrl) {
+            this.hideAudioPlayer();
+            return;
+        }
+        const player = document.getElementById('audio-player');
+        if (!player) return;
+        player.src = blobUrl;
+        this.showAudioPlayer();
+        this._setupAudioPlayerEvents(player);
+    }
+
+    /**
+     * Wire up all audio player DOM events, removing any previous listeners first.
+     * @param {HTMLAudioElement} player
+     */
+    _setupAudioPlayerEvents(player) {
+        this._teardownAudioPlayerEvents();
+
+        const playBtn = document.getElementById('audio-play-btn');
+        const seekBar = document.getElementById('audio-seek');
+        const speedSelect = document.getElementById('audio-speed');
+        const currentTimeEl = document.getElementById('audio-current-time');
+        const durationEl = document.getElementById('audio-duration');
+
+        const playerHandlers = {
+            loadedmetadata: () => {
+                if (seekBar) seekBar.max = player.duration;
+                if (durationEl) durationEl.textContent = this._formatAudioTime(player.duration);
+            },
+            timeupdate: () => {
+                if (seekBar && !seekBar._seeking) seekBar.value = player.currentTime;
+                if (currentTimeEl) currentTimeEl.textContent = this._formatAudioTime(player.currentTime);
+                this._highlightActiveSegment(player.currentTime);
+            },
+            ended: () => {
+                if (playBtn) playBtn.innerHTML = '&#9654;';
+            }
+        };
+
+        player.addEventListener('loadedmetadata', playerHandlers.loadedmetadata);
+        player.addEventListener('timeupdate', playerHandlers.timeupdate);
+        player.addEventListener('ended', playerHandlers.ended);
+
+        const controlHandlers = { playBtn: null, seekBarMousedown: null, seekBarInput: null, seekBarChange: null, speedSelect: null };
+
+        if (playBtn) {
+            controlHandlers.playBtn = () => {
+                if (player.paused) {
+                    player.play();
+                    playBtn.innerHTML = '&#9646;&#9646;';
+                } else {
+                    player.pause();
+                    playBtn.innerHTML = '&#9654;';
+                }
+            };
+            playBtn.addEventListener('click', controlHandlers.playBtn);
+        }
+
+        if (seekBar) {
+            controlHandlers.seekBarMousedown = () => { seekBar._seeking = true; };
+            controlHandlers.seekBarInput = () => {
+                if (currentTimeEl) currentTimeEl.textContent = this._formatAudioTime(Number(seekBar.value));
+            };
+            controlHandlers.seekBarChange = () => {
+                player.currentTime = Number(seekBar.value);
+                seekBar._seeking = false;
+            };
+            seekBar.addEventListener('mousedown', controlHandlers.seekBarMousedown);
+            seekBar.addEventListener('input', controlHandlers.seekBarInput);
+            seekBar.addEventListener('change', controlHandlers.seekBarChange);
+        }
+
+        if (speedSelect) {
+            controlHandlers.speedSelect = () => {
+                player.playbackRate = Number(speedSelect.value);
+            };
+            speedSelect.addEventListener('change', controlHandlers.speedSelect);
+        }
+
+        this._audioHandlers = { player, playerHandlers, controlHandlers, playBtn, seekBar, speedSelect };
+    }
+
+    /**
+     * Remove all audio player event listeners registered by _setupAudioPlayerEvents.
+     */
+    _teardownAudioPlayerEvents() {
+        if (!this._audioHandlers) return;
+        const { player, playerHandlers, controlHandlers, playBtn, seekBar, speedSelect } = this._audioHandlers;
+
+        player.removeEventListener('loadedmetadata', playerHandlers.loadedmetadata);
+        player.removeEventListener('timeupdate', playerHandlers.timeupdate);
+        player.removeEventListener('ended', playerHandlers.ended);
+
+        if (playBtn && controlHandlers.playBtn) playBtn.removeEventListener('click', controlHandlers.playBtn);
+        if (seekBar) {
+            if (controlHandlers.seekBarMousedown) seekBar.removeEventListener('mousedown', controlHandlers.seekBarMousedown);
+            if (controlHandlers.seekBarInput) seekBar.removeEventListener('input', controlHandlers.seekBarInput);
+            if (controlHandlers.seekBarChange) seekBar.removeEventListener('change', controlHandlers.seekBarChange);
+        }
+        if (speedSelect && controlHandlers.speedSelect) speedSelect.removeEventListener('change', controlHandlers.speedSelect);
+
+        this._audioHandlers = null;
+    }
+
+    /**
+     * Highlight the transcript segment that corresponds to the current playback time
+     * @param {number} currentTime - Current audio playback time in seconds
+     */
+    _highlightActiveSegment(currentTime) {
+        const container = document.getElementById('transcription-segments');
+        if (!container || container.classList.contains('hidden')) return;
+
+        const segments = container.querySelectorAll('.transcription-segment[data-start]');
+        let activeEl = null;
+
+        for (const seg of segments) {
+            const start = parseFloat(seg.dataset.start);
+            const end = parseFloat(seg.dataset.end);
+            if (currentTime >= start && currentTime < end) {
+                activeEl = seg;
+                break;
+            }
+        }
+
+        container.querySelectorAll('.transcription-segment--active').forEach(el => {
+            el.classList.remove('transcription-segment--active');
+        });
+
+        if (activeEl) {
+            activeEl.classList.add('transcription-segment--active');
+            activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    /**
+     * Seek the audio player to a specific time
+     * @param {number} time - Time in seconds
+     */
+    seekToTime(time) {
+        const player = document.getElementById('audio-player');
+        if (!player || !player.src) return;
+        player.currentTime = time;
+    }
+
+    /**
+     * Show the audio player bar
+     */
+    showAudioPlayer() {
+        const bar = document.getElementById('audio-player-bar');
+        if (bar) bar.classList.remove('hidden');
+    }
+
+    /**
+     * Hide the audio player bar
+     */
+    hideAudioPlayer() {
+        const bar = document.getElementById('audio-player-bar');
+        if (bar) bar.classList.add('hidden');
+        const player = document.getElementById('audio-player');
+        if (player) {
+            player.pause();
+            player.setAttribute('src', '');
+        }
+        this._teardownAudioPlayerEvents();
+    }
+
+    /**
+     * Format time in seconds to M:SS display
+     * @param {number} seconds
+     * @returns {string}
+     */
+    _formatAudioTime(seconds) {
+        if (!isFinite(seconds) || isNaN(seconds)) return '0:00';
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+
+    /**
+     * Find the segment index whose time range contains the given time
+     * @param {Array} segments - Array of segment objects with start and end
+     * @param {number} time - Time in seconds
+     * @returns {number} Index of the matching segment or -1
+     */
+    findSegmentAtTime(segments, time) {
+        if (!segments || !segments.length) return -1;
+        for (let i = 0; i < segments.length; i++) {
+            if (time >= segments[i].start && time < segments[i].end) {
+                return i;
+            }
+        }
+        if (time >= segments[segments.length - 1].end) {
+            return segments.length - 1;
+        }
+        return -1;
+    }
+
+    /**
      * Destroy the controller and clean up resources
      */
     destroy() {
@@ -827,6 +1054,6 @@ ${text}
         // Save final draft
         this.saveTranscriptionDraft();
         
-        console.log('TranscriptionController destroyed');
+        this.hideAudioPlayer();
     }
 }

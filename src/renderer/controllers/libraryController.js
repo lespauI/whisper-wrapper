@@ -315,6 +315,15 @@ class LibraryController {
             if (this.detailEmpty) this.detailEmpty.classList.add('hidden');
             if (this.detailContent) this.detailContent.classList.remove('hidden');
 
+            const transcriptionController = window.whisperApp && window.whisperApp.controllers && window.whisperApp.controllers.transcription;
+            if (transcriptionController) {
+                if (entry.audioFilePath) {
+                    transcriptionController.loadAudio(entry.audioFilePath);
+                } else {
+                    transcriptionController.hideAudioPlayer();
+                }
+            }
+
         } catch (err) {
             console.error('Failed to load transcription detail:', err);
             this.clearDetail();
@@ -325,6 +334,10 @@ class LibraryController {
         this.currentEntryId = null;
         if (this.detailEmpty) this.detailEmpty.classList.remove('hidden');
         if (this.detailContent) this.detailContent.classList.add('hidden');
+        const transcriptionController = window.whisperApp && window.whisperApp.controllers && window.whisperApp.controllers.transcription;
+        if (transcriptionController) {
+            transcriptionController.hideAudioPlayer();
+        }
     }
 
     async copyCurrentText() {

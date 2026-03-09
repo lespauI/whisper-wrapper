@@ -101,7 +101,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         update: (id, changes) => ipcRenderer.invoke('transcriptions:update', { id, changes }),
         delete: (id) => ipcRenderer.invoke('transcriptions:delete', { id }),
         reindex: () => ipcRenderer.invoke('transcriptions:reindex')
-    }
+    },
+
+    // Audio playback
+    readAudioFile: (filePath) => ipcRenderer.invoke('audio:readFile', filePath)
 });
 
 // Expose a limited API for the renderer

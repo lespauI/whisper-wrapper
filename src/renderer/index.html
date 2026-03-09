@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data: blob: file:;">
     <title>Whisper Wrapper</title>
     <link rel="stylesheet" href="styles/main.css">
 </head>
@@ -482,6 +482,21 @@
                                         Ready to transcribe
                                     </span>
                                 </div>
+                            </div>
+                            <div id="audio-player-bar" class="audio-player-bar hidden">
+                                <audio id="audio-player"></audio>
+                                <button id="audio-play-btn" class="audio-play-btn" title="Play / Pause">&#9654;</button>
+                                <span id="audio-current-time" class="audio-time">0:00</span>
+                                <input id="audio-seek" type="range" class="audio-seek" min="0" max="100" step="0.1" value="0">
+                                <span id="audio-duration" class="audio-time">0:00</span>
+                                <select id="audio-speed" class="audio-speed" title="Playback speed">
+                                    <option value="0.5">0.5×</option>
+                                    <option value="0.75">0.75×</option>
+                                    <option value="1" selected>1×</option>
+                                    <option value="1.25">1.25×</option>
+                                    <option value="1.5">1.5×</option>
+                                    <option value="2">2×</option>
+                                </select>
                             </div>
                             <div class="transcription-content">
                                 <div id="transcription-loading" class="loading-state hidden">

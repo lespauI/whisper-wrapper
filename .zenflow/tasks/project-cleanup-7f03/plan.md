@@ -152,10 +152,13 @@ The `data/` directory is gitignored (`/data/*`) but exists in the repo as an emp
 - Updated `AGENTS.md` key files section
 - All 521 unit tests pass, no lint regressions
 
-### [ ] Step: Remove unused dependencies
-- Remove `lodash`, `form-data` from dependencies
-- Remove `spectron`, `ts-node`, stale `@types/*` from devDependencies
-- Run `npm install` to update lockfile
+### [x] Step: Remove unused dependencies
+<!-- chat-id: 51a13c80-8272-48f8-a9cd-c57abd0e8564 -->
+- Removed `lodash`, `form-data` from dependencies
+- Removed `spectron`, `ts-node`, `@types/fluent-ffmpeg`, `@types/jest`, `@types/lodash`, `@types/uuid` from devDependencies
+- Kept `@types/node` for IDE support
+- Ran `npm install` — 162 packages removed
+- No test or lint regressions (pre-existing failures unchanged)
 
 ### [ ] Step: Clean up ESLint duplication
 - Remove `eslintConfig` block from `package.json`

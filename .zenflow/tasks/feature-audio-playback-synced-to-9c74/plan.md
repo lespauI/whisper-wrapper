@@ -67,7 +67,8 @@ I need you to review this solution and update plan if changes are requred add th
 
 `hideAudioPlayer()` resets `_audioPlayerBound = false` without removing the existing listeners; subsequent `loadAudio()` calls add duplicate `timeupdate`, `loadedmetadata`, `ended`, and control listeners. Replace the audio element on hide (clone trick) or store and remove bound handlers explicitly. Add a regression test.
 
-### [ ] Step: Fix P1 - library entries do not reload audio player
+### [x] Step: Fix P1 - library entries do not reload audio player
+<!-- chat-id: b46f0010-2c8b-4aa6-9d8e-4d96165be54d -->
 
 `libraryController.loadEntryDetail` fetches `entry.audioFilePath` from IPC but never calls `loadAudio`. Wire it up so the audio player loads (or hides) when switching between library entries. This is an explicit acceptance criterion.
 

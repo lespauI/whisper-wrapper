@@ -202,3 +202,7 @@ Review complete. All cleanup changes verified:
 - `.gitignore` updated with `*.iml` and cleaned comment
 - Lint: 1615 errors + 374 warnings — all pre-existing, no regressions
 - Unit tests: 456 passed, 2 suites fail on missing `electron` — all pre-existing, no regressions
+
+### [ ] Step: Create PR description
+<!-- chat-id: b7afe7ad-74c2-4265-951c-f3f2a05cafa7 -->
+<!-- agent: codex-gpt-5-3-codex -->

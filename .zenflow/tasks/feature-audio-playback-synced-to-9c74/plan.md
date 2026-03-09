@@ -50,8 +50,29 @@ You need to update readme files and other documentation with that feature
 
 you need to achive 80% Test coverage based on test pyramid for that feature
 
-### [ ] Step: review
+### [x] Step: review
+<!-- chat-id: 5f40f766-b713-4c13-9553-d551c65fe841 -->
 
 <!-- agent: opus-4-6-think -->
 
 I need you to review this solution and update plan if changes are requred add them into plan.md as tasks
+
+### [ ] Step: Fix P0 security - path traversal in handleAudioReadFile
+
+`handleAudioReadFile` in `src/main/ipcHandlers.js` accepts any filesystem path from the renderer with no directory restriction. Add an allow-list check so only paths under `os.homedir()` and `app.getPath('userData')` can be served. Unit test the new validation.
+
+### [ ] Step: Fix P1 - duplicate audio event listeners
+
+`hideAudioPlayer()` resets `_audioPlayerBound = false` without removing the existing listeners; subsequent `loadAudio()` calls add duplicate `timeupdate`, `loadedmetadata`, `ended`, and control listeners. Replace the audio element on hide (clone trick) or store and remove bound handlers explicitly. Add a regression test.
+
+### [ ] Step: Fix P1 - library entries do not reload audio player
+
+`libraryController.loadEntryDetail` fetches `entry.audioFilePath` from IPC but never calls `loadAudio`. Wire it up so the audio player loads (or hides) when switching between library entries. This is an explicit acceptance criterion.
+
+### [ ] Step: Fix P2 - CSS class mismatch in TranscriptionController segments
+
+`TranscriptionController.renderTimestampedSegments` adds class `transcript-segment`, but `_highlightActiveSegment` queries `.transcription-segment`. Align the class names so highlighting works regardless of which rendering path produced the segments.
+
+### [ ] Step: Fix P2 - seekToTime should not auto-play
+
+`seekToTime` unconditionally calls `player.play()` when the audio is paused. Change it to only seek without auto-playing; let the play button remain the user's explicit trigger. Update unit tests.

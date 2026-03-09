@@ -62,7 +62,8 @@ I need you to review this solution and update plan if changes are requred add th
 
 `handleAudioReadFile` in `src/main/ipcHandlers.js` accepts any filesystem path from the renderer with no directory restriction. Add an allow-list check so only paths under `os.homedir()` and `app.getPath('userData')` can be served. Unit test the new validation.
 
-### [ ] Step: Fix P1 - duplicate audio event listeners
+### [x] Step: Fix P1 - duplicate audio event listeners
+<!-- chat-id: d3fa6b07-8b78-4bd8-97ab-9dbe22b256d9 -->
 
 `hideAudioPlayer()` resets `_audioPlayerBound = false` without removing the existing listeners; subsequent `loadAudio()` calls add duplicate `timeupdate`, `loadedmetadata`, `ended`, and control listeners. Replace the audio element on hide (clone trick) or store and remove bound handlers explicitly. Add a regression test.
 

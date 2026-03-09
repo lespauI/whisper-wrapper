@@ -242,4 +242,176 @@ describe('Audio Player - TranscriptionController', () => {
             expect(() => controller._highlightActiveSegment(5.0)).not.toThrow();
         });
     });
+
+    describe('_setupAudioPlayerEvents() / _teardownAudioPlayerEvents() — no duplicate listeners', () => {
+        let fullController;
+
+        beforeEach(() => {
+            fullController = {
+                _audioHandlers: null,
+
+                _formatAudioTime(seconds) {
+                    if (!isFinite(seconds) || isNaN(seconds)) return '0:00';
+                    const m = Math.floor(seconds / 60);
+                    const s = Math.floor(seconds % 60);
+                    return `${m}:${s.toString().padStart(2, '0')}`;
+                },
+
+                _highlightActiveSegment() {},
+
+                _teardownAudioPlayerEvents() {
+                    if (!this._audioHandlers) return;
+                    const { player, playerHandlers, controlHandlers, playBtn, seekBar, speedSelect } = this._audioHandlers;
+                    player.removeEventListener('loadedmetadata', playerHandlers.loadedmetadata);
+                    player.removeEventListener('timeupdate', playerHandlers.timeupdate);
+                    player.removeEventListener('ended', playerHandlers.ended);
+                    if (playBtn && controlHandlers.playBtn) playBtn.removeEventListener('click', controlHandlers.playBtn);
+                    if (seekBar) {
+                        if (controlHandlers.seekBarMousedown) seekBar.removeEventListener('mousedown', controlHandlers.seekBarMousedown);
+                        if (controlHandlers.seekBarInput) seekBar.removeEventListener('input', controlHandlers.seekBarInput);
+                        if (controlHandlers.seekBarChange) seekBar.removeEventListener('change', controlHandlers.seekBarChange);
+                    }
+                    if (speedSelect && controlHandlers.speedSelect) speedSelect.removeEventListener('change', controlHandlers.speedSelect);
+                    this._audioHandlers = null;
+                },
+
+                _setupAudioPlayerEvents(player) {
+                    this._teardownAudioPlayerEvents();
+
+                    const playBtn = global.document.getElementById('audio-play-btn');
+                    const seekBar = global.document.getElementById('audio-seek');
+                    const speedSelect = global.document.getElementById('audio-speed');
+                    const currentTimeEl = global.document.getElementById('audio-current-time');
+                    const durationEl = global.document.getElementById('audio-duration');
+
+                    const playerHandlers = {
+                        loadedmetadata: () => {
+                            if (seekBar) seekBar.max = player.duration;
+                            if (durationEl) durationEl.textContent = this._formatAudioTime(player.duration);
+                        },
+                        timeupdate: () => {
+                            if (seekBar && !seekBar._seeking) seekBar.value = player.currentTime;
+                            if (currentTimeEl) currentTimeEl.textContent = this._formatAudioTime(player.currentTime);
+                            this._highlightActiveSegment(player.currentTime);
+                        },
+                        ended: () => {
+                            if (playBtn) playBtn.innerHTML = '&#9654;';
+                        }
+                    };
+
+                    player.addEventListener('loadedmetadata', playerHandlers.loadedmetadata);
+                    player.addEventListener('timeupdate', playerHandlers.timeupdate);
+                    player.addEventListener('ended', playerHandlers.ended);
+
+                    const controlHandlers = { playBtn: null, seekBarMousedown: null, seekBarInput: null, seekBarChange: null, speedSelect: null };
+
+                    if (playBtn) {
+                        controlHandlers.playBtn = () => {
+                            if (player.paused) {
+                                player.play();
+                                playBtn.innerHTML = '&#9646;&#9646;';
+                            } else {
+                                player.pause();
+                                playBtn.innerHTML = '&#9654;';
+                            }
+                        };
+                        playBtn.addEventListener('click', controlHandlers.playBtn);
+                    }
+
+                    if (seekBar) {
+                        controlHandlers.seekBarMousedown = () => { seekBar._seeking = true; };
+                        controlHandlers.seekBarInput = () => {
+                            if (currentTimeEl) currentTimeEl.textContent = this._formatAudioTime(Number(seekBar.value));
+                        };
+                        controlHandlers.seekBarChange = () => {
+                            player.currentTime = Number(seekBar.value);
+                            seekBar._seeking = false;
+                        };
+                        seekBar.addEventListener('mousedown', controlHandlers.seekBarMousedown);
+                        seekBar.addEventListener('input', controlHandlers.seekBarInput);
+                        seekBar.addEventListener('change', controlHandlers.seekBarChange);
+                    }
+
+                    if (speedSelect) {
+                        controlHandlers.speedSelect = () => {
+                            player.playbackRate = Number(speedSelect.value);
+                        };
+                        speedSelect.addEventListener('change', controlHandlers.speedSelect);
+                    }
+
+                    this._audioHandlers = { player, playerHandlers, controlHandlers, playBtn, seekBar, speedSelect };
+                },
+
+                hideAudioPlayer() {
+                    const bar = global.document.getElementById('audio-player-bar');
+                    if (bar) bar.classList.add('hidden');
+                    const player = global.document.getElementById('audio-player');
+                    if (player) {
+                        player.pause();
+                        player.setAttribute('src', '');
+                    }
+                    this._teardownAudioPlayerEvents();
+                }
+            };
+        });
+
+        it('does not duplicate timeupdate listeners when setup is called twice', () => {
+            const player = global.document.getElementById('audio-player');
+            const timeupdateSpy = jest.fn();
+            fullController._highlightActiveSegment = timeupdateSpy;
+
+            fullController._setupAudioPlayerEvents(player);
+            fullController._setupAudioPlayerEvents(player);
+
+            player.dispatchEvent(new dom.window.Event('timeupdate'));
+            expect(timeupdateSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not duplicate listeners after hide then setup', () => {
+            const player = global.document.getElementById('audio-player');
+            const timeupdateSpy = jest.fn();
+            fullController._highlightActiveSegment = timeupdateSpy;
+
+            fullController._setupAudioPlayerEvents(player);
+            fullController.hideAudioPlayer();
+            fullController._setupAudioPlayerEvents(player);
+
+            player.dispatchEvent(new dom.window.Event('timeupdate'));
+            expect(timeupdateSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('removes all listeners after teardown — timeupdate no longer fires', () => {
+            const player = global.document.getElementById('audio-player');
+            const timeupdateSpy = jest.fn();
+            fullController._highlightActiveSegment = timeupdateSpy;
+
+            fullController._setupAudioPlayerEvents(player);
+            fullController._teardownAudioPlayerEvents();
+
+            player.dispatchEvent(new dom.window.Event('timeupdate'));
+            expect(timeupdateSpy).not.toHaveBeenCalled();
+        });
+
+        it('sets _audioHandlers to null after teardown', () => {
+            const player = global.document.getElementById('audio-player');
+            fullController._setupAudioPlayerEvents(player);
+            expect(fullController._audioHandlers).not.toBeNull();
+            fullController._teardownAudioPlayerEvents();
+            expect(fullController._audioHandlers).toBeNull();
+        });
+
+        it('does not duplicate play-button click listeners when setup is called twice', () => {
+            const player = global.document.getElementById('audio-player');
+            const playSpy = jest.fn();
+            player.play = playSpy;
+            player.pause = jest.fn();
+
+            fullController._setupAudioPlayerEvents(player);
+            fullController._setupAudioPlayerEvents(player);
+
+            const playBtn = global.document.getElementById('audio-play-btn');
+            playBtn.dispatchEvent(new dom.window.Event('click'));
+            expect(playSpy).toHaveBeenCalledTimes(1);
+        });
+    });
 });

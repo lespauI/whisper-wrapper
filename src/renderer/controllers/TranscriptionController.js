@@ -857,12 +857,11 @@ ${text}
     }
 
     /**
-     * Wire up all audio player DOM events (idempotent)
+     * Wire up all audio player DOM events, removing any previous listeners first.
      * @param {HTMLAudioElement} player
      */
     _setupAudioPlayerEvents(player) {
-        if (player._audioPlayerBound) return;
-        player._audioPlayerBound = true;
+        this._teardownAudioPlayerEvents();
 
         const playBtn = document.getElementById('audio-play-btn');
         const seekBar = document.getElementById('audio-seek');
@@ -870,23 +869,29 @@ ${text}
         const currentTimeEl = document.getElementById('audio-current-time');
         const durationEl = document.getElementById('audio-duration');
 
-        player.addEventListener('loadedmetadata', () => {
-            if (seekBar) seekBar.max = player.duration;
-            if (durationEl) durationEl.textContent = this._formatAudioTime(player.duration);
-        });
+        const playerHandlers = {
+            loadedmetadata: () => {
+                if (seekBar) seekBar.max = player.duration;
+                if (durationEl) durationEl.textContent = this._formatAudioTime(player.duration);
+            },
+            timeupdate: () => {
+                if (seekBar && !seekBar._seeking) seekBar.value = player.currentTime;
+                if (currentTimeEl) currentTimeEl.textContent = this._formatAudioTime(player.currentTime);
+                this._highlightActiveSegment(player.currentTime);
+            },
+            ended: () => {
+                if (playBtn) playBtn.innerHTML = '&#9654;';
+            }
+        };
 
-        player.addEventListener('timeupdate', () => {
-            if (seekBar && !seekBar._seeking) seekBar.value = player.currentTime;
-            if (currentTimeEl) currentTimeEl.textContent = this._formatAudioTime(player.currentTime);
-            this._highlightActiveSegment(player.currentTime);
-        });
+        player.addEventListener('loadedmetadata', playerHandlers.loadedmetadata);
+        player.addEventListener('timeupdate', playerHandlers.timeupdate);
+        player.addEventListener('ended', playerHandlers.ended);
 
-        player.addEventListener('ended', () => {
-            if (playBtn) playBtn.innerHTML = '&#9654;';
-        });
+        const controlHandlers = { playBtn: null, seekBarMousedown: null, seekBarInput: null, seekBarChange: null, speedSelect: null };
 
         if (playBtn) {
-            playBtn.addEventListener('click', () => {
+            controlHandlers.playBtn = () => {
                 if (player.paused) {
                     player.play();
                     playBtn.innerHTML = '&#9646;&#9646;';
@@ -894,25 +899,54 @@ ${text}
                     player.pause();
                     playBtn.innerHTML = '&#9654;';
                 }
-            });
+            };
+            playBtn.addEventListener('click', controlHandlers.playBtn);
         }
 
         if (seekBar) {
-            seekBar.addEventListener('mousedown', () => { seekBar._seeking = true; });
-            seekBar.addEventListener('input', () => {
+            controlHandlers.seekBarMousedown = () => { seekBar._seeking = true; };
+            controlHandlers.seekBarInput = () => {
                 if (currentTimeEl) currentTimeEl.textContent = this._formatAudioTime(Number(seekBar.value));
-            });
-            seekBar.addEventListener('change', () => {
+            };
+            controlHandlers.seekBarChange = () => {
                 player.currentTime = Number(seekBar.value);
                 seekBar._seeking = false;
-            });
+            };
+            seekBar.addEventListener('mousedown', controlHandlers.seekBarMousedown);
+            seekBar.addEventListener('input', controlHandlers.seekBarInput);
+            seekBar.addEventListener('change', controlHandlers.seekBarChange);
         }
 
         if (speedSelect) {
-            speedSelect.addEventListener('change', () => {
+            controlHandlers.speedSelect = () => {
                 player.playbackRate = Number(speedSelect.value);
-            });
+            };
+            speedSelect.addEventListener('change', controlHandlers.speedSelect);
         }
+
+        this._audioHandlers = { player, playerHandlers, controlHandlers, playBtn, seekBar, speedSelect };
+    }
+
+    /**
+     * Remove all audio player event listeners registered by _setupAudioPlayerEvents.
+     */
+    _teardownAudioPlayerEvents() {
+        if (!this._audioHandlers) return;
+        const { player, playerHandlers, controlHandlers, playBtn, seekBar, speedSelect } = this._audioHandlers;
+
+        player.removeEventListener('loadedmetadata', playerHandlers.loadedmetadata);
+        player.removeEventListener('timeupdate', playerHandlers.timeupdate);
+        player.removeEventListener('ended', playerHandlers.ended);
+
+        if (playBtn && controlHandlers.playBtn) playBtn.removeEventListener('click', controlHandlers.playBtn);
+        if (seekBar) {
+            if (controlHandlers.seekBarMousedown) seekBar.removeEventListener('mousedown', controlHandlers.seekBarMousedown);
+            if (controlHandlers.seekBarInput) seekBar.removeEventListener('input', controlHandlers.seekBarInput);
+            if (controlHandlers.seekBarChange) seekBar.removeEventListener('change', controlHandlers.seekBarChange);
+        }
+        if (speedSelect && controlHandlers.speedSelect) speedSelect.removeEventListener('change', controlHandlers.speedSelect);
+
+        this._audioHandlers = null;
     }
 
     /**
@@ -978,8 +1012,8 @@ ${text}
         if (player) {
             player.pause();
             player.setAttribute('src', '');
-            player._audioPlayerBound = false;
         }
+        this._teardownAudioPlayerEvents();
     }
 
     /**

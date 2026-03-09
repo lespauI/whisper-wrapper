@@ -72,7 +72,8 @@ I need you to review this solution and update plan if changes are requred add th
 
 `libraryController.loadEntryDetail` fetches `entry.audioFilePath` from IPC but never calls `loadAudio`. Wire it up so the audio player loads (or hides) when switching between library entries. This is an explicit acceptance criterion.
 
-### [ ] Step: Fix P2 - CSS class mismatch in TranscriptionController segments
+### [x] Step: Fix P2 - CSS class mismatch in TranscriptionController segments
+<!-- chat-id: 6476dcc9-1bec-46a2-a0ae-2bd0c3d3136c -->
 
 `TranscriptionController.renderTimestampedSegments` adds class `transcript-segment`, but `_highlightActiveSegment` queries `.transcription-segment`. Align the class names so highlighting works regardless of which rendering path produced the segments.
 

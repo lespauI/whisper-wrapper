@@ -649,7 +649,7 @@ ${text}
             
             paragraph.forEach((segment, segmentIndex) => {
                 const segmentDiv = document.createElement('div');
-                segmentDiv.className = 'transcript-segment';
+                segmentDiv.className = 'transcription-segment';
                 segmentDiv.setAttribute('data-start', segment.start);
                 segmentDiv.setAttribute('data-end', segment.end);
                 

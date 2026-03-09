@@ -136,7 +136,8 @@ The `data/` directory is gitignored (`/data/*`) but exists in the repo as an emp
 
 ## Summary of Cleanup Steps
 
-### [ ] Step: Remove dead and empty files
+### [x] Step: Remove dead and empty files
+<!-- chat-id: 9d5426c2-0e55-4ebe-aaa1-cfee75b45877 -->
 - Delete `src/renderer/new_index.js`
 - Delete `whishper-wrapper.iml`
 - Delete `refine-with-ai_progress.md`
@@ -169,3 +170,7 @@ The `data/` directory is gitignored (`/data/*`) but exists in the repo as an emp
 - Run `npm run lint`
 - Run `npm run test:unit`
 - Confirm no regressions
+
+### [ ] Step: Review
+
+Review the sollution and update plan.md if needed

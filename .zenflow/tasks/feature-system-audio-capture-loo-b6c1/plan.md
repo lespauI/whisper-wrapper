@@ -43,7 +43,8 @@ Update `{@artifacts_path}/plan.md`.
 
 You need to update readme files and other documentation with that feature
 
-### [ ] Step: Test covverage
+### [x] Step: Test covverage
+<!-- chat-id: 108d7152-2932-45ac-85cd-679ac08a61f6 -->
 
 you need to achive 80% Test coverage based on test pyramid for that feature
 

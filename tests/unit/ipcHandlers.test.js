@@ -80,7 +80,7 @@ describe('IPCHandlers', () => {
         };
 
         mockTranscriptionStoreService = {
-            store: jest.fn(),
+            store: jest.fn().mockResolvedValue(null),
             list: jest.fn().mockReturnValue([]),
             get: jest.fn(),
             update: jest.fn(),
@@ -607,10 +607,22 @@ describe('IPCHandlers', () => {
             expect(result.sources).toHaveLength(2);
             expect(result.sources[0]).toEqual({
                 id: 'screen:0',
-                name: 'Entire Screen',
-                thumbnail: 'data:image/png;base64,abc'
+                name: 'Entire Screen'
+            });
+            expect(result.sources[1]).toEqual({
+                id: 'window:1',
+                name: 'My App'
             });
             expect(result.systemAudioSupported).toBeDefined();
+        });
+
+        it('should not include thumbnail data in serialized sources', async () => {
+            desktopCapturer.getSources.mockResolvedValue(mockSources);
+
+            const result = await handlers.handleGetAudioSources();
+
+            expect(result.sources[0].thumbnail).toBeUndefined();
+            expect(result.sources[1].thumbnail).toBeUndefined();
         });
 
         it('should indicate systemAudioSupported for darwin, win32, linux', async () => {
@@ -622,15 +634,44 @@ describe('IPCHandlers', () => {
             expect(result.systemAudioSupported).toBe(supported);
         });
 
-        it('should handle sources with no thumbnail gracefully', async () => {
+        it('should handle sources with extra fields gracefully — only id and name are returned', async () => {
             desktopCapturer.getSources.mockResolvedValue([
-                { id: 'screen:0', name: 'Entire Screen', thumbnail: null }
+                { id: 'screen:0', name: 'Entire Screen', thumbnail: null, appIcon: null }
             ]);
 
             const result = await handlers.handleGetAudioSources();
 
             expect(result.success).toBe(true);
-            expect(result.sources[0].thumbnail).toBeNull();
+            expect(Object.keys(result.sources[0])).toEqual(['id', 'name']);
+        });
+
+        it('should return empty sources array when desktopCapturer returns empty list', async () => {
+            desktopCapturer.getSources.mockResolvedValue([]);
+
+            const result = await handlers.handleGetAudioSources();
+
+            expect(result.success).toBe(true);
+            expect(result.sources).toHaveLength(0);
+        });
+
+        it('should pass correct types filter to desktopCapturer', async () => {
+            desktopCapturer.getSources.mockResolvedValue([]);
+
+            await handlers.handleGetAudioSources();
+
+            expect(desktopCapturer.getSources).toHaveBeenCalledWith({
+                types: ['screen', 'window']
+            });
+        });
+
+        it('should include platform in both success and error responses', async () => {
+            desktopCapturer.getSources.mockResolvedValue(mockSources);
+            const result = await handlers.handleGetAudioSources();
+            expect(result.platform).toBe(process.platform);
+
+            desktopCapturer.getSources.mockRejectedValue(new Error('fail'));
+            const errorResult = await handlers.handleGetAudioSources();
+            expect(errorResult.platform).toBe(process.platform);
         });
 
         it('should return failure result when desktopCapturer throws', async () => {

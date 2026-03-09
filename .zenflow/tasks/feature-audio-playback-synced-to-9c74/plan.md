@@ -57,7 +57,8 @@ you need to achive 80% Test coverage based on test pyramid for that feature
 
 I need you to review this solution and update plan if changes are requred add them into plan.md as tasks
 
-### [ ] Step: Fix P0 security - path traversal in handleAudioReadFile
+### [x] Step: Fix P0 security - path traversal in handleAudioReadFile
+<!-- chat-id: b9ee0c30-0432-40a5-bc74-774f3011ed3d -->
 
 `handleAudioReadFile` in `src/main/ipcHandlers.js` accepts any filesystem path from the renderer with no directory restriction. Add an allow-list check so only paths under `os.homedir()` and `app.getPath('userData')` can be served. Unit test the new validation.
 

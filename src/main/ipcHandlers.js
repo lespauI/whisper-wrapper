@@ -5,6 +5,7 @@
 const { ipcMain, dialog, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const FileService = require('../services/fileService');
 const TranscriptionService = require('../services/transcriptionService');
 const RecordingService = require('../services/recordingService');
@@ -895,6 +896,15 @@ class IPCHandlers {
             return { success: false, error: 'Invalid file path' };
         }
         const resolved = path.resolve(filePath);
+        const { app } = require('electron');
+        const allowedDirs = [os.homedir(), app.getPath('userData')];
+        const isAllowed = allowedDirs.some(dir => {
+            const rel = path.relative(dir, resolved);
+            return !rel.startsWith('..') && !path.isAbsolute(rel);
+        });
+        if (!isAllowed) {
+            return { success: false, error: 'Access denied: file path is outside allowed directories' };
+        }
         if (!fs.existsSync(resolved)) {
             return { success: false, error: 'File not found' };
         }

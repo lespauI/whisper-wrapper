@@ -73,3 +73,8 @@ Apply the P1 and P2 fixes identified in the review step:
 - [ ] Remove thumbnail serialization from `handleGetAudioSources`
 - [ ] Fix macOS warning to always show informational note when system/both mode on darwin
 - [ ] Avoid double-stop: only set `_micStream`/`_systemAudioStream` when they differ from the recorder stream
+
+### [x] Step: Update pull request description
+<!-- chat-id: 273fe921-b0ca-4127-a023-1819183b6c24 -->
+
+https://github.com/lespauI/whisper-wrapper/pull/23

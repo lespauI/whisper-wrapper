@@ -143,10 +143,14 @@ The `data/` directory is gitignored (`/data/*`) but exists in the repo as an emp
 - Delete `refine-with-ai_progress.md`
 - Move or delete `E2E_TEST_COVERAGE_ANALYSIS.md`
 
-### [ ] Step: Consolidate configuration system
-- Decide on single config system (`src/config.js` vs `src/config/`)
-- Remove the unused one
-- Reconcile any differing defaults
+### [x] Step: Consolidate configuration system
+<!-- chat-id: a6ddda42-c45b-4b57-b5f3-e60af47ac346 -->
+- Kept `src/config.js` as the single active config system (used by all source files)
+- Removed `src/config/index.js` (unused `ConfigManager` class — zero imports)
+- Kept `src/config/default.js` (still used by `ipcHandlers.js` for `availableModels` and by 2 unit tests)
+- Updated `scripts/verify-setup.js` to remove existence check for deleted file
+- Updated `AGENTS.md` key files section
+- All 521 unit tests pass, no lint regressions
 
 ### [ ] Step: Remove unused dependencies
 - Remove `lodash`, `form-data` from dependencies

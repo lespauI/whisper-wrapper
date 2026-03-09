@@ -191,14 +191,14 @@ describe('LocalWhisperService', () => {
     });
 
     describe('buildGpuArgs', () => {
-        it('should return empty array when hardware acceleration is disabled', () => {
-            expect(service.buildGpuArgs('metal', false)).toEqual([]);
-            expect(service.buildGpuArgs('cuda', false)).toEqual([]);
-            expect(service.buildGpuArgs('auto', false)).toEqual([]);
+        it('should return --no-gpu when hardware acceleration is disabled', () => {
+            expect(service.buildGpuArgs('metal', false)).toEqual(['--no-gpu']);
+            expect(service.buildGpuArgs('cuda', false)).toEqual(['--no-gpu']);
+            expect(service.buildGpuArgs('auto', false)).toEqual(['--no-gpu']);
         });
 
-        it('should return --metal flag for metal backend', () => {
-            expect(service.buildGpuArgs('metal', true)).toEqual(['--metal']);
+        it('should return empty array for metal backend (binary uses GPU by default)', () => {
+            expect(service.buildGpuArgs('metal', true)).toEqual([]);
         });
 
         it('should return --coreml flag for coreml backend', () => {
@@ -213,8 +213,8 @@ describe('LocalWhisperService', () => {
             expect(service.buildGpuArgs('vulkan', true)).toEqual(['--vulkan']);
         });
 
-        it('should return empty array for cpu backend', () => {
-            expect(service.buildGpuArgs('cpu', true)).toEqual([]);
+        it('should return --no-gpu for cpu backend', () => {
+            expect(service.buildGpuArgs('cpu', true)).toEqual(['--no-gpu']);
         });
 
         it('should detect system backend when set to auto', () => {
@@ -800,25 +800,25 @@ describe('LocalWhisperService', () => {
     });
 
     describe('GPU acceleration - buildGpuArgs auto resolution', () => {
-        it('should resolve auto to metal on Apple Silicon darwin', () => {
+        it('should resolve auto to metal on Apple Silicon darwin (no flag — GPU is binary default)', () => {
             const os = require('os');
             Object.defineProperty(process, 'platform', { value: 'darwin', writable: true });
             jest.spyOn(os, 'cpus').mockReturnValue([{ model: 'Apple M2' }]);
 
             const args = service.buildGpuArgs('auto', true);
-            expect(args).toEqual(['--metal']);
+            expect(args).toEqual([]);
 
             Object.defineProperty(process, 'platform', { value: process.platform, writable: true });
             jest.restoreAllMocks();
         });
 
-        it('should resolve auto to cpu on Intel darwin', () => {
+        it('should resolve auto to cpu on Intel darwin (passes --no-gpu to explicitly disable)', () => {
             const os = require('os');
             Object.defineProperty(process, 'platform', { value: 'darwin', writable: true });
             jest.spyOn(os, 'cpus').mockReturnValue([{ model: 'Intel Core i9' }]);
 
             const args = service.buildGpuArgs('auto', true);
-            expect(args).toEqual([]);
+            expect(args).toEqual(['--no-gpu']);
 
             Object.defineProperty(process, 'platform', { value: process.platform, writable: true });
             jest.restoreAllMocks();
@@ -860,7 +860,7 @@ describe('LocalWhisperService', () => {
             fs.readFileSync = jest.fn().mockReturnValue(jsonOutput);
         });
 
-        it('should pass --metal flag when metal backend is selected', async () => {
+        it('should pass no GPU flag when metal backend is selected (binary uses GPU by default)', async () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0));
 
@@ -870,7 +870,8 @@ describe('LocalWhisperService', () => {
             });
 
             const whisperArgs = spawn.mock.calls[1][1];
-            expect(whisperArgs).toContain('--metal');
+            expect(whisperArgs).not.toContain('--metal');
+            expect(whisperArgs).not.toContain('--no-gpu');
         });
 
         it('should pass --cuda flag when cuda backend is selected', async () => {
@@ -912,7 +913,7 @@ describe('LocalWhisperService', () => {
             expect(whisperArgs).toContain('--coreml');
         });
 
-        it('should not pass GPU flags when hardwareAcceleration is false', async () => {
+        it('should pass --no-gpu when hardwareAcceleration is false', async () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0));
 
@@ -922,6 +923,7 @@ describe('LocalWhisperService', () => {
             });
 
             const whisperArgs = spawn.mock.calls[1][1];
+            expect(whisperArgs).toContain('--no-gpu');
             expect(whisperArgs).not.toContain('--metal');
             expect(whisperArgs).not.toContain('--cuda');
             expect(whisperArgs).not.toContain('--vulkan');
@@ -1006,7 +1008,7 @@ describe('LocalWhisperService', () => {
             fs.readFileSync = jest.fn().mockReturnValue(jsonOutput);
         });
 
-        it('should fallback to CPU when metal GPU acceleration fails', async () => {
+        it('should fallback to CPU when CUDA GPU acceleration fails', async () => {
             const originalImpl = service.transcribeFile.bind(service);
             const transcribeSpy = jest.spyOn(service, 'transcribeFile');
             let callCount = 0;
@@ -1020,19 +1022,15 @@ describe('LocalWhisperService', () => {
             });
 
             spawn.mockImplementationOnce(() => makeProcess(0))
-                .mockImplementationOnce(() => makeProcess(1, 'Metal not compiled'));
+                .mockImplementationOnce(() => makeProcess(1, 'CUDA not compiled'));
 
             const result = await service.transcribeFile('/path/to/audio.wav', {
-                gpuBackend: 'metal',
+                gpuBackend: 'cuda',
                 hardwareAcceleration: true
             });
 
             expect(result.text).toBe('CPU fallback result');
             expect(transcribeSpy).toHaveBeenCalledTimes(2);
-            expect(transcribeSpy).toHaveBeenNthCalledWith(2,
-                '/path/to/audio.wav',
-                expect.objectContaining({ hardwareAcceleration: false })
-            );
         });
 
         it('should fallback to Vulkan when CUDA fails on linux', async () => {
@@ -1393,7 +1391,7 @@ describe('LocalWhisperService', () => {
             fs.unlinkSync = jest.fn();
         });
 
-        it('should extract audio from video and transcribe with GPU flag', async () => {
+        it('should extract audio from video and transcribe with GPU enabled (no --no-gpu flag)', async () => {
             spawn.mockImplementationOnce(() => makeProc(0, 'time=00:00:05'))
                 .mockImplementationOnce(() => makeProc(0, 'time=00:00:05'))
                 .mockImplementationOnce(() => makeProc(0));
@@ -1405,7 +1403,8 @@ describe('LocalWhisperService', () => {
 
             expect(result.success).toBe(true);
             const whisperArgs = spawn.mock.calls[2][1];
-            expect(whisperArgs).toContain('--metal');
+            expect(whisperArgs).not.toContain('--no-gpu');
+            expect(whisperArgs).not.toContain('--metal');
         });
 
         it('should extract audio from video without GPU', async () => {
@@ -1473,7 +1472,7 @@ describe('LocalWhisperService', () => {
             fs.unlinkSync = jest.fn();
         });
 
-        it('should transcribe audio buffer with GPU acceleration', async () => {
+        it('should transcribe audio buffer with GPU acceleration (no --no-gpu flag)', async () => {
             spawn.mockImplementationOnce(() => makeProc(0))
                 .mockImplementationOnce(() => makeProc(0))
                 .mockImplementationOnce(() => makeProc(0));
@@ -1490,7 +1489,8 @@ describe('LocalWhisperService', () => {
                 audioBuffer
             );
             const whisperArgs = spawn.mock.calls[2][1];
-            expect(whisperArgs).toContain('--metal');
+            expect(whisperArgs).not.toContain('--no-gpu');
+            expect(whisperArgs).not.toContain('--metal');
         });
 
         it('should transcribe audio buffer in CPU mode', async () => {

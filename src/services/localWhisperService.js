@@ -274,14 +274,15 @@ class LocalWhisperService {
      */
     buildGpuArgs(gpuBackend, hardwareAcceleration) {
         if (!hardwareAcceleration) {
-            return [];
+            return ['--no-gpu'];
         }
         const backend = gpuBackend === 'auto' ? LocalWhisperService.detectSuggestedBackend() : gpuBackend;
         switch (backend) {
-        case 'metal': return ['--metal'];
+        case 'metal': return [];
         case 'coreml': return ['--coreml'];
         case 'cuda': return ['--cuda'];
         case 'vulkan': return ['--vulkan'];
+        case 'cpu': return ['--no-gpu'];
         default: return [];
         }
     }
@@ -683,11 +684,14 @@ class LocalWhisperService {
 
         // Add GPU acceleration flags
         const gpuArgs = this.buildGpuArgs(gpuBackend, hardwareAcceleration);
-        if (gpuArgs.length > 0) {
+        if (gpuArgs.includes('--no-gpu')) {
+            args.push(...gpuArgs);
+            console.log('💻 LocalWhisperService: Running in CPU-only mode (--no-gpu)');
+        } else if (gpuArgs.length > 0) {
             args.push(...gpuArgs);
             console.log(`🚀 LocalWhisperService: GPU acceleration enabled: ${gpuArgs.join(' ')}`);
         } else {
-            console.log('💻 LocalWhisperService: Running in CPU-only mode');
+            console.log('🚀 LocalWhisperService: GPU acceleration enabled (binary default)');
         }
 
         // Add other options
@@ -872,7 +876,8 @@ class LocalWhisperService {
                     console.log('📄 STDOUT:', stdout);
                     
                     // Check if failure is GPU-related; if so, retry with fallback
-                    const isGpuError = gpuArgs.length > 0 && (
+                    const isGpuAttempt = gpuArgs.length > 0 && !gpuArgs.includes('--no-gpu');
+                    const isGpuError = isGpuAttempt && (
                         stderr.includes('unknown argument') ||
                         stderr.includes('failed to init') ||
                         stderr.includes('CUDA') ||
@@ -919,7 +924,8 @@ class LocalWhisperService {
                     }
                     
                     // Check if failure is GPU-related; if so, retry with CPU fallback
-                    const isGpuError = gpuArgs.length > 0 && (
+                    const isGpuAttempt = gpuArgs.length > 0 && !gpuArgs.includes('--no-gpu');
+                    const isGpuError = isGpuAttempt && (
                         stderr.includes('unknown argument') ||
                         stderr.includes('failed to init') ||
                         stderr.includes('CUDA') ||

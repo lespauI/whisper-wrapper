@@ -602,6 +602,16 @@ body {
     font-size: 0.9rem;
 }
 
+.system-audio-warning {
+    margin: 0.25rem 0 0.5rem 0;
+    padding: 0.5rem 0.75rem;
+    background: #fffbeb;
+    border: 1px solid #f59e0b;
+    border-radius: 6px;
+    color: #92400e;
+    font-size: 0.85rem;
+}
+
 .setting-group input[type="checkbox"] {
     width: auto;
     transform: scale(1.2);

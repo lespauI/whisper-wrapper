@@ -2,7 +2,7 @@
  * IPC Handlers - Handles communication between main and renderer processes
  */
 
-const { ipcMain, dialog } = require('electron');
+const { ipcMain, dialog, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const FileService = require('../services/fileService');
@@ -72,6 +72,9 @@ class IPCHandlers {
         ipcMain.handle('transcriptions:update', this.handleTranscriptionsUpdate.bind(this));
         ipcMain.handle('transcriptions:delete', this.handleTranscriptionsDelete.bind(this));
         ipcMain.handle('transcriptions:reindex', this.handleTranscriptionsReindex.bind(this));
+
+        // Audio source handlers
+        ipcMain.handle('recording:getAudioSources', this.handleGetAudioSources.bind(this));
 
         // GPU backend detection
         ipcMain.handle('whisper:detectGpuBackend', this.handleDetectGpuBackend.bind(this));
@@ -879,6 +882,34 @@ class IPCHandlers {
         } catch (error) {
             console.error('Error reindexing transcriptions:', error);
             return { count: 0, error: error.message };
+        }
+    }
+
+    async handleGetAudioSources() {
+        try {
+            const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
+            const os = process.platform;
+
+            const systemSources = sources.map((source) => ({
+                id: source.id,
+                name: source.name
+            }));
+
+            return {
+                success: true,
+                platform: os,
+                sources: systemSources,
+                systemAudioSupported: os === 'win32' || os === 'linux' || os === 'darwin'
+            };
+        } catch (error) {
+            console.error('Error getting audio sources:', error);
+            return {
+                success: false,
+                platform: process.platform,
+                sources: [],
+                systemAudioSupported: false,
+                error: error.message
+            };
         }
     }
 }

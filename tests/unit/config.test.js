@@ -51,6 +51,10 @@ describe('Configuration System', () => {
             expect(defaultConfig.recording.autoSave).toBe(true);
         });
 
+        it('should have captureMode defaulting to microphone', () => {
+            expect(defaultConfig.recording.captureMode).toBe('microphone');
+        });
+
         it('should have export settings', () => {
             expect(defaultConfig.export).toBeDefined();
             expect(defaultConfig.export.defaultFormat).toBe('txt');

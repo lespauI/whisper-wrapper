@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     updateRecordingSettings: (settings) => ipcRenderer.invoke('recording:updateSettings', settings),
     getRecordingHistory: () => ipcRenderer.invoke('recording:history'),
     getRecordingConstraints: () => ipcRenderer.invoke('recording:constraints'),
+    getAudioSources: () => ipcRenderer.invoke('recording:getAudioSources'),
   
     // Transcription
     transcribeFile: (filePath) => ipcRenderer.invoke('transcription:file', filePath),

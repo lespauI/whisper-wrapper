@@ -284,6 +284,19 @@
                                 
                                 <div class="settings-row">
                                     <div class="setting-group">
+                                        <label for="capture-mode-select">Audio Source:</label>
+                                        <select id="capture-mode-select">
+                                            <option value="microphone" selected>Microphone only</option>
+                                            <option value="system">System audio only</option>
+                                            <option value="both">Microphone + System audio</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div id="system-audio-warning" class="system-audio-warning hidden">
+                                    <span id="system-audio-warning-text"></span>
+                                </div>
+                                <div class="settings-row">
+                                    <div class="setting-group">
                                         <label for="quality-select">Quality:</label>
                                         <select id="quality-select">
                                             <option value="medium" selected>Medium (22kHz, Mono)</option>

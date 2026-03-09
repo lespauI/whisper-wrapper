@@ -32,6 +32,8 @@ jest.mock('fs', () => ({
     readFileSync: jest.fn().mockReturnValue(JSON.stringify({ entries: [] })),
     existsSync: jest.fn().mockReturnValue(true),
     mkdirSync: jest.fn(),
+    statSync: jest.fn().mockReturnValue({ isFile: () => true, size: 1024 }),
+    unlinkSync: jest.fn(),
     promises: {
         writeFile: jest.fn(),
         readFile: jest.fn().mockResolvedValue(JSON.stringify({ entries: [] })),
@@ -187,7 +189,7 @@ describe('IPCHandlers', () => {
 
             expect(mockFileService.validateFile).toHaveBeenCalledWith('/path/to/audio.wav');
             expect(mockTranscriptionService.setModel).toHaveBeenCalledWith('base');
-            expect(mockTranscriptionService.transcribeFile).toHaveBeenCalledWith('/temp/audio.wav', { threads: 4, translate: false });
+            expect(mockTranscriptionService.transcribeFile).toHaveBeenCalledWith('/temp/audio.wav', expect.objectContaining({ threads: 4, translate: false }));
             expect(result).toEqual(expect.objectContaining(mockResult));
         });
 
@@ -255,7 +257,7 @@ describe('IPCHandlers', () => {
 
             const result = await handlers.handleTranscribeAudio(mockEvent, audioData);
 
-            expect(mockTranscriptionService.transcribeBuffer).toHaveBeenCalledWith(audioData, { threads: 4, translate: false });
+            expect(mockTranscriptionService.transcribeBuffer).toHaveBeenCalledWith(audioData, expect.objectContaining({ threads: 4, translate: false }));
             expect(result).toEqual(expect.objectContaining(mockResult));
         });
 
@@ -709,6 +711,80 @@ describe('IPCHandlers', () => {
             expect(result.message).toContain('Detection error');
 
             localWhisperModule.LocalWhisperService.detectSuggestedBackend = originalDetect;
+        });
+    });
+
+    describe('handleAudioReadFile', () => {
+        const mockEvent = {};
+
+        beforeEach(() => {
+            fs.existsSync.mockReturnValue(true);
+            fs.statSync.mockReturnValue({ isFile: () => true, size: 1024 });
+            fs.readFileSync.mockReturnValue(Buffer.from('fake audio data'));
+        });
+
+        it('returns error for null path', async () => {
+            const result = await handlers.handleAudioReadFile(mockEvent, null);
+            expect(result.success).toBe(false);
+            expect(result.error).toBe('Invalid file path');
+        });
+
+        it('returns error for non-string path', async () => {
+            const result = await handlers.handleAudioReadFile(mockEvent, 12345);
+            expect(result.success).toBe(false);
+            expect(result.error).toBe('Invalid file path');
+        });
+
+        it('returns error when file does not exist', async () => {
+            fs.existsSync.mockReturnValue(false);
+            const result = await handlers.handleAudioReadFile(mockEvent, '/path/to/audio.wav');
+            expect(result.success).toBe(false);
+            expect(result.error).toBe('File not found');
+        });
+
+        it('returns error when path is not a file', async () => {
+            fs.statSync.mockReturnValue({ isFile: () => false, size: 0 });
+            const result = await handlers.handleAudioReadFile(mockEvent, '/path/to/dir');
+            expect(result.success).toBe(false);
+            expect(result.error).toBe('Path is not a file');
+        });
+
+        it('returns error when file is too large', async () => {
+            fs.statSync.mockReturnValue({ isFile: () => true, size: 400 * 1024 * 1024 });
+            const result = await handlers.handleAudioReadFile(mockEvent, '/path/to/huge.wav');
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('File too large');
+        });
+
+        it('returns success with data URL for a wav file', async () => {
+            const result = await handlers.handleAudioReadFile(mockEvent, '/path/to/audio.wav');
+            expect(result.success).toBe(true);
+            expect(result.dataUrl).toMatch(/^data:audio\/wav;base64,/);
+        });
+
+        it('returns success with correct mime type for mp3', async () => {
+            const result = await handlers.handleAudioReadFile(mockEvent, '/path/to/audio.mp3');
+            expect(result.success).toBe(true);
+            expect(result.dataUrl).toMatch(/^data:audio\/mpeg;base64,/);
+        });
+
+        it('returns success with correct mime type for m4a', async () => {
+            const result = await handlers.handleAudioReadFile(mockEvent, '/path/to/audio.m4a');
+            expect(result.success).toBe(true);
+            expect(result.dataUrl).toMatch(/^data:audio\/mp4;base64,/);
+        });
+
+        it('falls back to audio/mpeg for unknown extension', async () => {
+            const result = await handlers.handleAudioReadFile(mockEvent, '/path/to/audio.xyz');
+            expect(result.success).toBe(true);
+            expect(result.dataUrl).toMatch(/^data:audio\/mpeg;base64,/);
+        });
+
+        it('returns error when readFileSync throws', async () => {
+            fs.readFileSync.mockImplementationOnce(() => { throw new Error('Permission denied'); });
+            const result = await handlers.handleAudioReadFile(mockEvent, '/path/to/audio.wav');
+            expect(result.success).toBe(false);
+            expect(result.error).toBe('Permission denied');
         });
     });
 });

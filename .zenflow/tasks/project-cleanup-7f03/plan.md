@@ -173,10 +173,13 @@ The `data/` directory is gitignored (`/data/*`) but exists in the repo as an emp
 - Audited `tests/e2e/` root `.test.js` files: both are Jest tests correctly matched by the Jest `e2e` project config; Playwright only picks up `.spec.ts` in `tests/e2e/tests/` — no conflict, no change needed
 - No test or lint regressions (pre-existing failures unchanged)
 
-### [ ] Step: Update .gitignore and minor hygiene
-- Add `*.iml` to `.gitignore`
-- Clean up Russian comment
-- Review `.architecture/` and `.zencoder/rules/` for staleness
+### [x] Step: Update .gitignore and minor hygiene
+<!-- chat-id: 2abaa488-1c11-4d1e-98ba-3386c9cc6bee -->
+- Added `*.iml` to `.gitignore` under IDE section
+- Replaced Russian comment (`оставил как было!`) with clean English label (`# Project-specific`)
+- Reviewed `.architecture/`: updated `project-structure.md` to remove deleted `src/config/index.js` reference. Broader staleness noted (docs reference `components/` directory that doesn't exist — project uses `controllers/`) but full rewrite is out of scope
+- Reviewed `.zencoder/rules/`: 18 auto-generated context files — advisory only, no functional impact, left as-is
+- No lint regressions (pre-existing issues unchanged)
 
 ### [ ] Step: Verify
 - Run `npm run lint`

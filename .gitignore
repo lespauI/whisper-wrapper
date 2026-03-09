@@ -47,6 +47,7 @@ Desktop.ini
 # IDE
 .idea
 .vscode/
+*.iml
 
 # Logs
 *.log
@@ -63,7 +64,7 @@ logs/
 tmp/
 temp/
 
-# YOUR CUSTOM STUFF (оставил как было!)
+# Project-specific
 test-config.js
 test-whisper.js
 /whisper.cpp

@@ -165,10 +165,13 @@ The `data/` directory is gitignored (`/data/*`) but exists in the repo as an emp
 - Removed `eslintConfig` block from `package.json` (`.eslintrc.js` is the authoritative config)
 - Lint output unchanged (no regressions)
 
-### [ ] Step: Clean up test artifacts and stale docs
-- Audit and fix `tests/data/` files (rename `silince.waw`, remove orphans)
-- Move or delete summary markdown files from `tests/e2e/`
-- Audit `tests/e2e/` root `.test.js` files for correct test runner placement
+### [x] Step: Clean up test artifacts and stale docs
+<!-- chat-id: 131ed7ec-826d-460c-9561-8228ffa0be98 -->
+- Deleted `tests/data/silince.waw` (orphaned — not referenced by any test, had typos in name and extension)
+- Kept `tests/data/summary-test.wav` (used by `generateTranscriptionMeta.test.js`) and `tests/data/test.wav` (used by `realVideoTranscription.test.js` and `transcription-e2e.test.js`)
+- Deleted `tests/e2e/FEATURE_SPLIT_SUMMARY.md`, `REFACTORED_SUMMARY.md`, `TEST_SUMMARY.md` (stale dev notes, not test code)
+- Audited `tests/e2e/` root `.test.js` files: both are Jest tests correctly matched by the Jest `e2e` project config; Playwright only picks up `.spec.ts` in `tests/e2e/tests/` — no conflict, no change needed
+- No test or lint regressions (pre-existing failures unchanged)
 
 ### [ ] Step: Update .gitignore and minor hygiene
 - Add `*.iml` to `.gitignore`

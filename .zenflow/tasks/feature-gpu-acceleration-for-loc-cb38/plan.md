@@ -55,3 +55,8 @@ you need to achive 80% Test coverage based on test pyramid for that feature
 I need you to review this solution and update plan if changes are requred
 
 **Review result: APPROVED** — No P0/P1 issues found. Implementation is correct, secure, and well-tested. Lint errors (1988) and test failures (3) are all pre-existing. GPU fallback chain is safe with bounded recursion.
+
+### [x] Step: Update pull reauest description
+<!-- chat-id: 10fa0bd9-64dd-481d-86ab-50d34f6b8d64 -->
+
+https://github.com/lespauI/whisper-wrapper/pull/24

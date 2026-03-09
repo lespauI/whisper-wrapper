@@ -50,7 +50,6 @@ whisper-wrapper/
 │   │   └── ffmpeg.js           # FFmpeg wrapper utilities
 │   │
 │   └── config/                 # Configuration
-│       ├── index.js            # Configuration exports
 │       └── default.js          # Default configuration
 │
 ├── tests/                      # Test files
@@ -113,7 +112,6 @@ Contains helper functions and utilities:
 
 #### Configuration (`src/config/`)
 Contains application configuration:
-- `index.js`: Exports configuration
 - `default.js`: Default configuration values
 
 ### Testing Structure

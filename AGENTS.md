@@ -90,7 +90,8 @@ data/           # Templates and application data
 - `src/services/localWhisperService.js` — Local whisper.cpp integration
 - `src/services/transcriptionService.js` — OpenAI Whisper API integration
 - `src/services/recordingService.js` — Audio capture and VAD
-- `src/config/index.js` — Configuration management
+- `src/config.js` — Configuration management (runtime config with JSON file persistence)
+- `src/config/default.js` — Static default configuration and model definitions
 
 ---
 

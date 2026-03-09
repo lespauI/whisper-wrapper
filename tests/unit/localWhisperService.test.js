@@ -151,6 +151,87 @@ describe('LocalWhisperService', () => {
         });
     });
 
+    describe('setGpuBackend', () => {
+        it('should set valid GPU backend', () => {
+            service.setGpuBackend('metal');
+            expect(service.gpuBackend).toBe('metal');
+        });
+
+        it('should accept all valid backends', () => {
+            const validBackends = ['auto', 'metal', 'coreml', 'cuda', 'vulkan', 'cpu'];
+            validBackends.forEach(backend => {
+                service.setGpuBackend(backend);
+                expect(service.gpuBackend).toBe(backend);
+            });
+        });
+
+        it('should throw error for invalid backend', () => {
+            expect(() => service.setGpuBackend('invalid')).toThrow('Invalid GPU backend');
+            expect(() => service.setGpuBackend('directx')).toThrow('Invalid GPU backend');
+        });
+    });
+
+    describe('setHardwareAcceleration', () => {
+        it('should enable hardware acceleration', () => {
+            service.setHardwareAcceleration(true);
+            expect(service.hardwareAcceleration).toBe(true);
+        });
+
+        it('should disable hardware acceleration', () => {
+            service.setHardwareAcceleration(false);
+            expect(service.hardwareAcceleration).toBe(false);
+        });
+
+        it('should coerce to boolean', () => {
+            service.setHardwareAcceleration(1);
+            expect(service.hardwareAcceleration).toBe(true);
+            service.setHardwareAcceleration(0);
+            expect(service.hardwareAcceleration).toBe(false);
+        });
+    });
+
+    describe('buildGpuArgs', () => {
+        it('should return empty array when hardware acceleration is disabled', () => {
+            expect(service.buildGpuArgs('metal', false)).toEqual([]);
+            expect(service.buildGpuArgs('cuda', false)).toEqual([]);
+            expect(service.buildGpuArgs('auto', false)).toEqual([]);
+        });
+
+        it('should return --metal flag for metal backend', () => {
+            expect(service.buildGpuArgs('metal', true)).toEqual(['--metal']);
+        });
+
+        it('should return --coreml flag for coreml backend', () => {
+            expect(service.buildGpuArgs('coreml', true)).toEqual(['--coreml']);
+        });
+
+        it('should return --cuda flag for cuda backend', () => {
+            expect(service.buildGpuArgs('cuda', true)).toEqual(['--cuda']);
+        });
+
+        it('should return --vulkan flag for vulkan backend', () => {
+            expect(service.buildGpuArgs('vulkan', true)).toEqual(['--vulkan']);
+        });
+
+        it('should return empty array for cpu backend', () => {
+            expect(service.buildGpuArgs('cpu', true)).toEqual([]);
+        });
+
+        it('should detect system backend when set to auto', () => {
+            const args = service.buildGpuArgs('auto', true);
+            expect(Array.isArray(args)).toBe(true);
+        });
+    });
+
+    describe('detectSuggestedBackend', () => {
+        it('should return a valid backend string', () => {
+            const { LocalWhisperService } = require('../../src/services/localWhisperService');
+            const backend = LocalWhisperService.detectSuggestedBackend();
+            const validBackends = ['auto', 'metal', 'coreml', 'cuda', 'vulkan', 'cpu'];
+            expect(validBackends).toContain(backend);
+        });
+    });
+
     describe('getAvailableModels', () => {
         it('should return empty array when models directory does not exist', () => {
             // Override the default mock for this specific test

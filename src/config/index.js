@@ -51,7 +51,9 @@ class ConfigManager {
             threads: this.get('transcription.threads', 4),
             translate: this.get('transcription.translate', false),
             useInitialPrompt: this.get('transcription.useInitialPrompt', true),
-            initialPrompt: this.get('transcription.initialPrompt', '')
+            initialPrompt: this.get('transcription.initialPrompt', ''),
+            hardwareAcceleration: this.get('transcription.hardwareAcceleration', true),
+            gpuBackend: this.get('transcription.gpuBackend', 'auto')
         };
     }
 
@@ -77,6 +79,12 @@ class ConfigManager {
         }
         if (config.initialPrompt !== undefined) {
             this.set('transcription.initialPrompt', config.initialPrompt);
+        }
+        if (config.hardwareAcceleration !== undefined) {
+            this.set('transcription.hardwareAcceleration', config.hardwareAcceleration);
+        }
+        if (config.gpuBackend !== undefined) {
+            this.set('transcription.gpuBackend', config.gpuBackend);
         }
     }
 

@@ -78,6 +78,32 @@
                         </div>
                     </div>
                     
+                    <!-- Performance Settings -->
+                    <div class="settings-card performance-card">
+                        <h4 class="settings-card-title">Performance</h4>
+                        
+                        <div class="form-group">
+                            <div class="checkbox-container">
+                                <input type="checkbox" id="hardware-acceleration-checkbox" class="styled-checkbox" checked>
+                                <label for="hardware-acceleration-checkbox">Hardware Acceleration</label>
+                            </div>
+                            <div class="form-text">Use GPU to speed up transcription (3-5x faster on Apple Silicon)</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="gpu-backend-select">Acceleration Backend</label>
+                            <select id="gpu-backend-select" class="form-control">
+                                <option value="auto">Auto-detect</option>
+                                <option value="metal">Metal (Apple Silicon)</option>
+                                <option value="coreml">CoreML (Apple Neural Engine)</option>
+                                <option value="cuda">CUDA (NVIDIA)</option>
+                                <option value="vulkan">Vulkan (AMD/Intel)</option>
+                                <option value="cpu">CPU only</option>
+                            </select>
+                            <div class="form-text" id="gpu-backend-description">Automatically selects the best available backend</div>
+                        </div>
+                    </div>
+                    
                     <!-- Language Settings -->
                     <div class="settings-card language-card">
                         <h4 class="settings-card-title">Language Settings</h4>

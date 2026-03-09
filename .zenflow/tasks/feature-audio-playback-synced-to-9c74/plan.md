@@ -82,3 +82,6 @@ I need you to review this solution and update plan if changes are requred add th
 
 `seekToTime` unconditionally calls `player.play()` when the audio is paused. Change it to only seek without auto-playing; let the play button remain the user's explicit trigger. Update unit tests.
 
+
+### [x] Step: Player bug max 1:40 even audio is 30 mins
+<!-- chat-id: 88383f97-07fe-44a8-a100-c53248c81285 -->

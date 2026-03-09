@@ -832,9 +832,9 @@ ${text}
             }
             const player = document.getElementById('audio-player');
             if (!player) return;
+            this._setupAudioPlayerEvents(player);
             player.src = result.dataUrl;
             this.showAudioPlayer();
-            this._setupAudioPlayerEvents(player);
         } catch (err) {
             this.hideAudioPlayer();
         }
@@ -851,9 +851,9 @@ ${text}
         }
         const player = document.getElementById('audio-player');
         if (!player) return;
+        this._setupAudioPlayerEvents(player);
         player.src = blobUrl;
         this.showAudioPlayer();
-        this._setupAudioPlayerEvents(player);
     }
 
     /**
@@ -885,8 +885,13 @@ ${text}
         };
 
         player.addEventListener('loadedmetadata', playerHandlers.loadedmetadata);
+        player.addEventListener('durationchange', playerHandlers.loadedmetadata);
         player.addEventListener('timeupdate', playerHandlers.timeupdate);
         player.addEventListener('ended', playerHandlers.ended);
+
+        if (player.readyState >= 1 && !isNaN(player.duration)) {
+            playerHandlers.loadedmetadata();
+        }
 
         const controlHandlers = { playBtn: null, seekBarMousedown: null, seekBarInput: null, seekBarChange: null, speedSelect: null };
 
@@ -935,6 +940,7 @@ ${text}
         const { player, playerHandlers, controlHandlers, playBtn, seekBar, speedSelect } = this._audioHandlers;
 
         player.removeEventListener('loadedmetadata', playerHandlers.loadedmetadata);
+        player.removeEventListener('durationchange', playerHandlers.loadedmetadata);
         player.removeEventListener('timeupdate', playerHandlers.timeupdate);
         player.removeEventListener('ended', playerHandlers.ended);
 

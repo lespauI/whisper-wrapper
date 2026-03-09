@@ -151,84 +151,103 @@ describe('LocalWhisperService', () => {
         });
     });
 
-    describe('setGpuBackend', () => {
-        it('should set valid GPU backend', () => {
-            service.setGpuBackend('metal');
-            expect(service.gpuBackend).toBe('metal');
+    describe('setUseGpu', () => {
+        it('should enable GPU', () => {
+            service.setUseGpu(true);
+            expect(service.useGpu).toBe(true);
         });
 
-        it('should accept all valid backends', () => {
-            const validBackends = ['auto', 'metal', 'coreml', 'cuda', 'vulkan', 'cpu'];
-            validBackends.forEach(backend => {
-                service.setGpuBackend(backend);
-                expect(service.gpuBackend).toBe(backend);
-            });
-        });
-
-        it('should throw error for invalid backend', () => {
-            expect(() => service.setGpuBackend('invalid')).toThrow('Invalid GPU backend');
-            expect(() => service.setGpuBackend('directx')).toThrow('Invalid GPU backend');
-        });
-    });
-
-    describe('setHardwareAcceleration', () => {
-        it('should enable hardware acceleration', () => {
-            service.setHardwareAcceleration(true);
-            expect(service.hardwareAcceleration).toBe(true);
-        });
-
-        it('should disable hardware acceleration', () => {
-            service.setHardwareAcceleration(false);
-            expect(service.hardwareAcceleration).toBe(false);
+        it('should disable GPU', () => {
+            service.setUseGpu(false);
+            expect(service.useGpu).toBe(false);
         });
 
         it('should coerce to boolean', () => {
-            service.setHardwareAcceleration(1);
-            expect(service.hardwareAcceleration).toBe(true);
-            service.setHardwareAcceleration(0);
-            expect(service.hardwareAcceleration).toBe(false);
+            service.setUseGpu(1);
+            expect(service.useGpu).toBe(true);
+            service.setUseGpu(0);
+            expect(service.useGpu).toBe(false);
+        });
+    });
+
+    describe('setFlashAttn', () => {
+        it('should enable flash attention', () => {
+            service.setFlashAttn(true);
+            expect(service.flashAttn).toBe(true);
+        });
+
+        it('should disable flash attention', () => {
+            service.setFlashAttn(false);
+            expect(service.flashAttn).toBe(false);
+        });
+    });
+
+    describe('setGpuDevice', () => {
+        it('should set valid device ID', () => {
+            service.setGpuDevice(1);
+            expect(service.gpuDevice).toBe(1);
+        });
+
+        it('should accept 0', () => {
+            service.setGpuDevice(0);
+            expect(service.gpuDevice).toBe(0);
+        });
+
+        it('should throw error for negative device ID', () => {
+            expect(() => service.setGpuDevice(-1)).toThrow('GPU device ID must be a non-negative integer');
+        });
+
+        it('should throw error for non-numeric device ID', () => {
+            expect(() => service.setGpuDevice('abc')).toThrow('GPU device ID must be a non-negative integer');
         });
     });
 
     describe('buildGpuArgs', () => {
-        it('should return empty array when hardware acceleration is disabled', () => {
-            expect(service.buildGpuArgs('metal', false)).toEqual([]);
-            expect(service.buildGpuArgs('cuda', false)).toEqual([]);
-            expect(service.buildGpuArgs('auto', false)).toEqual([]);
+        it('should return --no-gpu when GPU is disabled', () => {
+            expect(service.buildGpuArgs(false, true, 0)).toEqual(['--no-gpu']);
         });
 
-        it('should return --metal flag for metal backend', () => {
-            expect(service.buildGpuArgs('metal', true)).toEqual(['--metal']);
+        it('should return --flash-attn when GPU enabled with flash attention', () => {
+            const args = service.buildGpuArgs(true, true, 0);
+            expect(args).toContain('--flash-attn');
+            expect(args).not.toContain('--no-gpu');
         });
 
-        it('should return --coreml flag for coreml backend', () => {
-            expect(service.buildGpuArgs('coreml', true)).toEqual(['--coreml']);
+        it('should return --no-flash-attn when GPU enabled without flash attention', () => {
+            const args = service.buildGpuArgs(true, false, 0);
+            expect(args).toContain('--no-flash-attn');
+            expect(args).not.toContain('--no-gpu');
         });
 
-        it('should return --cuda flag for cuda backend', () => {
-            expect(service.buildGpuArgs('cuda', true)).toEqual(['--cuda']);
+        it('should include --device for non-zero GPU device', () => {
+            const args = service.buildGpuArgs(true, true, 2);
+            expect(args).toContain('--device');
+            expect(args).toContain('2');
         });
 
-        it('should return --vulkan flag for vulkan backend', () => {
-            expect(service.buildGpuArgs('vulkan', true)).toEqual(['--vulkan']);
+        it('should not include --device for device 0', () => {
+            const args = service.buildGpuArgs(true, true, 0);
+            expect(args).not.toContain('--device');
         });
 
-        it('should return empty array for cpu backend', () => {
-            expect(service.buildGpuArgs('cpu', true)).toEqual([]);
-        });
-
-        it('should detect system backend when set to auto', () => {
-            const args = service.buildGpuArgs('auto', true);
-            expect(Array.isArray(args)).toBe(true);
+        it('should not include flash-attn flags when GPU is disabled', () => {
+            const args = service.buildGpuArgs(false, true, 0);
+            expect(args).toEqual(['--no-gpu']);
+            expect(args).not.toContain('--flash-attn');
         });
     });
 
-    describe('detectSuggestedBackend', () => {
-        it('should return a valid backend string', () => {
+    describe('detectGpuInfo', () => {
+        it('should return an object with expected fields', () => {
             const { LocalWhisperService } = require('../../src/services/localWhisperService');
-            const backend = LocalWhisperService.detectSuggestedBackend();
-            const validBackends = ['auto', 'metal', 'coreml', 'cuda', 'vulkan', 'cpu'];
-            expect(validBackends).toContain(backend);
+            const info = LocalWhisperService.detectGpuInfo();
+            expect(info).toHaveProperty('platform');
+            expect(info).toHaveProperty('isAppleSilicon');
+            expect(info).toHaveProperty('expectedBackend');
+            expect(info).toHaveProperty('gpuLikely');
+            expect(typeof info.platform).toBe('string');
+            expect(typeof info.isAppleSilicon).toBe('boolean');
+            expect(typeof info.gpuLikely).toBe('boolean');
         });
     });
 
@@ -745,7 +764,7 @@ describe('LocalWhisperService', () => {
         });
     });
 
-    describe('GPU acceleration - detectSuggestedBackend platform branches', () => {
+    describe('GPU acceleration - detectGpuInfo platform branches', () => {
         const originalPlatform = process.platform;
 
         afterEach(() => {
@@ -753,75 +772,63 @@ describe('LocalWhisperService', () => {
             jest.restoreAllMocks();
         });
 
-        it('should suggest metal for darwin + Apple Silicon', () => {
+        it('should detect metal for darwin + Apple Silicon', () => {
             Object.defineProperty(process, 'platform', { value: 'darwin', writable: true });
             const os = require('os');
             jest.spyOn(os, 'cpus').mockReturnValue([{ model: 'Apple M1' }]);
 
             const { LocalWhisperService: LWS } = require('../../src/services/localWhisperService');
-            expect(LWS.detectSuggestedBackend()).toBe('metal');
+            const info = LWS.detectGpuInfo();
+            expect(info.expectedBackend).toBe('metal');
+            expect(info.isAppleSilicon).toBe(true);
+            expect(info.gpuLikely).toBe(true);
         });
 
-        it('should suggest cpu for darwin + Intel', () => {
+        it('should detect cpu for darwin + Intel', () => {
             Object.defineProperty(process, 'platform', { value: 'darwin', writable: true });
             const os = require('os');
             jest.spyOn(os, 'cpus').mockReturnValue([{ model: 'Intel Core i7' }]);
 
             const { LocalWhisperService: LWS } = require('../../src/services/localWhisperService');
-            expect(LWS.detectSuggestedBackend()).toBe('cpu');
+            const info = LWS.detectGpuInfo();
+            expect(info.expectedBackend).toBe('cpu');
+            expect(info.isAppleSilicon).toBe(false);
+            expect(info.gpuLikely).toBe(false);
         });
 
-        it('should suggest cuda for win32', () => {
+        it('should detect gpu for win32', () => {
             Object.defineProperty(process, 'platform', { value: 'win32', writable: true });
             const { LocalWhisperService: LWS } = require('../../src/services/localWhisperService');
-            expect(LWS.detectSuggestedBackend()).toBe('cuda');
+            const info = LWS.detectGpuInfo();
+            expect(info.expectedBackend).toBe('gpu');
+            expect(info.gpuLikely).toBe(true);
         });
 
-        it('should suggest cuda for linux', () => {
+        it('should detect gpu for linux', () => {
             Object.defineProperty(process, 'platform', { value: 'linux', writable: true });
             const { LocalWhisperService: LWS } = require('../../src/services/localWhisperService');
-            expect(LWS.detectSuggestedBackend()).toBe('cuda');
+            const info = LWS.detectGpuInfo();
+            expect(info.expectedBackend).toBe('gpu');
+            expect(info.gpuLikely).toBe(true);
         });
 
-        it('should suggest cpu for unknown platforms', () => {
+        it('should detect cpu for unknown platforms', () => {
             Object.defineProperty(process, 'platform', { value: 'freebsd', writable: true });
             const { LocalWhisperService: LWS } = require('../../src/services/localWhisperService');
-            expect(LWS.detectSuggestedBackend()).toBe('cpu');
+            const info = LWS.detectGpuInfo();
+            expect(info.expectedBackend).toBe('cpu');
+            expect(info.gpuLikely).toBe(false);
         });
 
-        it('should suggest cpu for darwin with empty cpus list', () => {
+        it('should detect cpu for darwin with empty cpus list', () => {
             Object.defineProperty(process, 'platform', { value: 'darwin', writable: true });
             const os = require('os');
             jest.spyOn(os, 'cpus').mockReturnValue([]);
 
             const { LocalWhisperService: LWS } = require('../../src/services/localWhisperService');
-            expect(LWS.detectSuggestedBackend()).toBe('cpu');
-        });
-    });
-
-    describe('GPU acceleration - buildGpuArgs auto resolution', () => {
-        it('should resolve auto to metal on Apple Silicon darwin', () => {
-            const os = require('os');
-            Object.defineProperty(process, 'platform', { value: 'darwin', writable: true });
-            jest.spyOn(os, 'cpus').mockReturnValue([{ model: 'Apple M2' }]);
-
-            const args = service.buildGpuArgs('auto', true);
-            expect(args).toEqual(['--metal']);
-
-            Object.defineProperty(process, 'platform', { value: process.platform, writable: true });
-            jest.restoreAllMocks();
-        });
-
-        it('should resolve auto to cpu on Intel darwin', () => {
-            const os = require('os');
-            Object.defineProperty(process, 'platform', { value: 'darwin', writable: true });
-            jest.spyOn(os, 'cpus').mockReturnValue([{ model: 'Intel Core i9' }]);
-
-            const args = service.buildGpuArgs('auto', true);
-            expect(args).toEqual([]);
-
-            Object.defineProperty(process, 'platform', { value: process.platform, writable: true });
-            jest.restoreAllMocks();
+            const info = LWS.detectGpuInfo();
+            expect(info.expectedBackend).toBe('cpu');
+            expect(info.gpuLikely).toBe(false);
         });
     });
 
@@ -860,87 +867,60 @@ describe('LocalWhisperService', () => {
             fs.readFileSync = jest.fn().mockReturnValue(jsonOutput);
         });
 
-        it('should pass --metal flag when metal backend is selected', async () => {
+        it('should pass --flash-attn when GPU enabled with flash attention', async () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0));
 
             await service.transcribeFile('/path/to/audio.wav', {
-                gpuBackend: 'metal',
-                hardwareAcceleration: true
+                useGpu: true,
+                flashAttn: true
             });
 
             const whisperArgs = spawn.mock.calls[1][1];
-            expect(whisperArgs).toContain('--metal');
+            expect(whisperArgs).toContain('--flash-attn');
+            expect(whisperArgs).not.toContain('--no-gpu');
         });
 
-        it('should pass --cuda flag when cuda backend is selected', async () => {
+        it('should pass --no-gpu when GPU is disabled', async () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0));
 
             await service.transcribeFile('/path/to/audio.wav', {
-                gpuBackend: 'cuda',
-                hardwareAcceleration: true
+                useGpu: false
             });
 
             const whisperArgs = spawn.mock.calls[1][1];
-            expect(whisperArgs).toContain('--cuda');
+            expect(whisperArgs).toContain('--no-gpu');
+            expect(whisperArgs).not.toContain('--flash-attn');
         });
 
-        it('should pass --vulkan flag when vulkan backend is selected', async () => {
+        it('should pass --no-flash-attn when flash attention is disabled', async () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0));
 
             await service.transcribeFile('/path/to/audio.wav', {
-                gpuBackend: 'vulkan',
-                hardwareAcceleration: true
+                useGpu: true,
+                flashAttn: false
             });
 
             const whisperArgs = spawn.mock.calls[1][1];
-            expect(whisperArgs).toContain('--vulkan');
+            expect(whisperArgs).toContain('--no-flash-attn');
+            expect(whisperArgs).not.toContain('--no-gpu');
         });
 
-        it('should pass --coreml flag when coreml backend is selected', async () => {
+        it('should pass --device for non-zero GPU device', async () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0));
 
             await service.transcribeFile('/path/to/audio.wav', {
-                gpuBackend: 'coreml',
-                hardwareAcceleration: true
+                useGpu: true,
+                flashAttn: true,
+                gpuDevice: 2
             });
 
             const whisperArgs = spawn.mock.calls[1][1];
-            expect(whisperArgs).toContain('--coreml');
-        });
-
-        it('should not pass GPU flags when hardwareAcceleration is false', async () => {
-            spawn.mockImplementationOnce(() => makeProcess(0))
-                .mockImplementationOnce(() => makeProcess(0));
-
-            await service.transcribeFile('/path/to/audio.wav', {
-                gpuBackend: 'metal',
-                hardwareAcceleration: false
-            });
-
-            const whisperArgs = spawn.mock.calls[1][1];
-            expect(whisperArgs).not.toContain('--metal');
-            expect(whisperArgs).not.toContain('--cuda');
-            expect(whisperArgs).not.toContain('--vulkan');
-        });
-
-        it('should not pass GPU flags when cpu backend is selected', async () => {
-            spawn.mockImplementationOnce(() => makeProcess(0))
-                .mockImplementationOnce(() => makeProcess(0));
-
-            await service.transcribeFile('/path/to/audio.wav', {
-                gpuBackend: 'cpu',
-                hardwareAcceleration: true
-            });
-
-            const whisperArgs = spawn.mock.calls[1][1];
-            expect(whisperArgs).not.toContain('--metal');
-            expect(whisperArgs).not.toContain('--cuda');
-            expect(whisperArgs).not.toContain('--vulkan');
-            expect(whisperArgs).not.toContain('--coreml');
+            expect(whisperArgs).toContain('--device');
+            expect(whisperArgs).toContain('2');
         });
 
         it('should pass -tr flag when translate is true', async () => {
@@ -949,7 +929,7 @@ describe('LocalWhisperService', () => {
 
             await service.transcribeFile('/path/to/audio.wav', {
                 translate: true,
-                hardwareAcceleration: false
+                useGpu: false
             });
 
             const whisperArgs = spawn.mock.calls[1][1];
@@ -962,7 +942,7 @@ describe('LocalWhisperService', () => {
 
             await service.transcribeFile('/path/to/audio.wav', {
                 language: 'en',
-                hardwareAcceleration: false
+                useGpu: false
             });
 
             const whisperArgs = spawn.mock.calls[1][1];
@@ -1006,7 +986,7 @@ describe('LocalWhisperService', () => {
             fs.readFileSync = jest.fn().mockReturnValue(jsonOutput);
         });
 
-        it('should fallback to CPU when metal GPU acceleration fails', async () => {
+        it('should fallback to CPU when GPU fails', async () => {
             const originalImpl = service.transcribeFile.bind(service);
             const transcribeSpy = jest.spyOn(service, 'transcribeFile');
             let callCount = 0;
@@ -1020,63 +1000,28 @@ describe('LocalWhisperService', () => {
             });
 
             spawn.mockImplementationOnce(() => makeProcess(0))
-                .mockImplementationOnce(() => makeProcess(1, 'Metal not compiled'));
+                .mockImplementationOnce(() => makeProcess(1, 'ggml_metal not compiled'));
 
             const result = await service.transcribeFile('/path/to/audio.wav', {
-                gpuBackend: 'metal',
-                hardwareAcceleration: true
+                useGpu: true,
+                flashAttn: true
             });
 
             expect(result.text).toBe('CPU fallback result');
             expect(transcribeSpy).toHaveBeenCalledTimes(2);
             expect(transcribeSpy).toHaveBeenNthCalledWith(2,
                 '/path/to/audio.wav',
-                expect.objectContaining({ hardwareAcceleration: false })
+                expect.objectContaining({ useGpu: false })
             );
         });
 
-        it('should fallback to Vulkan when CUDA fails on linux', async () => {
-            const originalPlatform = process.platform;
-            Object.defineProperty(process, 'platform', { value: 'linux', writable: true });
-
-            const originalImpl = service.transcribeFile.bind(service);
-            const transcribeSpy = jest.spyOn(service, 'transcribeFile');
-            let callCount = 0;
-
-            transcribeSpy.mockImplementation((fp, opts) => {
-                callCount++;
-                if (callCount === 1) {
-                    return originalImpl(fp, opts);
-                }
-                return Promise.resolve({ success: true, text: 'Vulkan fallback result' });
-            });
-
-            spawn.mockImplementationOnce(() => makeProcess(0))
-                .mockImplementationOnce(() => makeProcess(1, 'CUDA failed to init'));
-
-            const result = await service.transcribeFile('/path/to/audio.wav', {
-                gpuBackend: 'cuda',
-                hardwareAcceleration: true
-            });
-
-            expect(result.text).toBe('Vulkan fallback result');
-            expect(transcribeSpy).toHaveBeenCalledTimes(2);
-            expect(transcribeSpy).toHaveBeenNthCalledWith(2,
-                '/path/to/audio.wav',
-                expect.objectContaining({ gpuBackend: 'vulkan' })
-            );
-
-            Object.defineProperty(process, 'platform', { value: originalPlatform, writable: true });
-        });
-
-        it('should not retry when non-GPU error occurs (hardwareAcceleration off)', async () => {
+        it('should not retry when non-GPU error occurs (GPU off)', async () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(1, 'some unrelated error'));
 
             await expect(
                 service.transcribeFile('/path/to/audio.wav', {
-                    gpuBackend: 'metal',
-                    hardwareAcceleration: false
+                    useGpu: false
                 })
             ).rejects.toThrow();
 
@@ -1280,7 +1225,7 @@ describe('LocalWhisperService', () => {
                 .mockImplementationOnce(() => makeProcess(0, '', '[00:00:00.000] Hello world'));
 
             const result = await service.transcribeFile('/path/to/audio.wav', {
-                hardwareAcceleration: false
+                useGpu: false
             });
 
             expect(result.success).toBe(true);
@@ -1291,7 +1236,7 @@ describe('LocalWhisperService', () => {
                 .mockImplementationOnce(() => makeProcess(0, 'whisper_print_timings: total time = 1234.56 ms', ''));
 
             const result = await service.transcribeFile('/path/to/audio.wav', {
-                hardwareAcceleration: false
+                useGpu: false
             });
 
             expect(result.success).toBe(true);
@@ -1302,7 +1247,7 @@ describe('LocalWhisperService', () => {
                 .mockImplementationOnce(() => makeProcess(0, 'error: something failed to process'));
 
             await expect(
-                service.transcribeFile('/path/to/audio.wav', { hardwareAcceleration: false })
+                service.transcribeFile('/path/to/audio.wav', { useGpu: false })
             ).rejects.toThrow();
         });
 
@@ -1316,7 +1261,7 @@ describe('LocalWhisperService', () => {
                 .mockImplementationOnce(() => makeProcess(0, '', '[00:00:01.000 --> 00:00:05.000] Fallback text'));
 
             const result = await service.transcribeFile('/path/to/audio.wav', {
-                hardwareAcceleration: false
+                useGpu: false
             });
 
             expect(result.success).toBe(true);
@@ -1399,13 +1344,13 @@ describe('LocalWhisperService', () => {
                 .mockImplementationOnce(() => makeProc(0));
 
             const result = await service.transcribeFile('/path/to/video.mp4', {
-                gpuBackend: 'metal',
-                hardwareAcceleration: true
+                useGpu: true,
+                flashAttn: true
             });
 
             expect(result.success).toBe(true);
             const whisperArgs = spawn.mock.calls[2][1];
-            expect(whisperArgs).toContain('--metal');
+            expect(whisperArgs).toContain('--flash-attn');
         });
 
         it('should extract audio from video without GPU', async () => {
@@ -1414,7 +1359,7 @@ describe('LocalWhisperService', () => {
                 .mockImplementationOnce(() => makeProc(0));
 
             const result = await service.transcribeFile('/path/to/video.avi', {
-                hardwareAcceleration: false
+                useGpu: false
             });
 
             expect(result.success).toBe(true);
@@ -1425,7 +1370,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProc(1, 'ffmpeg error'));
 
             await expect(
-                service.transcribeFile('/path/to/video.mp4', { hardwareAcceleration: false })
+                service.transcribeFile('/path/to/video.mp4', { useGpu: false })
             ).rejects.toThrow('Audio processing failed');
         });
 
@@ -1437,7 +1382,7 @@ describe('LocalWhisperService', () => {
                 .mockImplementationOnce(() => convertProc);
 
             await expect(
-                service.transcribeFile('/path/to/video.mp4', { hardwareAcceleration: false })
+                service.transcribeFile('/path/to/video.mp4', { useGpu: false })
             ).rejects.toThrow('Audio processing failed');
         });
     });
@@ -1480,8 +1425,8 @@ describe('LocalWhisperService', () => {
 
             const audioBuffer = Buffer.from('fake audio data');
             const result = await service.transcribeBuffer(audioBuffer, {
-                gpuBackend: 'metal',
-                hardwareAcceleration: true
+                useGpu: true,
+                flashAttn: true
             });
 
             expect(result.success).toBe(true);
@@ -1490,7 +1435,7 @@ describe('LocalWhisperService', () => {
                 audioBuffer
             );
             const whisperArgs = spawn.mock.calls[2][1];
-            expect(whisperArgs).toContain('--metal');
+            expect(whisperArgs).toContain('--flash-attn');
         });
 
         it('should transcribe audio buffer in CPU mode', async () => {
@@ -1499,7 +1444,7 @@ describe('LocalWhisperService', () => {
                 .mockImplementationOnce(() => makeProc(0));
 
             const result = await service.transcribeBuffer(Buffer.from('audio data'), {
-                hardwareAcceleration: false
+                useGpu: false
             });
 
             expect(result.success).toBe(true);
@@ -1529,7 +1474,7 @@ describe('LocalWhisperService', () => {
 
             try {
                 await service.transcribeBuffer(Buffer.from('audio'), {
-                    hardwareAcceleration: false
+                    useGpu: false
                 });
             } catch (e) {
                 // Expected to fail

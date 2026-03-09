@@ -109,7 +109,9 @@ class TranscriptionService {
                 language: options.language || this.language,
                 translate: options.translate || false,
                 threads: options.threads || 4,
-                useInitialPrompt: options.useInitialPrompt !== undefined ? options.useInitialPrompt : true
+                useInitialPrompt: options.useInitialPrompt !== undefined ? options.useInitialPrompt : true,
+                gpuBackend: options.gpuBackend !== undefined ? options.gpuBackend : this.localWhisper.gpuBackend,
+                hardwareAcceleration: options.hardwareAcceleration !== undefined ? options.hardwareAcceleration : this.localWhisper.hardwareAcceleration
             };
             
             // Only add initialPrompt if useInitialPrompt is true
@@ -182,7 +184,9 @@ class TranscriptionService {
                 language: options.language || this.language,
                 translate: options.translate || false,
                 threads: options.threads || 4,
-                useInitialPrompt: options.useInitialPrompt !== undefined ? options.useInitialPrompt : true
+                useInitialPrompt: options.useInitialPrompt !== undefined ? options.useInitialPrompt : true,
+                gpuBackend: options.gpuBackend !== undefined ? options.gpuBackend : this.localWhisper.gpuBackend,
+                hardwareAcceleration: options.hardwareAcceleration !== undefined ? options.hardwareAcceleration : this.localWhisper.hardwareAcceleration
             };
             
             // Only add initialPrompt if useInitialPrompt is true
@@ -279,6 +283,12 @@ class TranscriptionService {
         }
         if (settings.initialPrompt !== undefined) {
             this.setInitialPrompt(settings.initialPrompt);
+        }
+        if (settings.gpuBackend !== undefined) {
+            this.localWhisper.setGpuBackend(settings.gpuBackend);
+        }
+        if (settings.hardwareAcceleration !== undefined) {
+            this.localWhisper.setHardwareAcceleration(settings.hardwareAcceleration);
         }
     }
 

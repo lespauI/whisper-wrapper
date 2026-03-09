@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
     // Local Whisper
     testWhisper: () => ipcRenderer.invoke('whisper:test'),
+    detectGpuBackend: () => ipcRenderer.invoke('whisper:detectGpuBackend'),
 
     // Model management
     downloadModel: (modelName) => ipcRenderer.invoke('model:download', modelName),

@@ -13,6 +13,7 @@ A Node.js desktop application that provides a user-friendly interface for OpenAI
 - **Initial Prompt**: Provide custom vocabulary or context to improve transcription accuracy
 - **Silence/Noise Detection (VAD)**: Real‑time gating and offline segmentation to skip silence/noise and reduce hallucinations (configurable engine and modes)
 - **System Audio Capture (Loopback)**: Capture audio playing through your speakers — record meetings, video calls, or any system audio — in addition to or instead of microphone input
+- **GPU Acceleration**: Hardware-accelerated transcription via Metal (Apple Silicon), CoreML, CUDA (NVIDIA), or Vulkan — delivering 3–5× speedup over CPU-only processing
 
 ## Getting Started
 
@@ -101,6 +102,27 @@ Configure under Settings:
 - VAD Mode: `conservative`, `balanced` (default), or `aggressive`
 
 More details and guidance: `docs/features/ongoing-transcription-silence-detection.md`
+
+### GPU / Hardware Acceleration
+
+Enable faster transcription by selecting a hardware backend in Settings → **Performance**:
+
+| Backend | Platform | Speedup |
+|---------|----------|---------|
+| **Metal** | macOS (Apple Silicon) | 3–5× |
+| **CoreML** | macOS (Apple Neural Engine) | Best on Apple Silicon |
+| **CUDA** | Windows/Linux (NVIDIA GPU) | Significant |
+| **Vulkan** | Windows/Linux (AMD/Intel GPU) | Broad GPU support |
+| **CPU only** | All platforms | Baseline |
+
+The app **auto-detects** the best backend on startup. If a selected backend is unsupported by the whisper.cpp binary, the app falls back automatically (CUDA → Vulkan → CPU).
+
+Configure under Settings → **Performance**:
+- **Hardware acceleration** toggle (enabled by default)
+- **Acceleration backend** dropdown (`Auto-detect` / `Metal` / `CoreML` / `CUDA` / `Vulkan` / `CPU only`)
+- **Thread count** — number of CPU threads used during inference
+
+More details: `docs/features/gpu-acceleration.md`
 
 ### Using Initial Prompt for Better Accuracy
 
@@ -230,14 +252,16 @@ const whisperService = new LocalWhisperService();
 // Set an initial prompt with specialized vocabulary
 whisperService.setInitialPrompt("Technical terms: Node.js, JavaScript, React, Redux, TypeScript, API");
 
-// Transcribe a file
+// Transcribe a file (with optional GPU acceleration)
 async function transcribeMyFile() {
   try {
     const result = await whisperService.transcribeFile('/path/to/audio.mp3', {
       model: 'medium',
       language: 'en',
       translate: false,
-      threads: 4
+      threads: 4,
+      hardwareAcceleration: true,  // enable GPU acceleration
+      gpuBackend: 'auto'           // 'auto' | 'metal' | 'coreml' | 'cuda' | 'vulkan' | 'cpu'
     });
     
     console.log('Transcription:', result.text);

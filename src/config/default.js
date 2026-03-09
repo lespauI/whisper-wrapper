@@ -60,7 +60,9 @@ module.exports = {
         maxDuration: 3600, // 1 hour in seconds
         autoSave: true,
         // Show a UI indicator when input is silent
-        silenceIndicator: true
+        silenceIndicator: true,
+        // Audio capture mode: 'microphone' | 'system' | 'both'
+        captureMode: 'microphone'
     },
 
     // Voice Activity Detection (VAD) settings

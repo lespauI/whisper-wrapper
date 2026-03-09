@@ -1,5 +1,5 @@
 const IPCHandlers = require('../../src/main/ipcHandlers');
-const { dialog, shell } = require('electron');
+const { dialog, shell, desktopCapturer } = require('electron');
 const TranscriptionService = require('../../src/services/transcriptionService');
 const FileService = require('../../src/services/fileService');
 const TranscriptionStoreService = require('../../src/services/transcriptionStoreService');
@@ -17,6 +17,9 @@ jest.mock('electron', () => ({
     },
     ipcMain: {
         handle: jest.fn()
+    },
+    desktopCapturer: {
+        getSources: jest.fn()
     }
 }));
 
@@ -577,6 +580,68 @@ describe('IPCHandlers', () => {
         it('should handle missing file paths', async () => {
             await expect(handlers.handleTranscribeFile(mockEvent, null))
                 .rejects.toThrow();
+        });
+    });
+
+    describe('handleGetAudioSources', () => {
+        const mockSources = [
+            {
+                id: 'screen:0',
+                name: 'Entire Screen',
+                thumbnail: { toDataURL: jest.fn().mockReturnValue('data:image/png;base64,abc') }
+            },
+            {
+                id: 'window:1',
+                name: 'My App',
+                thumbnail: { toDataURL: jest.fn().mockReturnValue('data:image/png;base64,xyz') }
+            }
+        ];
+
+        it('should return sources and platform info on success', async () => {
+            desktopCapturer.getSources.mockResolvedValue(mockSources);
+
+            const result = await handlers.handleGetAudioSources();
+
+            expect(result.success).toBe(true);
+            expect(result.platform).toBe(process.platform);
+            expect(result.sources).toHaveLength(2);
+            expect(result.sources[0]).toEqual({
+                id: 'screen:0',
+                name: 'Entire Screen',
+                thumbnail: 'data:image/png;base64,abc'
+            });
+            expect(result.systemAudioSupported).toBeDefined();
+        });
+
+        it('should indicate systemAudioSupported for darwin, win32, linux', async () => {
+            desktopCapturer.getSources.mockResolvedValue([]);
+
+            const result = await handlers.handleGetAudioSources();
+
+            const supported = ['darwin', 'win32', 'linux'].includes(process.platform);
+            expect(result.systemAudioSupported).toBe(supported);
+        });
+
+        it('should handle sources with no thumbnail gracefully', async () => {
+            desktopCapturer.getSources.mockResolvedValue([
+                { id: 'screen:0', name: 'Entire Screen', thumbnail: null }
+            ]);
+
+            const result = await handlers.handleGetAudioSources();
+
+            expect(result.success).toBe(true);
+            expect(result.sources[0].thumbnail).toBeNull();
+        });
+
+        it('should return failure result when desktopCapturer throws', async () => {
+            desktopCapturer.getSources.mockRejectedValue(new Error('Permission denied'));
+
+            const result = await handlers.handleGetAudioSources();
+
+            expect(result.success).toBe(false);
+            expect(result.sources).toEqual([]);
+            expect(result.systemAudioSupported).toBe(false);
+            expect(result.error).toBe('Permission denied');
         });
     });
 });

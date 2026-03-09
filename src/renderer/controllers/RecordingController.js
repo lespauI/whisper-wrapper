@@ -32,6 +32,12 @@ export class RecordingController {
         this.recordingTimer = null;
         this.animationId = null;
 
+        // Capture mode state
+        this.captureMode = 'microphone';
+        this._micStream = null;
+        this._systemAudioStream = null;
+        this._mixAudioContext = null;
+
         // VAD gating state (pre-capture gating for ongoing transcription)
         this._vad = {
             engine: 'energy',        // 'energy' | 'webrtc'
@@ -219,6 +225,16 @@ export class RecordingController {
             });
         });
 
+        // ---- Capture mode selection ----
+        EventHandler.addListener('#capture-mode-select', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const mode = e.target.value;
+            if (mode === 'microphone' || mode === 'system' || mode === 'both') {
+                this.captureMode = mode;
+                try { await window.electronAPI.setConfig({ recording: { captureMode: mode } }); } catch {}
+                await this._updateCaptureModeUI(mode);
+            }
+        }));
+
         // ---- VAD Settings: enable/disable, mode, engine ----
         EventHandler.addListener('#vad-enabled', 'change', EventHandler.createAsyncHandler(async (e) => {
             const enabled = !!e.target.checked;
@@ -258,6 +274,13 @@ export class RecordingController {
             if (elEnabled) elEnabled.checked = enabled;
             if (elMode) elMode.value = mode;
             if (elEngine) elEngine.value = engine;
+
+            const r = (cfg && cfg.recording) || {};
+            const captureMode = (r.captureMode === 'system' || r.captureMode === 'both') ? r.captureMode : 'microphone';
+            this.captureMode = captureMode;
+            const elCaptureMode = UIHelpers.getElementById('capture-mode-select');
+            if (elCaptureMode) elCaptureMode.value = captureMode;
+            await this._updateCaptureModeUI(captureMode);
         } catch (e) {
             console.warn('Failed to load VAD settings into UI:', e?.message);
         }
@@ -324,15 +347,112 @@ export class RecordingController {
         }
     }
 
+    async _getSystemAudioStream() {
+        const result = await window.electronAPI.getAudioSources();
+
+        if (!result.success || !result.systemAudioSupported) {
+            throw new Error('System audio capture is not supported on this platform.');
+        }
+
+        const screenSource = result.sources.find((s) => s.name === 'Entire Screen' || s.name === 'Screen 1') || result.sources[0];
+        if (!screenSource) {
+            throw new Error('No system audio source found. On macOS, a virtual audio driver such as BlackHole may be required.');
+        }
+
+        const constraints = {
+            audio: {
+                mandatory: {
+                    chromeMediaSource: 'desktop',
+                    chromeMediaSourceId: screenSource.id
+                }
+            },
+            video: {
+                mandatory: {
+                    chromeMediaSource: 'desktop',
+                    chromeMediaSourceId: screenSource.id
+                }
+            }
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        stream.getVideoTracks().forEach((t) => t.stop());
+        return stream;
+    }
+
+    async _getMixedStream(micStream, systemStream) {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const destination = ctx.createMediaStreamDestination();
+
+        const micSource = ctx.createMediaStreamSource(micStream);
+        const sysSource = ctx.createMediaStreamSource(systemStream);
+
+        const micGain = ctx.createGain();
+        const sysGain = ctx.createGain();
+        micGain.gain.value = 1.0;
+        sysGain.gain.value = 1.0;
+
+        micSource.connect(micGain);
+        sysSource.connect(sysGain);
+        micGain.connect(destination);
+        sysGain.connect(destination);
+
+        this._mixAudioContext = ctx;
+        return destination.stream;
+    }
+
+    async _updateCaptureModeUI(mode) {
+        const warningEl = UIHelpers.getElementById('system-audio-warning');
+        const warningTextEl = UIHelpers.getElementById('system-audio-warning-text');
+        if (!warningEl || !warningTextEl) return;
+
+        if (mode === 'microphone') {
+            UIHelpers.addClass('#system-audio-warning', 'hidden');
+            return;
+        }
+
+        try {
+            const result = await window.electronAPI.getAudioSources();
+            if (!result.success || !result.systemAudioSupported) {
+                warningTextEl.textContent = 'System audio capture is not supported on this platform.';
+                UIHelpers.removeClass('#system-audio-warning', 'hidden');
+                return;
+            }
+
+            if (result.platform === 'darwin' && (!result.sources || result.sources.length === 0)) {
+                warningTextEl.textContent = 'System audio on macOS requires a virtual audio driver. Install BlackHole (free) from existential.audio/blackhole and select it as your output device.';
+                UIHelpers.removeClass('#system-audio-warning', 'hidden');
+            } else {
+                UIHelpers.addClass('#system-audio-warning', 'hidden');
+            }
+        } catch {
+            UIHelpers.addClass('#system-audio-warning', 'hidden');
+        }
+    }
+
     /**
      * Start audio recording
      */
     async startRecording() {
         try {
-            // Get recording constraints based on quality setting
-            const constraints = this.getRecordingConstraints();
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            
+            const captureMode = this.captureMode || 'microphone';
+
+            let stream;
+            if (captureMode === 'microphone') {
+                const constraints = this.getRecordingConstraints();
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                this._micStream = stream;
+                this._systemAudioStream = null;
+            } else if (captureMode === 'system') {
+                stream = await this._getSystemAudioStream();
+                this._systemAudioStream = stream;
+                this._micStream = null;
+            } else {
+                const micConstraints = this.getRecordingConstraints();
+                this._micStream = await navigator.mediaDevices.getUserMedia(micConstraints);
+                this._systemAudioStream = await this._getSystemAudioStream();
+                stream = await this._getMixedStream(this._micStream, this._systemAudioStream);
+            }
+
             // Set up audio context for visualization and level monitoring
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             this.analyser = this.audioContext.createAnalyser();
@@ -390,7 +510,10 @@ export class RecordingController {
             
         } catch (error) {
             console.error('Error starting recording:', error);
-            this.statusController.showError('Failed to start recording. Please check microphone permissions.');
+            const msg = (this.captureMode !== 'microphone')
+                ? `Failed to start recording: ${error.message}`
+                : 'Failed to start recording. Please check microphone permissions.';
+            this.statusController.showError(msg);
         }
     }
 
@@ -448,6 +571,20 @@ export class RecordingController {
             
             this.mediaRecorder.stop();
             this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+
+            // Clean up extra streams for system/mixed capture modes
+            if (this._micStream) {
+                this._micStream.getTracks().forEach(track => track.stop());
+                this._micStream = null;
+            }
+            if (this._systemAudioStream) {
+                this._systemAudioStream.getTracks().forEach(track => track.stop());
+                this._systemAudioStream = null;
+            }
+            if (this._mixAudioContext) {
+                this._mixAudioContext.close();
+                this._mixAudioContext = null;
+            }
             
             // Clean up audio context
             if (this.audioContext) {

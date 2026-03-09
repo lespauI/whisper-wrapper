@@ -874,8 +874,7 @@ class IPCHandlers {
 
             const systemSources = sources.map((source) => ({
                 id: source.id,
-                name: source.name,
-                thumbnail: source.thumbnail ? source.thumbnail.toDataURL() : null
+                name: source.name
             }));
 
             return {

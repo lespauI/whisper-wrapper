@@ -63,7 +63,8 @@ I need you to review this solution and update plan if changes are requred
 - **P3 — BlackHole URL incomplete** (`RecordingController.js:436`): Missing `https://` prefix.
 - **P3 — `systemAudioSupported` always true** (`ipcHandlers.js:885`): Flag covers all desktop platforms, never returns false in practice.
 
-### [ ] Step: Fix review findings
+### [x] Step: Fix review findings
+<!-- chat-id: 1ad1bf64-2e57-4b1b-b4b9-09c65901bf76 -->
 
 Apply the P1 and P2 fixes identified in the review step:
 - [ ] Rename `catch (e)` to `catch (err)` in capture mode handler

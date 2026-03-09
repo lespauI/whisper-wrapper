@@ -230,7 +230,7 @@ export class RecordingController {
             const mode = e.target.value;
             if (mode === 'microphone' || mode === 'system' || mode === 'both') {
                 this.captureMode = mode;
-                try { await window.electronAPI.setConfig({ recording: { captureMode: mode } }); } catch (e) { console.warn('Failed to persist capture mode:', e?.message); }
+                try { await window.electronAPI.setConfig({ recording: { captureMode: mode } }); } catch (err) { console.warn('Failed to persist capture mode:', err?.message); }
                 await this._updateCaptureModeUI(mode);
             }
         }));
@@ -432,8 +432,8 @@ export class RecordingController {
                 return;
             }
 
-            if (result.platform === 'darwin' && (!result.sources || result.sources.length === 0)) {
-                warningTextEl.textContent = 'System audio on macOS requires a virtual audio driver. Install BlackHole (free) from existential.audio/blackhole and select it as your output device.';
+            if (result.platform === 'darwin') {
+                warningTextEl.textContent = 'System audio on macOS requires a virtual audio driver (e.g. BlackHole). Install BlackHole (free) from https://existential.audio/blackhole and select it as your output device.';
                 UIHelpers.removeClass('#system-audio-warning', 'hidden');
             } else {
                 UIHelpers.addClass('#system-audio-warning', 'hidden');
@@ -594,18 +594,20 @@ export class RecordingController {
             // Save final chunk before stopping
             await this.saveCurrentRecordingChunk();
             
+            const recorderStream = this.mediaRecorder.stream;
             this.mediaRecorder.stop();
-            this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            recorderStream.getTracks().forEach(track => track.stop());
 
             // Clean up extra streams for system/mixed capture modes
-            if (this._micStream) {
+            // Only stop if they are distinct from the recorder stream (mixed mode)
+            if (this._micStream && this._micStream !== recorderStream) {
                 this._micStream.getTracks().forEach(track => track.stop());
-                this._micStream = null;
             }
-            if (this._systemAudioStream) {
+            this._micStream = null;
+            if (this._systemAudioStream && this._systemAudioStream !== recorderStream) {
                 this._systemAudioStream.getTracks().forEach(track => track.stop());
-                this._systemAudioStream = null;
             }
+            this._systemAudioStream = null;
             if (this._mixAudioContext) {
                 this._mixAudioContext.close();
                 this._mixAudioContext = null;

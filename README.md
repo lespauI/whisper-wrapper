@@ -14,6 +14,7 @@ A Node.js desktop application that provides a user-friendly interface for OpenAI
 - **Silence/Noise Detection (VAD)**: Real‑time gating and offline segmentation to skip silence/noise and reduce hallucinations (configurable engine and modes)
 - **System Audio Capture (Loopback)**: Capture audio playing through your speakers — record meetings, video calls, or any system audio — in addition to or instead of microphone input
 - **GPU Acceleration**: Hardware-accelerated transcription via Metal (Apple Silicon), CoreML, CUDA (NVIDIA), or Vulkan — delivering 3–5× speedup over CPU-only processing
+- **Synced Audio Playback**: Integrated audio player in the Transcription tab with real-time segment highlighting, click-to-seek, and adjustable playback speed
 
 ## Getting Started
 
@@ -124,6 +125,20 @@ Configure under Settings → **Performance**:
 
 More details: `docs/features/gpu-acceleration.md`
 
+### Synced Audio Playback
+
+Review transcriptions while listening to the original audio without leaving the app.
+
+1. Open the **Transcription** tab after transcribing a file or recording.
+2. The audio player bar appears automatically at the bottom of the transcript area.
+3. Click **Play** to start; the active transcript segment is highlighted and scrolled into view.
+4. Drag the **seek slider** or click any transcript segment to jump to that point in the audio.
+5. Use the **speed selector** to slow down or speed up playback (0.5× – 2×).
+
+The audio source is saved with each library entry and reloads automatically when switching between transcriptions.
+
+More details: `docs/features/audio-playback.md`
+
 ### Using Initial Prompt for Better Accuracy
 
 You can provide an initial prompt to help the transcription model better recognize specific terms, names, or context:
@@ -217,7 +232,16 @@ VAD design and integration details: `docs/architecture/vad-silence-detection-imp
 - ✅ macOS informational message for BlackHole requirement
 - ✅ VAD works correctly across all capture modes
 
-### 📋 Phase 6: UI Refinement and Testing (PLANNED)
+### ✅ Phase 6: Synced Audio Playback (COMPLETED)
+- ✅ Audio player bar in Transcription tab (play/pause, seek slider, time display, speed selector)
+- ✅ `audio:readFile` IPC handler serving local audio as a data URL
+- ✅ Real-time segment highlighting on `timeupdate` with auto-scroll
+- ✅ Click-to-seek on transcript segments (and words when word timestamps are enabled)
+- ✅ `audioFilePath` persisted in library; auto-reloaded when switching entries
+- ✅ Player hidden gracefully when no audio source is available
+- ✅ Unit tests for segment lookup by timestamp and `transcriptionStoreService` audio path persistence
+
+### 📋 Phase 7: UI Refinement and Testing (PLANNED)
 - UI polish and animations
 - Comprehensive testing
 - Performance optimization

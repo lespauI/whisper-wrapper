@@ -37,3 +37,11 @@ To reflect the actual purpose of the first step, you can rename it to something 
 Rule of thumb for step size: each step = a coherent unit of work (component, endpoint, test suite). Not too granular (single function), not too broad (entire feature). Unit tests are part of each step, not separate.
 
 Update `{@artifacts_path}/plan.md`.
+
+### [ ] Step: Update documentation
+
+You need to update readme files and other documentation with that feature
+
+### [ ] Step: Test covverage
+
+you need to achive 80% Test coverage based on test pyramid for that feature

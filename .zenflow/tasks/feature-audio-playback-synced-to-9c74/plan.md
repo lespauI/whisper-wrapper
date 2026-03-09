@@ -81,3 +81,4 @@ I need you to review this solution and update plan if changes are requred add th
 <!-- chat-id: 84b37d21-033a-4387-a54a-6f0eee957fa5 -->
 
 `seekToTime` unconditionally calls `player.play()` when the audio is paused. Change it to only seek without auto-playing; let the play button remain the user's explicit trigger. Update unit tests.
+

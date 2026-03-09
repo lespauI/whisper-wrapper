@@ -260,7 +260,10 @@ class LocalWhisperService {
             const isAppleSilicon = cpus.length > 0 && cpus[0].model.toLowerCase().includes('apple');
             return isAppleSilicon ? 'metal' : 'cpu';
         }
-        return 'auto';
+        if (platform === 'win32' || platform === 'linux') {
+            return 'cuda';
+        }
+        return 'cpu';
     }
 
     /**
@@ -903,8 +906,16 @@ class LocalWhisperService {
                     );
                     
                     if (isGpuError) {
-                        console.log('⚠️ LocalWhisperService: GPU acceleration failed, retrying with CPU-only mode...');
-                        resolve(this.transcribeFile(filePath, { ...options, hardwareAcceleration: false }));
+                        const effectiveBackend = gpuBackend === 'auto'
+                            ? LocalWhisperService.detectSuggestedBackend()
+                            : gpuBackend;
+                        if (effectiveBackend === 'cuda' && (process.platform === 'win32' || process.platform === 'linux')) {
+                            console.log('⚠️ LocalWhisperService: CUDA failed, retrying with Vulkan...');
+                            resolve(this.transcribeFile(filePath, { ...options, gpuBackend: 'vulkan' }));
+                        } else {
+                            console.log('⚠️ LocalWhisperService: GPU acceleration failed, retrying with CPU-only mode...');
+                            resolve(this.transcribeFile(filePath, { ...options, hardwareAcceleration: false }));
+                        }
                         return;
                     }
                     

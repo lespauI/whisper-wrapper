@@ -77,14 +77,8 @@ export class SettingsController {
             await this.setupWhisper();
         });
 
-        // Hardware acceleration toggle
-        EventHandler.addListener('#hardware-acceleration-checkbox', 'change', () => {
-            this.updateGpuBackendState();
-        });
-
-        // GPU backend description update
-        EventHandler.addListener('#gpu-backend-select', 'change', (e) => {
-            this.updateGpuBackendDescription(e.target.value);
+        EventHandler.addListener('#use-gpu-checkbox', 'change', () => {
+            this.updateGpuSettingsState();
         });
     }
 
@@ -120,7 +114,7 @@ export class SettingsController {
         await this.updateModelOptions();
         await this.checkWhisperStatus();
         await this.loadSettings();
-        await this.detectAndSuggestGpuBackend();
+        await this.detectAndShowGpuInfo();
         
         this.statusController.updateStatus('Settings opened');
     }
@@ -166,8 +160,9 @@ export class SettingsController {
             const translate = UIHelpers.isChecked('#translate-checkbox');
             const useInitialPrompt = UIHelpers.isChecked('#use-initial-prompt-checkbox');
             const initialPrompt = UIHelpers.getValue('#initial-prompt');
-            const hardwareAcceleration = UIHelpers.isChecked('#hardware-acceleration-checkbox');
-            const gpuBackend = UIHelpers.getValue('#gpu-backend-select');
+            const useGpu = UIHelpers.isChecked('#use-gpu-checkbox');
+            const flashAttn = UIHelpers.isChecked('#flash-attn-checkbox');
+            const gpuDevice = parseInt(UIHelpers.getValue('#gpu-device-select') || '0');
             
             const settings = {
                 model,
@@ -176,8 +171,9 @@ export class SettingsController {
                 translate,
                 useInitialPrompt,
                 initialPrompt,
-                hardwareAcceleration,
-                gpuBackend
+                useGpu,
+                flashAttn,
+                gpuDevice
             };
             
             console.log('Saving settings:', settings);
@@ -241,17 +237,18 @@ export class SettingsController {
             if (settings.initialPrompt !== undefined) {
                 UIHelpers.setValue('#initial-prompt', settings.initialPrompt);
             }
-            if (settings.hardwareAcceleration !== undefined) {
-                UIHelpers.setChecked('#hardware-acceleration-checkbox', settings.hardwareAcceleration);
+            if (settings.useGpu !== undefined) {
+                UIHelpers.setChecked('#use-gpu-checkbox', settings.useGpu);
             }
-            if (settings.gpuBackend) {
-                UIHelpers.setValue('#gpu-backend-select', settings.gpuBackend);
-                this.updateGpuBackendDescription(settings.gpuBackend);
+            if (settings.flashAttn !== undefined) {
+                UIHelpers.setChecked('#flash-attn-checkbox', settings.flashAttn);
+            }
+            if (settings.gpuDevice !== undefined) {
+                UIHelpers.setValue('#gpu-device-select', settings.gpuDevice.toString());
             }
             
-            // Update initial prompt textarea state based on checkbox
             this.updateInitialPromptState();
-            this.updateGpuBackendState();
+            this.updateGpuSettingsState();
             
             // Load AI Refinement settings
             await this.loadAIRefinementSettings();
@@ -460,61 +457,45 @@ export class SettingsController {
         }
     }
 
-    /**
-     * Update GPU backend dropdown enabled/disabled state based on hardware acceleration toggle
-     */
-    updateGpuBackendState() {
-        const checkbox = UIHelpers.getElementById('hardware-acceleration-checkbox');
-        const select = UIHelpers.getElementById('gpu-backend-select');
-        if (!checkbox || !select) return;
+    updateGpuSettingsState() {
+        const checkbox = UIHelpers.getElementById('use-gpu-checkbox');
+        const flashAttnCheckbox = UIHelpers.getElementById('flash-attn-checkbox');
+        const deviceSelect = UIHelpers.getElementById('gpu-device-select');
+        if (!checkbox) return;
         
-        select.disabled = !checkbox.checked;
-        if (!checkbox.checked) {
-            UIHelpers.addClass(select, 'disabled');
-        } else {
-            UIHelpers.removeClass(select, 'disabled');
+        const enabled = checkbox.checked;
+        if (flashAttnCheckbox) {
+            flashAttnCheckbox.disabled = !enabled;
+            if (!enabled) {
+                UIHelpers.addClass(flashAttnCheckbox, 'disabled');
+            } else {
+                UIHelpers.removeClass(flashAttnCheckbox, 'disabled');
+            }
+        }
+        if (deviceSelect) {
+            deviceSelect.disabled = !enabled;
+            if (!enabled) {
+                UIHelpers.addClass(deviceSelect, 'disabled');
+            } else {
+                UIHelpers.removeClass(deviceSelect, 'disabled');
+            }
         }
     }
 
-    /**
-     * Update GPU backend description text
-     * @param {string} backend - Selected backend value
-     */
-    updateGpuBackendDescription(backend) {
-        const descriptions = {
-            auto: 'Automatically selects the best available backend',
-            metal: 'GPU acceleration via Metal (Apple Silicon Macs, 3-5x faster)',
-            coreml: 'Neural Engine via CoreML (Apple, requires pre-converted models)',
-            cuda: 'GPU acceleration via CUDA (NVIDIA GPUs on Windows/Linux)',
-            vulkan: 'GPU acceleration via Vulkan (AMD/Intel GPUs on Windows/Linux)',
-            cpu: 'No GPU acceleration, uses CPU only'
-        };
-        const descEl = UIHelpers.getElementById('gpu-backend-description');
-        if (descEl) {
-            UIHelpers.setText(descEl, descriptions[backend] || 'Select a backend');
-        }
-    }
-
-    /**
-     * Detect the suggested GPU backend and update the dropdown if set to 'auto'
-     */
-    async detectAndSuggestGpuBackend() {
+    async detectAndShowGpuInfo() {
         try {
             if (!window.electronAPI || !window.electronAPI.detectGpuBackend) return;
             const result = await window.electronAPI.detectGpuBackend();
             if (!result.success) return;
             
-            const select = UIHelpers.getElementById('gpu-backend-select');
-            if (!select || select.value !== 'auto') return;
-            
-            const descEl = UIHelpers.getElementById('gpu-backend-description');
-            if (descEl && result.suggestedBackend !== 'auto') {
-                const backendsLabels = { metal: 'Metal', coreml: 'CoreML', cuda: 'CUDA', vulkan: 'Vulkan', cpu: 'CPU' };
-                const label = backendsLabels[result.suggestedBackend] || result.suggestedBackend;
-                UIHelpers.setText(descEl, `Auto-detect: will use ${label} on this system`);
+            const descEl = UIHelpers.getElementById('gpu-info-text');
+            if (descEl) {
+                const labels = { metal: 'Metal', gpu: 'CUDA/Vulkan', cpu: 'CPU' };
+                const label = labels[result.expectedBackend] || result.expectedBackend;
+                UIHelpers.setText(descEl, `Detected: ${label} (${result.platform})`);
             }
         } catch (error) {
-            console.warn('Could not detect GPU backend:', error);
+            console.warn('Could not detect GPU info:', error);
         }
     }
 

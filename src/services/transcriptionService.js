@@ -110,8 +110,9 @@ class TranscriptionService {
                 translate: options.translate || false,
                 threads: options.threads || 4,
                 useInitialPrompt: options.useInitialPrompt !== undefined ? options.useInitialPrompt : true,
-                gpuBackend: options.gpuBackend !== undefined ? options.gpuBackend : this.localWhisper.gpuBackend,
-                hardwareAcceleration: options.hardwareAcceleration !== undefined ? options.hardwareAcceleration : this.localWhisper.hardwareAcceleration
+                useGpu: options.useGpu !== undefined ? options.useGpu : this.localWhisper.useGpu,
+                flashAttn: options.flashAttn !== undefined ? options.flashAttn : this.localWhisper.flashAttn,
+                gpuDevice: options.gpuDevice !== undefined ? options.gpuDevice : this.localWhisper.gpuDevice
             };
             
             // Only add initialPrompt if useInitialPrompt is true
@@ -185,8 +186,9 @@ class TranscriptionService {
                 translate: options.translate || false,
                 threads: options.threads || 4,
                 useInitialPrompt: options.useInitialPrompt !== undefined ? options.useInitialPrompt : true,
-                gpuBackend: options.gpuBackend !== undefined ? options.gpuBackend : this.localWhisper.gpuBackend,
-                hardwareAcceleration: options.hardwareAcceleration !== undefined ? options.hardwareAcceleration : this.localWhisper.hardwareAcceleration
+                useGpu: options.useGpu !== undefined ? options.useGpu : this.localWhisper.useGpu,
+                flashAttn: options.flashAttn !== undefined ? options.flashAttn : this.localWhisper.flashAttn,
+                gpuDevice: options.gpuDevice !== undefined ? options.gpuDevice : this.localWhisper.gpuDevice
             };
             
             // Only add initialPrompt if useInitialPrompt is true
@@ -284,11 +286,14 @@ class TranscriptionService {
         if (settings.initialPrompt !== undefined) {
             this.setInitialPrompt(settings.initialPrompt);
         }
-        if (settings.gpuBackend !== undefined) {
-            this.localWhisper.setGpuBackend(settings.gpuBackend);
+        if (settings.useGpu !== undefined) {
+            this.localWhisper.setUseGpu(settings.useGpu);
         }
-        if (settings.hardwareAcceleration !== undefined) {
-            this.localWhisper.setHardwareAcceleration(settings.hardwareAcceleration);
+        if (settings.flashAttn !== undefined) {
+            this.localWhisper.setFlashAttn(settings.flashAttn);
+        }
+        if (settings.gpuDevice !== undefined) {
+            this.localWhisper.setGpuDevice(settings.gpuDevice);
         }
     }
 

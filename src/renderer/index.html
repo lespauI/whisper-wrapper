@@ -85,23 +85,30 @@
                         
                         <div class="form-group">
                             <div class="checkbox-container">
-                                <input type="checkbox" id="hardware-acceleration-checkbox" class="styled-checkbox" checked>
-                                <label for="hardware-acceleration-checkbox">Hardware Acceleration</label>
+                                <input type="checkbox" id="use-gpu-checkbox" class="styled-checkbox" checked>
+                                <label for="use-gpu-checkbox">GPU Acceleration</label>
                             </div>
-                            <div class="form-text">Use GPU to speed up transcription (3-5x faster on Apple Silicon)</div>
+                            <div class="form-text">Use GPU for faster transcription (backend determined by whisper.cpp build)</div>
+                            <div class="form-text" id="gpu-info-text"></div>
                         </div>
                         
                         <div class="form-group">
-                            <label for="gpu-backend-select">Acceleration Backend</label>
-                            <select id="gpu-backend-select" class="form-control">
-                                <option value="auto">Auto-detect</option>
-                                <option value="metal">Metal (Apple Silicon)</option>
-                                <option value="coreml">CoreML (Apple Neural Engine)</option>
-                                <option value="cuda">CUDA (NVIDIA)</option>
-                                <option value="vulkan">Vulkan (AMD/Intel)</option>
-                                <option value="cpu">CPU only</option>
+                            <div class="checkbox-container">
+                                <input type="checkbox" id="flash-attn-checkbox" class="styled-checkbox" checked>
+                                <label for="flash-attn-checkbox">Flash Attention</label>
+                            </div>
+                            <div class="form-text">Enable flash attention for improved GPU memory efficiency</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="gpu-device-select">GPU Device</label>
+                            <select id="gpu-device-select" class="form-control">
+                                <option value="0" selected>Device 0 (Default)</option>
+                                <option value="1">Device 1</option>
+                                <option value="2">Device 2</option>
+                                <option value="3">Device 3</option>
                             </select>
-                            <div class="form-text" id="gpu-backend-description">Automatically selects the best available backend</div>
+                            <div class="form-text">Select GPU device (only relevant for multi-GPU systems)</div>
                         </div>
                     </div>
                     

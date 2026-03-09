@@ -691,24 +691,26 @@ describe('IPCHandlers', () => {
             const result = await handlers.handleDetectGpuBackend();
 
             expect(result.success).toBe(true);
-            const validBackends = ['auto', 'metal', 'coreml', 'cuda', 'vulkan', 'cpu'];
-            expect(validBackends).toContain(result.suggestedBackend);
+            expect(result).toHaveProperty('platform');
+            expect(result).toHaveProperty('expectedBackend');
+            expect(result).toHaveProperty('gpuLikely');
         });
 
         it('should return cpu fallback when detection throws', async () => {
             const localWhisperModule = require('../../src/services/localWhisperService');
-            const originalDetect = localWhisperModule.LocalWhisperService.detectSuggestedBackend;
-            localWhisperModule.LocalWhisperService.detectSuggestedBackend = () => {
+            const originalDetect = localWhisperModule.LocalWhisperService.detectGpuInfo;
+            localWhisperModule.LocalWhisperService.detectGpuInfo = () => {
                 throw new Error('Detection error');
             };
 
             const result = await handlers.handleDetectGpuBackend();
 
             expect(result.success).toBe(false);
-            expect(result.suggestedBackend).toBe('cpu');
+            expect(result.gpuLikely).toBe(false);
+            expect(result.expectedBackend).toBe('cpu');
             expect(result.message).toContain('Detection error');
 
-            localWhisperModule.LocalWhisperService.detectSuggestedBackend = originalDetect;
+            localWhisperModule.LocalWhisperService.detectGpuInfo = originalDetect;
         });
     });
 });

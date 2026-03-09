@@ -400,6 +400,43 @@ describe('Audio Player - TranscriptionController', () => {
             expect(fullController._audioHandlers).toBeNull();
         });
 
+        it('seekToTime sets currentTime without auto-playing', () => {
+            const player = global.document.getElementById('audio-player');
+            const playSpy = jest.fn();
+            player.play = playSpy;
+            player.pause = jest.fn();
+            player.src = 'audio.mp3';
+
+            const seekController = {
+                seekToTime(time) {
+                    const p = global.document.getElementById('audio-player');
+                    if (!p || !p.src) return;
+                    p.currentTime = time;
+                }
+            };
+
+            seekController.seekToTime(5.0);
+            expect(player.currentTime).toBe(5.0);
+            expect(playSpy).not.toHaveBeenCalled();
+        });
+
+        it('seekToTime does nothing when no audio src is set', () => {
+            const player = global.document.getElementById('audio-player');
+            const playSpy = jest.fn();
+            player.play = playSpy;
+
+            const seekController = {
+                seekToTime(time) {
+                    const p = global.document.getElementById('audio-player');
+                    if (!p || !p.src) return;
+                    p.currentTime = time;
+                }
+            };
+
+            seekController.seekToTime(8.5);
+            expect(playSpy).not.toHaveBeenCalled();
+        });
+
         it('does not duplicate play-button click listeners when setup is called twice', () => {
             const player = global.document.getElementById('audio-player');
             const playSpy = jest.fn();

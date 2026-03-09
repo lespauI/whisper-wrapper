@@ -77,7 +77,7 @@ I need you to review this solution and update plan if changes are requred add th
 
 `TranscriptionController.renderTimestampedSegments` adds class `transcript-segment`, but `_highlightActiveSegment` queries `.transcription-segment`. Align the class names so highlighting works regardless of which rendering path produced the segments.
 
-### [ ] Step: Fix P2 - seekToTime should not auto-play
+### [x] Step: Fix P2 - seekToTime should not auto-play
 <!-- chat-id: 84b37d21-033a-4387-a54a-6f0eee957fa5 -->
 
 `seekToTime` unconditionally calls `player.play()` when the audio is paused. Change it to only seek without auto-playing; let the play button remain the user's explicit trigger. Update unit tests.

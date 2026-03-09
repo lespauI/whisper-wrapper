@@ -987,11 +987,6 @@ ${text}
         const player = document.getElementById('audio-player');
         if (!player || !player.src) return;
         player.currentTime = time;
-        if (player.paused) {
-            player.play();
-            const playBtn = document.getElementById('audio-play-btn');
-            if (playBtn) playBtn.innerHTML = '&#9646;&#9646;';
-        }
     }
 
     /**

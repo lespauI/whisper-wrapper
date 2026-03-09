@@ -86,6 +86,24 @@ describe('TranscriptionStoreService', () => {
       const entry = await service.store('Text', { sourceFile: '/path/to/meeting.wav' });
       expect(entry.title).toBe('meeting.wav');
     });
+
+    it('stores audioFilePath in the index entry', async () => {
+      const entry = await service.store('Audio path test', {
+        sourceFile: 'recording.wav',
+        audioFilePath: '/Users/test/recordings/recording.wav'
+      });
+
+      expect(entry.audioFilePath).toBe('/Users/test/recordings/recording.wav');
+
+      const indexPath = path.join(testDataDir, 'index.json');
+      const idx = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+      expect(idx[0].audioFilePath).toBe('/Users/test/recordings/recording.wav');
+    });
+
+    it('stores empty audioFilePath when not provided', async () => {
+      const entry = await service.store('No audio path', { sourceFile: 'file.wav' });
+      expect(entry.audioFilePath).toBe('');
+    });
   });
 
   describe('list()', () => {

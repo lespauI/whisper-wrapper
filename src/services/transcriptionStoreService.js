@@ -79,6 +79,7 @@ class TranscriptionStoreService {
       summary,
       labels,
       sourceFile: metadata.sourceFile || '',
+      audioFilePath: metadata.audioFilePath || '',
       language: metadata.language || '',
       duration: metadata.duration || null,
       model: metadata.model || '',

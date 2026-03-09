@@ -18,7 +18,8 @@ Do not make assumptions on important decisions — get clarification first.
 
 ## Workflow Steps
 
-### [ ] Step: Implementation
+### [x] Step: Implementation
+<!-- chat-id: af9e4681-1c92-43fa-9635-4495316cca26 -->
 
 **Debug requests, questions, and investigations:** answer or investigate first. Do not create a plan upfront — the user needs an answer, not a plan. A plan may become relevant later once the investigation reveals what needs to change.
 
@@ -36,3 +37,19 @@ To reflect the actual purpose of the first step, you can rename it to something 
 Rule of thumb for step size: each step = a coherent unit of work (component, endpoint, test suite). Not too granular (single function), not too broad (entire feature). Unit tests are part of each step, not separate.
 
 Update `{@artifacts_path}/plan.md`.
+
+### [ ] Step: Update documentation
+
+
+You need to update readme files and other documentation with that feature
+
+### [ ] Step: Test covverage
+
+
+you need to achive 80% Test coverage based on test pyramid for that feature
+
+### [ ] Step: review
+
+<!-- agent: opus-4-6-think -->
+
+I need you to review this solution and update plan if changes are requred add them into plan.md as tasks

@@ -173,7 +173,7 @@ export class FileUploadController {
         });
 
         // Show transcription result
-        await this.showTranscriptionResult(result.text, result.segments);
+        await this.showTranscriptionResult(result.text, result.segments, result.audioFilePath || null);
         
         // Update status and switch to transcription tab
         this.statusController.updateStatus(`Transcription completed (Language: ${result.language || 'unknown'})`);
@@ -184,8 +184,9 @@ export class FileUploadController {
      * Display transcription result in the UI
      * @param {string} text - Transcribed text
      * @param {Array} segments - Timestamped segments (optional)
+     * @param {string} audioFilePath - Path to the source audio file (optional)
      */
-    async showTranscriptionResult(text, segments = null) {
+    async showTranscriptionResult(text, segments = null, audioFilePath = null) {
         console.log('🎬 showTranscriptionResult called with:', { 
             textLength: text?.length, 
             segmentsCount: segments?.length,
@@ -245,6 +246,16 @@ export class FileUploadController {
         if (window.app && window.app.updateToggleButton) {
             window.app.updateToggleButton();
         }
+
+        // Load audio player if a file path is available
+        if (audioFilePath && window.whisperApp && window.whisperApp.controllers.transcription) {
+            window.whisperApp.controllers.transcription.loadAudio(audioFilePath);
+        } else {
+            // Hide audio player when no audio source
+            if (window.whisperApp && window.whisperApp.controllers.transcription) {
+                window.whisperApp.controllers.transcription.hideAudioPlayer();
+            }
+        }
     }
 
     /**
@@ -273,6 +284,8 @@ export class FileUploadController {
                 const segmentDiv = document.createElement('div');
                 segmentDiv.className = 'transcription-segment';
                 segmentDiv.dataset.segmentId = segment.id || `${paragraphIndex}-${segmentIndex}`;
+                segmentDiv.dataset.start = segment.start;
+                segmentDiv.dataset.end = segment.end;
                 
                 // Check if this is a speaker block
                 const text = segment.text.trim();
@@ -296,6 +309,14 @@ export class FileUploadController {
                 
                 segmentDiv.appendChild(timestampDiv);
                 segmentDiv.appendChild(textDiv);
+
+                // Click-to-seek: clicking a segment seeks the audio player to that position
+                segmentDiv.addEventListener('click', () => {
+                    if (window.whisperApp && window.whisperApp.controllers.transcription) {
+                        window.whisperApp.controllers.transcription.seekToTime(segment.start);
+                    }
+                });
+
                 container.appendChild(segmentDiv);
             });
             

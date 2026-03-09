@@ -78,6 +78,9 @@ class IPCHandlers {
 
         // GPU backend detection
         ipcMain.handle('whisper:detectGpuBackend', this.handleDetectGpuBackend.bind(this));
+
+        // Audio file reading for playback
+        ipcMain.handle('audio:readFile', this.handleAudioReadFile.bind(this));
     }
 
     async handleOpenFile() {
@@ -316,11 +319,13 @@ class IPCHandlers {
                     text: result.text,
                     language: result.language,
                     duration: result.duration,
-                    segments: result.segments || []
+                    segments: result.segments || [],
+                    audioFilePath: filePath
                 };
 
                 this.transcriptionStoreService.store(result.text, {
                     sourceFile: path.basename(filePath),
+                    audioFilePath: filePath,
                     language: result.language,
                     duration: result.duration,
                     model: currentConfig.model || ''
@@ -882,6 +887,46 @@ class IPCHandlers {
         } catch (error) {
             console.error('Error reindexing transcriptions:', error);
             return { count: 0, error: error.message };
+        }
+    }
+
+    async handleAudioReadFile(event, filePath) {
+        if (!filePath || typeof filePath !== 'string') {
+            return { success: false, error: 'Invalid file path' };
+        }
+        const resolved = path.resolve(filePath);
+        if (!fs.existsSync(resolved)) {
+            return { success: false, error: 'File not found' };
+        }
+        const stat = fs.statSync(resolved);
+        if (!stat.isFile()) {
+            return { success: false, error: 'Path is not a file' };
+        }
+        const MAX_SIZE = 300 * 1024 * 1024;
+        if (stat.size > MAX_SIZE) {
+            return { success: false, error: 'File too large for in-memory playback (max 300 MB)' };
+        }
+        try {
+            const ext = path.extname(resolved).toLowerCase();
+            const mimeTypes = {
+                '.mp3': 'audio/mpeg',
+                '.wav': 'audio/wav',
+                '.m4a': 'audio/mp4',
+                '.flac': 'audio/flac',
+                '.ogg': 'audio/ogg',
+                '.webm': 'audio/webm',
+                '.mp4': 'video/mp4',
+                '.mov': 'video/quicktime',
+                '.avi': 'video/x-msvideo',
+                '.mkv': 'video/x-matroska'
+            };
+            const mime = mimeTypes[ext] || 'audio/mpeg';
+            const buffer = fs.readFileSync(resolved);
+            const base64 = buffer.toString('base64');
+            return { success: true, dataUrl: `data:${mime};base64,${base64}` };
+        } catch (error) {
+            console.error('Error reading audio file:', error);
+            return { success: false, error: error.message };
         }
     }
 

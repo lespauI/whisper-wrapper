@@ -1048,6 +1048,81 @@ body {
     font-size: 0.8rem;
 }
 
+/* Audio player bar */
+.audio-player-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 1rem;
+    background: #f0f4ff;
+    border: 1px solid #c3d4f7;
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    flex-wrap: nowrap;
+}
+
+.audio-player-bar.hidden {
+    display: none;
+}
+
+.audio-play-btn {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    border: none;
+    border-radius: 50%;
+    background: #667eea;
+    color: white;
+    font-size: 0.8rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+}
+
+.audio-play-btn:hover {
+    background: #5a67d8;
+}
+
+.audio-time {
+    flex-shrink: 0;
+    font-size: 0.8rem;
+    font-family: 'SF Mono', 'Monaco', monospace;
+    color: #4a5568;
+    min-width: 3rem;
+    text-align: center;
+}
+
+.audio-seek {
+    flex: 1;
+    min-width: 0;
+    accent-color: #667eea;
+    cursor: pointer;
+    height: 4px;
+}
+
+.audio-speed {
+    flex-shrink: 0;
+    padding: 0.2rem 0.4rem;
+    font-size: 0.8rem;
+    border-radius: 4px;
+    border: 1px solid #cbd5e0;
+    background: white;
+    cursor: pointer;
+}
+
+/* Active transcript segment highlight during playback */
+.transcription-segment--active {
+    background: #ebf4ff !important;
+    border-left-color: #3182ce !important;
+    box-shadow: 0 0 0 2px rgba(49, 130, 206, 0.25) !important;
+}
+
+.transcription-segment {
+    cursor: pointer;
+}
+
 /* Loading and empty states */
 .loading-state,
 .empty-state {

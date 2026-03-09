@@ -74,6 +74,10 @@
     },
     "files": [
       "src/main/**/*",
+      "src/services/**/*",
+      "src/config/**/*",
+      "src/utils/**/*",
+      "src/config.js",
       "src/renderer/dist/**/*",
       "node_modules/**/*"
     ],

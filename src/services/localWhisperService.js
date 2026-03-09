@@ -29,6 +29,8 @@ class LocalWhisperService {
         this.threads = 4;
         this.translate = false;
         this.initialPrompt = ''; // Initialize initial prompt as empty string
+        this.gpuBackend = 'auto'; // GPU backend: 'auto' | 'metal' | 'coreml' | 'cuda' | 'vulkan' | 'cpu'
+        this.hardwareAcceleration = true; // Whether hardware acceleration is enabled
         
         // Get available models and set default model to one of the available ones
         const availableModels = this.getAvailableModels();
@@ -225,6 +227,63 @@ class LocalWhisperService {
     clearInitialPrompt() {
         this.initialPrompt = '';
         console.log('🧹 LocalWhisperService: Initial prompt cleared');
+    }
+
+    /**
+     * Set the GPU backend for hardware acceleration
+     * @param {string} backend - One of: 'auto' | 'metal' | 'coreml' | 'cuda' | 'vulkan' | 'cpu'
+     */
+    setGpuBackend(backend) {
+        const validBackends = ['auto', 'metal', 'coreml', 'cuda', 'vulkan', 'cpu'];
+        if (!validBackends.includes(backend)) {
+            throw new Error(`Invalid GPU backend: ${backend}. Valid backends are: ${validBackends.join(', ')}`);
+        }
+        this.gpuBackend = backend;
+    }
+
+    /**
+     * Set whether hardware acceleration is enabled
+     * @param {boolean} enabled
+     */
+    setHardwareAcceleration(enabled) {
+        this.hardwareAcceleration = !!enabled;
+    }
+
+    /**
+     * Detect the suggested GPU backend for the current system
+     * @returns {string} - Suggested backend name
+     */
+    static detectSuggestedBackend() {
+        const platform = process.platform;
+        if (platform === 'darwin') {
+            const cpus = os.cpus();
+            const isAppleSilicon = cpus.length > 0 && cpus[0].model.toLowerCase().includes('apple');
+            return isAppleSilicon ? 'metal' : 'cpu';
+        }
+        if (platform === 'win32' || platform === 'linux') {
+            return 'cuda';
+        }
+        return 'cpu';
+    }
+
+    /**
+     * Build CLI args for the selected GPU backend
+     * @param {string} gpuBackend - Backend identifier
+     * @param {boolean} hardwareAcceleration - Whether acceleration is enabled
+     * @returns {string[]} - Array of CLI arguments
+     */
+    buildGpuArgs(gpuBackend, hardwareAcceleration) {
+        if (!hardwareAcceleration) {
+            return [];
+        }
+        const backend = gpuBackend === 'auto' ? LocalWhisperService.detectSuggestedBackend() : gpuBackend;
+        switch (backend) {
+        case 'metal': return ['--metal'];
+        case 'coreml': return ['--coreml'];
+        case 'cuda': return ['--cuda'];
+        case 'vulkan': return ['--vulkan'];
+        default: return [];
+        }
     }
 
     /**
@@ -545,7 +604,9 @@ class LocalWhisperService {
             threads = 4,
             initialPrompt = undefined, // Don't default to this.initialPrompt
             useInitialPrompt = true, // Default to true for backward compatibility
-            contextPrompt = undefined // Context from previous chunks
+            contextPrompt = undefined, // Context from previous chunks
+            gpuBackend = this.gpuBackend,
+            hardwareAcceleration = this.hardwareAcceleration
         } = options;
         
         // Only use initialPrompt if explicitly provided in options or if useInitialPrompt is true
@@ -618,6 +679,15 @@ class LocalWhisperService {
             if (sanitizedInitialPrompt.length > 0) {
                 args.push('--prompt', sanitizedInitialPrompt);
             }
+        }
+
+        // Add GPU acceleration flags
+        const gpuArgs = this.buildGpuArgs(gpuBackend, hardwareAcceleration);
+        if (gpuArgs.length > 0) {
+            args.push(...gpuArgs);
+            console.log(`🚀 LocalWhisperService: GPU acceleration enabled: ${gpuArgs.join(' ')}`);
+        } else {
+            console.log('💻 LocalWhisperService: Running in CPU-only mode');
         }
 
         // Add other options
@@ -821,6 +891,32 @@ class LocalWhisperService {
                     if (needsCleanup && fs.existsSync(audioFilePath)) {
                         console.log('🗑️ LocalWhisperService: Cleaning up extracted audio file');
                         fs.unlinkSync(audioFilePath);
+                    }
+                    
+                    // Check if failure is GPU-related; if so, retry with CPU fallback
+                    const isGpuError = gpuArgs.length > 0 && (
+                        stderr.includes('unknown argument') ||
+                        stderr.includes('failed to init') ||
+                        stderr.includes('CUDA') ||
+                        stderr.includes('Metal') ||
+                        stderr.includes('Vulkan') ||
+                        stderr.includes('CoreML') ||
+                        stderr.includes('not supported') ||
+                        stderr.includes('not compiled')
+                    );
+                    
+                    if (isGpuError) {
+                        const effectiveBackend = gpuBackend === 'auto'
+                            ? LocalWhisperService.detectSuggestedBackend()
+                            : gpuBackend;
+                        if (effectiveBackend === 'cuda' && (process.platform === 'win32' || process.platform === 'linux')) {
+                            console.log('⚠️ LocalWhisperService: CUDA failed, retrying with Vulkan...');
+                            resolve(this.transcribeFile(filePath, { ...options, gpuBackend: 'vulkan' }));
+                        } else {
+                            console.log('⚠️ LocalWhisperService: GPU acceleration failed, retrying with CPU-only mode...');
+                            resolve(this.transcribeFile(filePath, { ...options, hardwareAcceleration: false }));
+                        }
+                        return;
                     }
                     
                     // Provide more specific error messages for common issues

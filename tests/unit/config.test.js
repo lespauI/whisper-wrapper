@@ -51,6 +51,10 @@ describe('Configuration System', () => {
             expect(defaultConfig.recording.autoSave).toBe(true);
         });
 
+        it('should have captureMode defaulting to microphone', () => {
+            expect(defaultConfig.recording.captureMode).toBe('microphone');
+        });
+
         it('should have export settings', () => {
             expect(defaultConfig.export).toBeDefined();
             expect(defaultConfig.export.defaultFormat).toBe('txt');
@@ -108,6 +112,27 @@ describe('Configuration System', () => {
             expect(videoFormats).toContain('.avi');
             expect(videoFormats).toContain('.mkv');
             expect(videoFormats).toContain('.webm');
+        });
+    });
+
+    describe('GPU acceleration configuration', () => {
+        it('should have hardwareAcceleration enabled by default', () => {
+            expect(defaultConfig.transcription).toBeDefined();
+            expect(defaultConfig.transcription.hardwareAcceleration).toBe(true);
+        });
+
+        it('should have gpuBackend set to auto by default', () => {
+            expect(defaultConfig.transcription).toBeDefined();
+            expect(defaultConfig.transcription.gpuBackend).toBe('auto');
+        });
+
+        it('should have transcription settings with GPU fields', () => {
+            const t = defaultConfig.transcription;
+            expect(t).toBeDefined();
+            expect(typeof t.hardwareAcceleration).toBe('boolean');
+            expect(typeof t.gpuBackend).toBe('string');
+            const validBackends = ['auto', 'metal', 'coreml', 'cuda', 'vulkan', 'cpu'];
+            expect(validBackends).toContain(t.gpuBackend);
         });
     });
 });

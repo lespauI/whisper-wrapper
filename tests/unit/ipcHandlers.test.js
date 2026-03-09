@@ -1,5 +1,5 @@
 const IPCHandlers = require('../../src/main/ipcHandlers');
-const { dialog, shell } = require('electron');
+const { dialog, shell, desktopCapturer } = require('electron');
 const TranscriptionService = require('../../src/services/transcriptionService');
 const FileService = require('../../src/services/fileService');
 const TranscriptionStoreService = require('../../src/services/transcriptionStoreService');
@@ -17,6 +17,9 @@ jest.mock('electron', () => ({
     },
     ipcMain: {
         handle: jest.fn()
+    },
+    desktopCapturer: {
+        getSources: jest.fn()
     }
 }));
 
@@ -77,7 +80,7 @@ describe('IPCHandlers', () => {
         };
 
         mockTranscriptionStoreService = {
-            store: jest.fn(),
+            store: jest.fn().mockResolvedValue(null),
             list: jest.fn().mockReturnValue([]),
             get: jest.fn(),
             update: jest.fn(),
@@ -577,6 +580,135 @@ describe('IPCHandlers', () => {
         it('should handle missing file paths', async () => {
             await expect(handlers.handleTranscribeFile(mockEvent, null))
                 .rejects.toThrow();
+        });
+    });
+
+    describe('handleGetAudioSources', () => {
+        const mockSources = [
+            {
+                id: 'screen:0',
+                name: 'Entire Screen',
+                thumbnail: { toDataURL: jest.fn().mockReturnValue('data:image/png;base64,abc') }
+            },
+            {
+                id: 'window:1',
+                name: 'My App',
+                thumbnail: { toDataURL: jest.fn().mockReturnValue('data:image/png;base64,xyz') }
+            }
+        ];
+
+        it('should return sources and platform info on success', async () => {
+            desktopCapturer.getSources.mockResolvedValue(mockSources);
+
+            const result = await handlers.handleGetAudioSources();
+
+            expect(result.success).toBe(true);
+            expect(result.platform).toBe(process.platform);
+            expect(result.sources).toHaveLength(2);
+            expect(result.sources[0]).toEqual({
+                id: 'screen:0',
+                name: 'Entire Screen'
+            });
+            expect(result.sources[1]).toEqual({
+                id: 'window:1',
+                name: 'My App'
+            });
+            expect(result.systemAudioSupported).toBeDefined();
+        });
+
+        it('should not include thumbnail data in serialized sources', async () => {
+            desktopCapturer.getSources.mockResolvedValue(mockSources);
+
+            const result = await handlers.handleGetAudioSources();
+
+            expect(result.sources[0].thumbnail).toBeUndefined();
+            expect(result.sources[1].thumbnail).toBeUndefined();
+        });
+
+        it('should indicate systemAudioSupported for darwin, win32, linux', async () => {
+            desktopCapturer.getSources.mockResolvedValue([]);
+
+            const result = await handlers.handleGetAudioSources();
+
+            const supported = ['darwin', 'win32', 'linux'].includes(process.platform);
+            expect(result.systemAudioSupported).toBe(supported);
+        });
+
+        it('should handle sources with extra fields gracefully — only id and name are returned', async () => {
+            desktopCapturer.getSources.mockResolvedValue([
+                { id: 'screen:0', name: 'Entire Screen', thumbnail: null, appIcon: null }
+            ]);
+
+            const result = await handlers.handleGetAudioSources();
+
+            expect(result.success).toBe(true);
+            expect(Object.keys(result.sources[0])).toEqual(['id', 'name']);
+        });
+
+        it('should return empty sources array when desktopCapturer returns empty list', async () => {
+            desktopCapturer.getSources.mockResolvedValue([]);
+
+            const result = await handlers.handleGetAudioSources();
+
+            expect(result.success).toBe(true);
+            expect(result.sources).toHaveLength(0);
+        });
+
+        it('should pass correct types filter to desktopCapturer', async () => {
+            desktopCapturer.getSources.mockResolvedValue([]);
+
+            await handlers.handleGetAudioSources();
+
+            expect(desktopCapturer.getSources).toHaveBeenCalledWith({
+                types: ['screen', 'window']
+            });
+        });
+
+        it('should include platform in both success and error responses', async () => {
+            desktopCapturer.getSources.mockResolvedValue(mockSources);
+            const result = await handlers.handleGetAudioSources();
+            expect(result.platform).toBe(process.platform);
+
+            desktopCapturer.getSources.mockRejectedValue(new Error('fail'));
+            const errorResult = await handlers.handleGetAudioSources();
+            expect(errorResult.platform).toBe(process.platform);
+        });
+
+        it('should return failure result when desktopCapturer throws', async () => {
+            desktopCapturer.getSources.mockRejectedValue(new Error('Permission denied'));
+
+            const result = await handlers.handleGetAudioSources();
+
+            expect(result.success).toBe(false);
+            expect(result.sources).toEqual([]);
+            expect(result.systemAudioSupported).toBe(false);
+            expect(result.error).toBe('Permission denied');
+        });
+    });
+
+    describe('handleDetectGpuBackend', () => {
+        it('should return valid suggested backend on success', async () => {
+            const result = await handlers.handleDetectGpuBackend();
+
+            expect(result.success).toBe(true);
+            const validBackends = ['auto', 'metal', 'coreml', 'cuda', 'vulkan', 'cpu'];
+            expect(validBackends).toContain(result.suggestedBackend);
+        });
+
+        it('should return cpu fallback when detection throws', async () => {
+            const localWhisperModule = require('../../src/services/localWhisperService');
+            const originalDetect = localWhisperModule.LocalWhisperService.detectSuggestedBackend;
+            localWhisperModule.LocalWhisperService.detectSuggestedBackend = () => {
+                throw new Error('Detection error');
+            };
+
+            const result = await handlers.handleDetectGpuBackend();
+
+            expect(result.success).toBe(false);
+            expect(result.suggestedBackend).toBe('cpu');
+            expect(result.message).toContain('Detection error');
+
+            localWhisperModule.LocalWhisperService.detectSuggestedBackend = originalDetect;
         });
     });
 });

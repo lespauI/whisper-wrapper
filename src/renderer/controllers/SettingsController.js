@@ -76,6 +76,16 @@ export class SettingsController {
         EventHandler.addListener('#setup-whisper-btn', 'click', async () => {
             await this.setupWhisper();
         });
+
+        // Hardware acceleration toggle
+        EventHandler.addListener('#hardware-acceleration-checkbox', 'change', () => {
+            this.updateGpuBackendState();
+        });
+
+        // GPU backend description update
+        EventHandler.addListener('#gpu-backend-select', 'change', (e) => {
+            this.updateGpuBackendDescription(e.target.value);
+        });
     }
 
     /**
@@ -110,6 +120,7 @@ export class SettingsController {
         await this.updateModelOptions();
         await this.checkWhisperStatus();
         await this.loadSettings();
+        await this.detectAndSuggestGpuBackend();
         
         this.statusController.updateStatus('Settings opened');
     }
@@ -155,6 +166,8 @@ export class SettingsController {
             const translate = UIHelpers.isChecked('#translate-checkbox');
             const useInitialPrompt = UIHelpers.isChecked('#use-initial-prompt-checkbox');
             const initialPrompt = UIHelpers.getValue('#initial-prompt');
+            const hardwareAcceleration = UIHelpers.isChecked('#hardware-acceleration-checkbox');
+            const gpuBackend = UIHelpers.getValue('#gpu-backend-select');
             
             const settings = {
                 model,
@@ -162,7 +175,9 @@ export class SettingsController {
                 threads,
                 translate,
                 useInitialPrompt,
-                initialPrompt
+                initialPrompt,
+                hardwareAcceleration,
+                gpuBackend
             };
             
             console.log('Saving settings:', settings);
@@ -226,9 +241,17 @@ export class SettingsController {
             if (settings.initialPrompt !== undefined) {
                 UIHelpers.setValue('#initial-prompt', settings.initialPrompt);
             }
+            if (settings.hardwareAcceleration !== undefined) {
+                UIHelpers.setChecked('#hardware-acceleration-checkbox', settings.hardwareAcceleration);
+            }
+            if (settings.gpuBackend) {
+                UIHelpers.setValue('#gpu-backend-select', settings.gpuBackend);
+                this.updateGpuBackendDescription(settings.gpuBackend);
+            }
             
             // Update initial prompt textarea state based on checkbox
             this.updateInitialPromptState();
+            this.updateGpuBackendState();
             
             // Load AI Refinement settings
             await this.loadAIRefinementSettings();
@@ -434,6 +457,64 @@ export class SettingsController {
             UIHelpers.setText(descriptionElement, model.description);
         } else {
             UIHelpers.setText(descriptionElement, 'Select a model to see detailed information');
+        }
+    }
+
+    /**
+     * Update GPU backend dropdown enabled/disabled state based on hardware acceleration toggle
+     */
+    updateGpuBackendState() {
+        const checkbox = UIHelpers.getElementById('hardware-acceleration-checkbox');
+        const select = UIHelpers.getElementById('gpu-backend-select');
+        if (!checkbox || !select) return;
+        
+        select.disabled = !checkbox.checked;
+        if (!checkbox.checked) {
+            UIHelpers.addClass(select, 'disabled');
+        } else {
+            UIHelpers.removeClass(select, 'disabled');
+        }
+    }
+
+    /**
+     * Update GPU backend description text
+     * @param {string} backend - Selected backend value
+     */
+    updateGpuBackendDescription(backend) {
+        const descriptions = {
+            auto: 'Automatically selects the best available backend',
+            metal: 'GPU acceleration via Metal (Apple Silicon Macs, 3-5x faster)',
+            coreml: 'Neural Engine via CoreML (Apple, requires pre-converted models)',
+            cuda: 'GPU acceleration via CUDA (NVIDIA GPUs on Windows/Linux)',
+            vulkan: 'GPU acceleration via Vulkan (AMD/Intel GPUs on Windows/Linux)',
+            cpu: 'No GPU acceleration, uses CPU only'
+        };
+        const descEl = UIHelpers.getElementById('gpu-backend-description');
+        if (descEl) {
+            UIHelpers.setText(descEl, descriptions[backend] || 'Select a backend');
+        }
+    }
+
+    /**
+     * Detect the suggested GPU backend and update the dropdown if set to 'auto'
+     */
+    async detectAndSuggestGpuBackend() {
+        try {
+            if (!window.electronAPI || !window.electronAPI.detectGpuBackend) return;
+            const result = await window.electronAPI.detectGpuBackend();
+            if (!result.success) return;
+            
+            const select = UIHelpers.getElementById('gpu-backend-select');
+            if (!select || select.value !== 'auto') return;
+            
+            const descEl = UIHelpers.getElementById('gpu-backend-description');
+            if (descEl && result.suggestedBackend !== 'auto') {
+                const backendsLabels = { metal: 'Metal', coreml: 'CoreML', cuda: 'CUDA', vulkan: 'Vulkan', cpu: 'CPU' };
+                const label = backendsLabels[result.suggestedBackend] || result.suggestedBackend;
+                UIHelpers.setText(descEl, `Auto-detect: will use ${label} on this system`);
+            }
+        } catch (error) {
+            console.warn('Could not detect GPU backend:', error);
         }
     }
 

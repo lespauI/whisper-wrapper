@@ -61,7 +61,6 @@ module.exports = {
         autoSave: true,
         // Show a UI indicator when input is silent
         silenceIndicator: true,
-        // Audio capture mode: 'microphone' | 'system' | 'both'
         captureMode: 'microphone'
     },
 

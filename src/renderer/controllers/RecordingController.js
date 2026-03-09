@@ -230,7 +230,7 @@ export class RecordingController {
             const mode = e.target.value;
             if (mode === 'microphone' || mode === 'system' || mode === 'both') {
                 this.captureMode = mode;
-                try { await window.electronAPI.setConfig({ recording: { captureMode: mode } }); } catch {}
+                try { await window.electronAPI.setConfig({ recording: { captureMode: mode } }); } catch (e) { console.warn('Failed to persist capture mode:', e?.message); }
                 await this._updateCaptureModeUI(mode);
             }
         }));
@@ -354,9 +354,9 @@ export class RecordingController {
             throw new Error('System audio capture is not supported on this platform.');
         }
 
-        const screenSource = result.sources.find((s) => s.name === 'Entire Screen' || s.name === 'Screen 1') || result.sources[0];
+        const screenSource = result.sources.find((s) => s.id.startsWith('screen:'));
         if (!screenSource) {
-            throw new Error('No system audio source found. On macOS, a virtual audio driver such as BlackHole may be required.');
+            throw new Error('No screen source found for system audio capture. On macOS, a virtual audio driver such as BlackHole may be required.');
         }
 
         const constraints = {
@@ -376,6 +376,12 @@ export class RecordingController {
 
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         stream.getVideoTracks().forEach((t) => t.stop());
+
+        if (stream.getAudioTracks().length === 0) {
+            stream.getTracks().forEach((t) => t.stop());
+            throw new Error('System audio capture returned no audio tracks. On macOS, install a virtual audio driver such as BlackHole and set it as your output device.');
+        }
+
         return stream;
     }
 
@@ -388,13 +394,21 @@ export class RecordingController {
 
         const micGain = ctx.createGain();
         const sysGain = ctx.createGain();
-        micGain.gain.value = 1.0;
-        sysGain.gain.value = 1.0;
+        micGain.gain.value = 0.7;
+        sysGain.gain.value = 0.7;
+
+        const compressor = ctx.createDynamicsCompressor();
+        compressor.threshold.value = -6;
+        compressor.knee.value = 30;
+        compressor.ratio.value = 8;
+        compressor.attack.value = 0.003;
+        compressor.release.value = 0.25;
 
         micSource.connect(micGain);
         sysSource.connect(sysGain);
-        micGain.connect(destination);
-        sysGain.connect(destination);
+        micGain.connect(compressor);
+        sysGain.connect(compressor);
+        compressor.connect(destination);
 
         this._mixAudioContext = ctx;
         return destination.stream;
@@ -424,7 +438,8 @@ export class RecordingController {
             } else {
                 UIHelpers.addClass('#system-audio-warning', 'hidden');
             }
-        } catch {
+        } catch (e) {
+            console.warn('Failed to check audio source availability:', e?.message);
             UIHelpers.addClass('#system-audio-warning', 'hidden');
         }
     }
@@ -448,9 +463,19 @@ export class RecordingController {
                 this._micStream = null;
             } else {
                 const micConstraints = this.getRecordingConstraints();
-                this._micStream = await navigator.mediaDevices.getUserMedia(micConstraints);
-                this._systemAudioStream = await this._getSystemAudioStream();
-                stream = await this._getMixedStream(this._micStream, this._systemAudioStream);
+                let micStream;
+                let systemStream;
+                try {
+                    micStream = await navigator.mediaDevices.getUserMedia(micConstraints);
+                    systemStream = await this._getSystemAudioStream();
+                } catch (err) {
+                    if (micStream) micStream.getTracks().forEach((t) => t.stop());
+                    if (systemStream) systemStream.getTracks().forEach((t) => t.stop());
+                    throw err;
+                }
+                this._micStream = micStream;
+                this._systemAudioStream = systemStream;
+                stream = await this._getMixedStream(micStream, systemStream);
             }
 
             // Set up audio context for visualization and level monitoring

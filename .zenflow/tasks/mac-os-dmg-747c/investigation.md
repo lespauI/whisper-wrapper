@@ -131,3 +131,40 @@ Ensure `scripts/build-renderer.js` copies `src/renderer/app/` to `dist/app/`.
 - The `RefinementController` is a legacy non-module class — it must be instantiated AFTER DOM is ready, as it queries DOM elements in its constructor
 - The `LibraryController` auto-instantiates independently — the new `App.js` should not double-instantiate it
 - The `RecordingController` depends on browser APIs (`MediaRecorder`, `AudioContext`) — initialization errors in these should not crash the entire app
+
+---
+
+## Implementation Notes
+
+### Changes Made
+
+1. **Created `src/renderer/app/AppState.js`** — Centralized pub/sub state management class with channels: `tab`, `recording`, `fileUpload`, `transcription`, `status`, `ui`. Returns copies of state to prevent mutation.
+
+2. **Created `src/renderer/app/App.js`** — Main coordinator that:
+   - Instantiates `AppState` and all 7 modular controllers in dependency order
+   - Wraps `RecordingController` init in try/catch so browser API failures don't crash the app
+   - Instantiates `RefinementController` from `window.RefinementController` (legacy non-module)
+   - Does NOT instantiate `LibraryController` (it auto-instantiates on `DOMContentLoaded`)
+   - Exposes `window.app` for legacy compatibility
+   - Provides legacy bridge methods: `updateStatus()`, `showError()`, `loadTemplates()`, `saveTranscriptionToHistory()`, `updateTranscriptionText()`, `updateToggleButton()`
+   - Exposes `aiRefinementState` and `transcriptionState` objects for `RefinementController`
+
+3. **Fixed macOS close handler in `src/main/index.js`** — Added `isQuitting` flag set on `before-quit` event, checked in the `close` handler so Cmd+Q actually quits the app instead of hiding the window indefinitely.
+
+4. **Build script** — Already supported `app/` directory copying (lines 57-63 of `build-renderer.js`). Verified `dist/app/App.js` and `dist/app/AppState.js` are produced.
+
+### Tests Added
+
+- `tests/unit/renderer/appState.test.js` — 9 tests for pub/sub, tab state, recording state (copy semantics), file upload, status, UI state
+- `tests/unit/renderer/app.test.js` — 4 tests for controller instantiation, `window.app` exposure, legacy method presence, `aiRefinementState`/`transcriptionState`
+- `tests/unit/renderer/buildOutput.test.js` — 4 tests verifying `App.js`, `AppState.js`, `index.js` import, and all controller files exist
+- `tests/unit/macosCloseHandler.test.js` — 3 tests verifying `isQuitting` variable, `before-quit` handler, and close handler guard
+
+### Test Results
+
+```
+Test Suites: 30 passed, 30 total
+Tests:       543 passed, 543 total
+```
+
+Lint: 0 new errors (only pre-existing `no-console` warnings in `main/index.js`).

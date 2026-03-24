@@ -311,19 +311,17 @@ export class SettingsController {
             }
             
             // Get AI Refinement settings using the dedicated method
-            const aiSettings = await window.electronAPI.getAIRefinementSettings();
+            const result = await window.electronAPI.getAIRefinementSettings();
+            const aiSettings = result && result.settings ? result.settings : result;
             if (aiSettings) {
-                // Update UI elements
-                UIHelpers.setChecked('#ai-refinement-enabled-checkbox', aiSettings.enabled || false);
+                UIHelpers.setChecked('#ai-refinement-enabled-checkbox', aiSettings.enabled !== undefined ? aiSettings.enabled : true);
                 UIHelpers.setValue('#ollama-endpoint', aiSettings.endpoint || 'http://localhost:11434');
                 UIHelpers.setValue('#ollama-timeout', aiSettings.timeoutSeconds || 300);
                 
-                // Load available models and set selected model
                 await this.refreshOllamaModels();
                 if (aiSettings.model) {
                     UIHelpers.setValue('#ollama-model-select', aiSettings.model);
                 }
-                // If the saved model is not in the dropdown (e.g. uninstalled), sync config
                 const modelSelect = UIHelpers.getElementById('ollama-model-select');
                 if (modelSelect && modelSelect.value && aiSettings.model && modelSelect.value !== aiSettings.model) {
                     await window.electronAPI.saveAIRefinementSettings({ model: modelSelect.value });

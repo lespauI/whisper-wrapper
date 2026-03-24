@@ -173,7 +173,7 @@ describe('TranscriptionStoreService — integration (disk round-trip)', () => {
         expect(entry.title).toBe('AI Generated Title');
     });
 
-    test('store() falls back to date-based title when meta returns empty title and no sourceFile', async () => {
+    test('store() falls back to date-based title when meta returns empty title', async () => {
         const ollamaService = require('../../src/services/ollamaService');
         ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
             title: '', summary: '', labels: []

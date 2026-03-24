@@ -80,8 +80,7 @@ class TranscriptionStoreService {
 
     const title =
       metaTitle ||
-      metadata.title ||
-      (metadata.sourceFile ? path.basename(metadata.sourceFile) : `Transcription ${new Date().toLocaleDateString()}`);
+      `Transcription ${new Date().toLocaleDateString()}`;
 
     const entry = {
       id,

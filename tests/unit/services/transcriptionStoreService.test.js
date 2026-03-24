@@ -94,31 +94,21 @@ describe('TranscriptionStoreService', () => {
     });
 
     it('uses meta-generated title as primary title', async () => {
-      const entry = await service.store('Text', { title: 'My Custom Title' });
+      const entry = await service.store('Text', { sourceFile: 'audio.wav' });
       expect(entry.title).toBe('Test Title');
     });
 
-    it('falls back to metadata title when meta title is empty', async () => {
+    it('falls back to timestamp when meta title is empty', async () => {
       ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
         title: '', summary: 'sum', labels: []
       });
-      const entry = await service.store('Text', { title: 'Fallback Title' });
-      expect(entry.title).toBe('Fallback Title');
-    });
-
-    it('falls back to sourceFile when no meta title or metadata title', async () => {
-      ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
-        title: '', summary: '', labels: []
-      });
       const entry = await service.store('Text', { sourceFile: '/path/to/meeting.wav' });
-      expect(entry.title).toBe('meeting.wav');
+      expect(entry.title).toMatch(/^Transcription /);
     });
 
-    it('falls back to timestamp when no title from any source', async () => {
-      ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
-        title: '', summary: '', labels: []
-      });
-      const entry = await service.store('Text', {});
+    it('falls back to timestamp when meta generation fails', async () => {
+      ollamaService.generateTranscriptionMeta.mockRejectedValueOnce(new Error('Ollama down'));
+      const entry = await service.store('Text', { sourceFile: 'file.wav' });
       expect(entry.title).toMatch(/^Transcription /);
     });
 
@@ -272,7 +262,8 @@ describe('TranscriptionStoreService', () => {
     });
 
     it('ignores whitespace-only title and keeps the original', async () => {
-      const entry = await service.store('Some text', { title: 'Keep Me' });
+      const entry = await service.store('Some text', {});
+      expect(entry.title).toBe('Test Title');
       const updated = await service.update(entry.id, { title: '   ' });
 
       expect(updated.title).toBe('Test Title');

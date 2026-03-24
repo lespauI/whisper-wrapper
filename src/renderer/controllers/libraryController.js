@@ -324,14 +324,21 @@ class LibraryController {
             if (this.detailText) this.detailText.textContent = text || '';
 
             if (this.metaErrorEl) {
+                const isEmpty = !entry.summary && (!entry.labels || entry.labels.length === 0);
                 const metaFailed = entry.metaStatus === 'failed' ||
-                    (!entry.metaStatus && !entry.summary && (!entry.labels || entry.labels.length === 0));
+                    (!entry.metaStatus && isEmpty) ||
+                    (entry.metaStatus === 'success' && isEmpty);
                 if (metaFailed) {
                     this.metaErrorEl.classList.remove('hidden');
                     if (this.metaErrorText) {
-                        const msg = entry.metaError
-                            ? 'AI meta generation failed: ' + entry.metaError
-                            : 'AI meta was not generated for this transcription';
+                        let msg;
+                        if (entry.metaError) {
+                            msg = 'AI meta generation failed: ' + entry.metaError;
+                        } else if (entry.metaStatus === 'success' && isEmpty) {
+                            msg = 'AI meta returned empty results — try regenerating';
+                        } else {
+                            msg = 'AI meta was not generated for this transcription';
+                        }
                         this.metaErrorText.textContent = msg;
                     }
                 } else {

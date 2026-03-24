@@ -305,6 +305,6 @@ describe('OllamaService.generateTranscriptionMeta — integration (live Ollama)'
         const ollamaService = require('../../src/services/ollamaService');
         const result = await ollamaService.generateTranscriptionMeta('Some text');
 
-        expect(result).toEqual({ summary: '', labels: [] });
+        expect(result).toEqual({ title: '', summary: '', labels: [], metaFailed: false });
     });
 });

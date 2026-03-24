@@ -93,22 +93,33 @@ describe('TranscriptionStoreService', () => {
       expect(entry.metaError).toBe('Request failed with status code 404');
     });
 
-    it('uses title from metadata when provided (overrides meta title)', async () => {
+    it('uses meta-generated title as primary title', async () => {
       const entry = await service.store('Text', { title: 'My Custom Title' });
-      expect(entry.title).toBe('My Custom Title');
-    });
-
-    it('uses meta-generated title when no metadata title given', async () => {
-      const entry = await service.store('Text', {});
       expect(entry.title).toBe('Test Title');
     });
 
-    it('falls back to sourceFile when no title from metadata or meta', async () => {
+    it('falls back to metadata title when meta title is empty', async () => {
+      ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+        title: '', summary: 'sum', labels: []
+      });
+      const entry = await service.store('Text', { title: 'Fallback Title' });
+      expect(entry.title).toBe('Fallback Title');
+    });
+
+    it('falls back to sourceFile when no meta title or metadata title', async () => {
       ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
         title: '', summary: '', labels: []
       });
       const entry = await service.store('Text', { sourceFile: '/path/to/meeting.wav' });
       expect(entry.title).toBe('meeting.wav');
+    });
+
+    it('falls back to timestamp when no title from any source', async () => {
+      ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+        title: '', summary: '', labels: []
+      });
+      const entry = await service.store('Text', {});
+      expect(entry.title).toMatch(/^Transcription /);
     });
 
     it('stores audioFilePath in the index entry', async () => {
@@ -264,7 +275,7 @@ describe('TranscriptionStoreService', () => {
       const entry = await service.store('Some text', { title: 'Keep Me' });
       const updated = await service.update(entry.id, { title: '   ' });
 
-      expect(updated.title).toBe('Keep Me');
+      expect(updated.title).toBe('Test Title');
     });
 
     it('ignores labels if value is not an array', async () => {

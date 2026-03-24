@@ -324,10 +324,15 @@ class LibraryController {
             if (this.detailText) this.detailText.textContent = text || '';
 
             if (this.metaErrorEl) {
-                if (entry.metaStatus === 'failed') {
+                const metaFailed = entry.metaStatus === 'failed' ||
+                    (!entry.metaStatus && !entry.summary && (!entry.labels || entry.labels.length === 0));
+                if (metaFailed) {
                     this.metaErrorEl.classList.remove('hidden');
                     if (this.metaErrorText) {
-                        this.metaErrorText.textContent = 'AI meta generation failed' + (entry.metaError ? ': ' + entry.metaError : '');
+                        const msg = entry.metaError
+                            ? 'AI meta generation failed: ' + entry.metaError
+                            : 'AI meta was not generated for this transcription';
+                        this.metaErrorText.textContent = msg;
                     }
                 } else {
                     this.metaErrorEl.classList.add('hidden');

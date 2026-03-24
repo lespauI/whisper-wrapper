@@ -273,7 +273,7 @@ config.getAIRefinementSettings = function() {
         this.ollama.timeoutSeconds = this.aiRefinement.timeoutSeconds || this.ollama.timeoutSeconds || 300;
         
         // Copy refinement-specific settings
-        this.ollama.refinement.enabled = this.aiRefinement.enabled || false;
+        this.ollama.refinement.enabled = this.aiRefinement.enabled !== undefined ? this.aiRefinement.enabled : true;
         this.ollama.refinement.defaultTemplateId = this.aiRefinement.defaultTemplateId || null;
         
         // Remove old section
@@ -288,7 +288,7 @@ config.getAIRefinementSettings = function() {
     if (!this.ollama.refinement) this.ollama.refinement = {};
     
     return {
-        enabled: this.ollama.refinement?.enabled || false,
+        enabled: this.ollama.refinement?.enabled !== undefined ? this.ollama.refinement.enabled : true,
         endpoint: this.ollama.endpoint || "http://localhost:11434",
         model: this.ollama.defaultModel || "gemma3:12b",
         timeoutSeconds: this.ollama.timeoutSeconds || 300,

@@ -42,3 +42,7 @@ Update `{@artifacts_path}/plan.md`.
 <!-- chat-id: 171f79be-efa7-41b7-8e9e-1735ae52af17 -->
 
 e2e, unit and integration
+
+### [x] Step: Review the sollution
+<!-- chat-id: b0b7fdb1-fbfb-4d37-8b5a-5d7c42aa43f2 -->
+<!-- agent: max-2 -->

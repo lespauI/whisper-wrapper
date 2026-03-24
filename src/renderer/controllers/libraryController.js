@@ -324,14 +324,20 @@ class LibraryController {
             if (this.detailText) this.detailText.textContent = text || '';
 
             if (this.metaErrorEl) {
-                const metaFailed = entry.metaStatus === 'failed' ||
+                const showBanner = entry.metaStatus === 'failed' ||
+                    entry.metaStatus === 'disabled' ||
                     (!entry.metaStatus && !entry.summary && (!entry.labels || entry.labels.length === 0));
-                if (metaFailed) {
+                if (showBanner) {
                     this.metaErrorEl.classList.remove('hidden');
                     if (this.metaErrorText) {
-                        const msg = entry.metaError
-                            ? 'AI meta generation failed: ' + entry.metaError
-                            : 'AI meta was not generated for this transcription';
+                        let msg;
+                        if (entry.metaStatus === 'disabled') {
+                            msg = 'AI meta generation is disabled — enable Ollama in settings or click Regenerate';
+                        } else if (entry.metaError) {
+                            msg = 'AI meta generation failed: ' + entry.metaError;
+                        } else {
+                            msg = 'AI meta was not generated for this transcription';
+                        }
                         this.metaErrorText.textContent = msg;
                     }
                 } else {

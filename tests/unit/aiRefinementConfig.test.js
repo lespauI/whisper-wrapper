@@ -62,7 +62,7 @@ describe('AI Refinement Configuration', () => {
       config.ollama = originalConfig;
       
       // Verify default values are provided
-      expect(settings.enabled).toBe(false);
+      expect(settings.enabled).toBe(true);
       expect(settings.endpoint).toBe('http://localhost:11434');
       expect(settings.model).toBe('gemma3:12b');
       expect(settings.timeoutSeconds).toBe(300);

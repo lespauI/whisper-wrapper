@@ -346,5 +346,38 @@ describe('Ollama Service', () => {
       expect(result.metaFailed).toBe(true);
       expect(result.metaError).toBe('ECONNREFUSED');
     });
+
+    it('returns metaDisabled when Ollama is disabled', async () => {
+      const configMock = require('../../../src/config');
+      configMock.getAIRefinementSettings.mockReturnValueOnce({
+        enabled: false,
+        endpoint: 'http://localhost:11434',
+        model: 'gemma3:12b',
+        timeoutSeconds: 30
+      });
+      const result = await ollamaService.generateTranscriptionMeta('text');
+      expect(result.metaDisabled).toBe(true);
+      expect(result.title).toBe('');
+      expect(result.summary).toBe('');
+      expect(result.labels).toEqual([]);
+    });
+
+    it('bypasses disabled check when force is true', async () => {
+      const configMock = require('../../../src/config');
+      configMock.getAIRefinementSettings.mockReturnValueOnce({
+        enabled: false,
+        endpoint: 'http://localhost:11434',
+        model: 'gemma3:12b',
+        timeoutSeconds: 30
+      });
+      mockAxios.mockResolvedValueOnce({
+        data: { response: '{"title":"Forced Title","summary":"Forced summary","labels":["forced"]}' }
+      });
+      mockAxios.mockResolvedValueOnce({ data: {} });
+      const result = await ollamaService.generateTranscriptionMeta('text', undefined, { force: true });
+      expect(result.title).toBe('Forced Title');
+      expect(result.summary).toBe('Forced summary');
+      expect(result.metaDisabled).toBeUndefined();
+    });
   });
 });

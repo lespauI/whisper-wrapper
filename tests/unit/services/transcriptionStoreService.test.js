@@ -112,6 +112,14 @@ describe('TranscriptionStoreService', () => {
       expect(entry.title).toMatch(/^Transcription /);
     });
 
+    it('sets metaStatus to disabled when Ollama is disabled', async () => {
+      ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+        title: '', summary: '', labels: [], metaDisabled: true
+      });
+      const entry = await service.store('Some text', {});
+      expect(entry.metaStatus).toBe('disabled');
+    });
+
     it('stores audioFilePath in the index entry', async () => {
       const entry = await service.store('Audio path test', {
         sourceFile: 'recording.wav',

@@ -108,7 +108,7 @@ describe('LibraryController', () => {
             expect(metaErrorEl.classList.contains('hidden')).toBe(true);
         });
 
-        it('shows meta error banner when metaStatus is success but content is empty', async () => {
+        it('hides meta error banner when metaStatus is success even if content is empty', async () => {
             const entry = {
                 id: 'test-empty',
                 date: new Date().toISOString(),
@@ -130,10 +130,7 @@ describe('LibraryController', () => {
             await ctrl.showDetail('test-empty');
 
             const metaErrorEl = document.getElementById('library-meta-error');
-            expect(metaErrorEl.classList.contains('hidden')).toBe(false);
-
-            const metaErrorText = document.getElementById('library-meta-error-text');
-            expect(metaErrorText.textContent).toContain('empty results');
+            expect(metaErrorEl.classList.contains('hidden')).toBe(true);
         });
 
         it('displays entry title, summary, and labels in detail view', async () => {

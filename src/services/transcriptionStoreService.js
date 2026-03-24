@@ -71,6 +71,8 @@ class TranscriptionStoreService {
       if (meta.metaFailed) {
         metaStatus = 'failed';
         metaError = meta.metaError || 'Unknown error';
+      } else if (meta.metaDisabled) {
+        metaStatus = 'disabled';
       }
     } catch (err) {
       console.error('generateTranscriptionMeta threw unexpectedly:', err.message);
@@ -199,10 +201,17 @@ class TranscriptionStoreService {
 
     let meta;
     try {
-      meta = await ollamaService.generateTranscriptionMeta(text);
+      meta = await ollamaService.generateTranscriptionMeta(text, undefined, { force: true });
     } catch (err) {
       entry.metaStatus = 'failed';
       entry.metaError = err.message;
+      this._saveIndex();
+      return entry;
+    }
+
+    if (meta.metaDisabled) {
+      entry.metaStatus = 'disabled';
+      entry.metaError = 'Ollama is disabled in settings';
       this._saveIndex();
       return entry;
     }

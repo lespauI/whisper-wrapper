@@ -117,6 +117,36 @@ describe('AI Refinement Configuration', () => {
       expect(fs.writeFileSync).not.toHaveBeenCalled();
     });
 
+    it('should default enabled to true when refinement.enabled is undefined', () => {
+      const originalConfig = config.ollama ? { ...config.ollama } : undefined;
+      config.ollama = { endpoint: 'http://localhost:11434', refinement: {} };
+
+      const settings = config.getAIRefinementSettings();
+      expect(settings.enabled).toBe(true);
+
+      config.ollama = originalConfig;
+    });
+
+    it('should preserve explicit enabled=false from saved config', () => {
+      const originalConfig = config.ollama ? { ...config.ollama } : undefined;
+      config.ollama = { endpoint: 'http://localhost:11434', refinement: { enabled: false } };
+
+      const settings = config.getAIRefinementSettings();
+      expect(settings.enabled).toBe(false);
+
+      config.ollama = originalConfig;
+    });
+
+    it('should return settings with all expected keys for UI consumption', () => {
+      const settings = config.getAIRefinementSettings();
+      expect(settings).toHaveProperty('enabled');
+      expect(settings).toHaveProperty('endpoint');
+      expect(settings).toHaveProperty('model');
+      expect(settings).toHaveProperty('timeoutSeconds');
+      expect(settings).toHaveProperty('defaultTemplateId');
+      expect(typeof settings.enabled).toBe('boolean');
+    });
+
     it('should create ollama section if missing', () => {
       // Temporarily remove the ollama section
       const originalConfig = { ...config.ollama };

@@ -38,7 +38,7 @@ Rule of thumb for step size: each step = a coherent unit of work (component, end
 
 Update `{@artifacts_path}/plan.md`.
 
-### [ ] Step: add tests
+### [x] Step: add tests
 <!-- chat-id: 171f79be-efa7-41b7-8e9e-1735ae52af17 -->
 
 e2e, unit and integration

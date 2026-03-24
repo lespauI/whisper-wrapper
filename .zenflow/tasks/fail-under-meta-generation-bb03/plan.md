@@ -37,3 +37,8 @@ To reflect the actual purpose of the first step, you can rename it to something 
 Rule of thumb for step size: each step = a coherent unit of work (component, endpoint, test suite). Not too granular (single function), not too broad (entire feature). Unit tests are part of each step, not separate.
 
 Update `{@artifacts_path}/plan.md`.
+
+### [ ] Step: add tests
+<!-- chat-id: 171f79be-efa7-41b7-8e9e-1735ae52af17 -->
+
+e2e, unit and integration

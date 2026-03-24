@@ -322,6 +322,41 @@ describe('TranscriptionStoreService', () => {
       expect(updated.metaStatus).toBe('failed');
       expect(updated.metaError).toBe('Ollama 404');
     });
+
+    it('sets metaStatus to failed when generateTranscriptionMeta throws', async () => {
+      const entry = await service.store('Some text for throw test', {});
+
+      ollamaService.generateTranscriptionMeta.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+      const updated = await service.regenerateMeta(entry.id);
+      expect(updated.metaStatus).toBe('failed');
+      expect(updated.metaError).toBe('ECONNREFUSED');
+    });
+
+    it('returns null when txt file is missing on disk', async () => {
+      const entry = await service.store('Will remove file', {});
+      const txtPath = path.join(testDataDir, `${entry.id}.txt`);
+      fs.unlinkSync(txtPath);
+
+      const result = await service.regenerateMeta(entry.id);
+      expect(result).toBeNull();
+    });
+
+    it('preserves existing title when meta returns empty title on regeneration', async () => {
+      ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+        title: 'Original AI Title', summary: 'Original', labels: ['orig']
+      });
+      const entry = await service.store('Text for title test', {});
+      expect(entry.title).toBe('Original AI Title');
+
+      ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+        title: '', summary: 'New summary', labels: ['new']
+      });
+      const updated = await service.regenerateMeta(entry.id);
+      expect(updated.title).toBe('Original AI Title');
+      expect(updated.summary).toBe('New summary');
+      expect(updated.labels).toEqual(['new']);
+      expect(updated.metaStatus).toBe('success');
+    });
   });
 
   describe('reindex()', () => {

@@ -831,4 +831,90 @@ describe('IPCHandlers', () => {
             expect(result.error).toBe('Permission denied');
         });
     });
+
+    describe('handleTranscriptionsRegenerateMeta', () => {
+        beforeEach(() => {
+            mockTranscriptionStoreService.regenerateMeta = jest.fn();
+        });
+
+        it('returns success when meta regeneration succeeds', async () => {
+            const mockEntry = { id: 'abc-123', title: 'New Title', summary: 'New summary', labels: ['a'], metaStatus: 'success', metaError: '' };
+            mockTranscriptionStoreService.regenerateMeta.mockResolvedValue(mockEntry);
+
+            const result = await handlers.handleTranscriptionsRegenerateMeta(null, { id: 'abc-123' });
+
+            expect(mockTranscriptionStoreService.regenerateMeta).toHaveBeenCalledWith('abc-123');
+            expect(result).toEqual({ success: true, entry: mockEntry });
+        });
+
+        it('returns success false when meta regeneration fails (metaStatus=failed)', async () => {
+            const mockEntry = { id: 'abc-123', metaStatus: 'failed', metaError: 'Request failed with status code 404' };
+            mockTranscriptionStoreService.regenerateMeta.mockResolvedValue(mockEntry);
+
+            const result = await handlers.handleTranscriptionsRegenerateMeta(null, { id: 'abc-123' });
+
+            expect(result).toEqual({ success: false, entry: mockEntry });
+        });
+
+        it('returns not-found error when service returns null', async () => {
+            mockTranscriptionStoreService.regenerateMeta.mockResolvedValue(null);
+
+            const result = await handlers.handleTranscriptionsRegenerateMeta(null, { id: 'non-existent' });
+
+            expect(result).toEqual({ success: false, error: 'Not found' });
+        });
+
+        it('returns error for missing id', async () => {
+            const result = await handlers.handleTranscriptionsRegenerateMeta(null, {});
+
+            expect(result).toEqual({ success: false, error: 'Invalid id' });
+            expect(mockTranscriptionStoreService.regenerateMeta).not.toHaveBeenCalled();
+        });
+
+        it('returns error for non-string id', async () => {
+            const result = await handlers.handleTranscriptionsRegenerateMeta(null, { id: 42 });
+
+            expect(result).toEqual({ success: false, error: 'Invalid id' });
+            expect(mockTranscriptionStoreService.regenerateMeta).not.toHaveBeenCalled();
+        });
+
+        it('returns error when service throws', async () => {
+            mockTranscriptionStoreService.regenerateMeta.mockRejectedValue(new Error('disk failure'));
+
+            const result = await handlers.handleTranscriptionsRegenerateMeta(null, { id: 'abc-123' });
+
+            expect(result).toEqual({ success: false, error: 'disk failure' });
+        });
+    });
+
+    describe('handleTranscriptionsStore', () => {
+        it('returns entry with metaStatus and metaError on success', async () => {
+            const mockEntry = { id: 'new-1', title: 'AI Title', metaStatus: 'success', metaError: '' };
+            mockTranscriptionStoreService.store.mockResolvedValue(mockEntry);
+
+            const result = await handlers.handleTranscriptionsStore(null, { text: 'Hello', metadata: { sourceFile: 'a.wav' } });
+
+            expect(mockTranscriptionStoreService.store).toHaveBeenCalledWith('Hello', { sourceFile: 'a.wav' });
+            expect(result).toEqual({ success: true, entry: mockEntry });
+        });
+
+        it('returns entry with metaStatus failed when meta generation fails', async () => {
+            const mockEntry = { id: 'new-2', title: 'Transcription 1/1/2026', metaStatus: 'failed', metaError: 'Request failed with status code 404' };
+            mockTranscriptionStoreService.store.mockResolvedValue(mockEntry);
+
+            const result = await handlers.handleTranscriptionsStore(null, { text: 'Hello', metadata: {} });
+
+            expect(result).toEqual({ success: true, entry: mockEntry });
+            expect(result.entry.metaStatus).toBe('failed');
+            expect(result.entry.metaError).toBeTruthy();
+        });
+
+        it('returns error when store throws', async () => {
+            mockTranscriptionStoreService.store.mockRejectedValue(new Error('write error'));
+
+            const result = await handlers.handleTranscriptionsStore(null, { text: 'Hello', metadata: {} });
+
+            expect(result).toEqual({ success: false, error: 'write error' });
+        });
+    });
 });

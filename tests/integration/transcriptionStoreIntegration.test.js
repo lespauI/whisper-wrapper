@@ -156,6 +156,83 @@ describe('TranscriptionStoreService — integration (disk round-trip)', () => {
         const result = await service.get('00000000-0000-0000-0000-000000000000');
         expect(result).toBeNull();
     });
+
+    test('store() sets metaStatus and metaError fields', async () => {
+        const entry = await service.store('Some text', { sourceFile: 'test.mp3' });
+        expect(entry).toHaveProperty('metaStatus');
+        expect(entry).toHaveProperty('metaError');
+    });
+
+    test('store() uses meta-generated title when no metadata title provided', async () => {
+        const ollamaService = require('../../src/services/ollamaService');
+        ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+            title: 'AI Generated Title', summary: 'Summary', labels: ['label']
+        });
+
+        const entry = await service.store('Some text', {});
+        expect(entry.title).toBe('AI Generated Title');
+    });
+
+    test('store() falls back to date-based title when meta returns empty title and no sourceFile', async () => {
+        const ollamaService = require('../../src/services/ollamaService');
+        ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+            title: '', summary: '', labels: []
+        });
+
+        const entry = await service.store('Some text', {});
+        expect(entry.title).toMatch(/^Transcription /);
+    });
+
+    test('store() records metaStatus=failed when meta generation fails', async () => {
+        const ollamaService = require('../../src/services/ollamaService');
+        ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+            title: '', summary: '', labels: [], metaFailed: true, metaError: 'Request failed with status code 404'
+        });
+
+        const entry = await service.store('Some text', {});
+        expect(entry.metaStatus).toBe('failed');
+        expect(entry.metaError).toBe('Request failed with status code 404');
+    });
+
+    test('regenerateMeta() updates entry on success', async () => {
+        const ollamaService = require('../../src/services/ollamaService');
+        ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+            title: '', summary: '', labels: [], metaFailed: true, metaError: 'initial fail'
+        });
+        const entry = await service.store('Regenerate me', {});
+        expect(entry.metaStatus).toBe('failed');
+
+        ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+            title: 'Regenerated Title', summary: 'Regenerated summary', labels: ['regen']
+        });
+        const updated = await service.regenerateMeta(entry.id);
+        expect(updated.metaStatus).toBe('success');
+        expect(updated.title).toBe('Regenerated Title');
+        expect(updated.summary).toBe('Regenerated summary');
+        expect(updated.labels).toEqual(['regen']);
+
+        const persisted = JSON.parse(fs.readFileSync(service._indexPath(), 'utf8'));
+        const found = persisted.find(e => e.id === entry.id);
+        expect(found.metaStatus).toBe('success');
+        expect(found.title).toBe('Regenerated Title');
+    });
+
+    test('regenerateMeta() records failure when meta generation fails', async () => {
+        const entry = await service.store('Regen fail', {});
+
+        const ollamaService = require('../../src/services/ollamaService');
+        ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+            title: '', summary: '', labels: [], metaFailed: true, metaError: 'Model not found'
+        });
+        const updated = await service.regenerateMeta(entry.id);
+        expect(updated.metaStatus).toBe('failed');
+        expect(updated.metaError).toBe('Model not found');
+    });
+
+    test('regenerateMeta() returns null for unknown id', async () => {
+        const result = await service.regenerateMeta('00000000-0000-0000-0000-000000000000');
+        expect(result).toBeNull();
+    });
 });
 
 describe('OllamaService.generateTranscriptionMeta — integration (live Ollama)', () => {

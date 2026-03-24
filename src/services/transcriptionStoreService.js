@@ -216,7 +216,7 @@ class TranscriptionStoreService {
 
     entry.summary = meta.summary || '';
     entry.labels = meta.labels || [];
-    if (meta.title) entry.title = meta.title;
+    entry.title = meta.title || entry.title || `Transcription ${new Date().toLocaleDateString()}`;
     entry.metaStatus = 'success';
     entry.metaError = '';
     this._saveIndex();

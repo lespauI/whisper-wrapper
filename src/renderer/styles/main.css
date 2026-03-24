@@ -2918,6 +2918,33 @@ textarea.disabled {
     flex-shrink: 0;
 }
 
+.library-meta-error {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
+    background: rgba(255, 100, 100, 0.15);
+    border: 1px solid rgba(255, 100, 100, 0.3);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: #ff8888;
+}
+
+.library-meta-error.hidden {
+    display: none;
+}
+
+.library-meta-error-icon {
+    flex-shrink: 0;
+}
+
+.library-summary-header {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
 .library-detail-summary {
     margin-bottom: 1rem;
     color: rgba(255, 255, 255, 0.85);

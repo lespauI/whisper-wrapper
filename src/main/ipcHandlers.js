@@ -73,6 +73,7 @@ class IPCHandlers {
         ipcMain.handle('transcriptions:update', this.handleTranscriptionsUpdate.bind(this));
         ipcMain.handle('transcriptions:delete', this.handleTranscriptionsDelete.bind(this));
         ipcMain.handle('transcriptions:reindex', this.handleTranscriptionsReindex.bind(this));
+        ipcMain.handle('transcriptions:regenerateMeta', this.handleTranscriptionsRegenerateMeta.bind(this));
 
         // Audio source handlers
         ipcMain.handle('recording:getAudioSources', this.handleGetAudioSources.bind(this));
@@ -888,6 +889,18 @@ class IPCHandlers {
         } catch (error) {
             console.error('Error reindexing transcriptions:', error);
             return { count: 0, error: error.message };
+        }
+    }
+
+    async handleTranscriptionsRegenerateMeta(event, { id } = {}) {
+        if (!id || typeof id !== 'string') return { success: false, error: 'Invalid id' };
+        try {
+            const entry = await this.transcriptionStoreService.regenerateMeta(id);
+            if (!entry) return { success: false, error: 'Not found' };
+            return { success: entry.metaStatus === 'success', entry };
+        } catch (error) {
+            console.error('Error regenerating transcription meta:', error);
+            return { success: false, error: error.message };
         }
     }
 

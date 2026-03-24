@@ -100,7 +100,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         get: (id) => ipcRenderer.invoke('transcriptions:get', { id }),
         update: (id, changes) => ipcRenderer.invoke('transcriptions:update', { id, changes }),
         delete: (id) => ipcRenderer.invoke('transcriptions:delete', { id }),
-        reindex: () => ipcRenderer.invoke('transcriptions:reindex')
+        reindex: () => ipcRenderer.invoke('transcriptions:reindex'),
+        regenerateMeta: (id) => ipcRenderer.invoke('transcriptions:regenerateMeta', { id })
     },
 
     // Audio playback

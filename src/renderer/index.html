@@ -606,8 +606,16 @@
                                                 <button id="library-delete-btn" class="btn btn-danger btn-small">🗑️ Delete</button>
                                             </div>
                                         </div>
+                                        <div id="library-meta-error" class="library-meta-error hidden">
+                                            <span class="library-meta-error-icon">⚠️</span>
+                                            <span id="library-meta-error-text">AI meta generation failed</span>
+                                            <button id="library-regenerate-meta-btn" class="btn btn-secondary btn-small">🔄 Regenerate</button>
+                                        </div>
                                         <div class="library-detail-summary">
-                                            <strong>Summary:</strong>
+                                            <div class="library-summary-header">
+                                                <strong>Summary:</strong>
+                                                <button id="library-regenerate-btn" class="btn-icon" title="Regenerate AI meta (title, summary, labels)">🔄</button>
+                                            </div>
                                             <p id="library-detail-summary-text"></p>
                                         </div>
                                         <div class="library-detail-text-section">

@@ -38,6 +38,11 @@ class LibraryController {
         this.tagsSaveBtn = document.getElementById('library-tags-save-btn');
         this.tagsCancelBtn = document.getElementById('library-tags-cancel-btn');
 
+        this.metaErrorEl = document.getElementById('library-meta-error');
+        this.metaErrorText = document.getElementById('library-meta-error-text');
+        this.regenerateMetaBtn = document.getElementById('library-regenerate-meta-btn');
+        this.regenerateBtn = document.getElementById('library-regenerate-btn');
+
         this.init();
     }
 
@@ -96,6 +101,12 @@ class LibraryController {
         }
         if (this.tagsCancelBtn) {
             this.tagsCancelBtn.addEventListener('click', () => this.closeTagsForm());
+        }
+        if (this.regenerateMetaBtn) {
+            this.regenerateMetaBtn.addEventListener('click', () => this.regenerateMeta());
+        }
+        if (this.regenerateBtn) {
+            this.regenerateBtn.addEventListener('click', () => this.regenerateMeta());
         }
     }
 
@@ -312,6 +323,17 @@ class LibraryController {
             if (this.detailSummary) this.detailSummary.textContent = entry.summary || '(no summary)';
             if (this.detailText) this.detailText.textContent = text || '';
 
+            if (this.metaErrorEl) {
+                if (entry.metaStatus === 'failed') {
+                    this.metaErrorEl.classList.remove('hidden');
+                    if (this.metaErrorText) {
+                        this.metaErrorText.textContent = 'AI meta generation failed' + (entry.metaError ? ': ' + entry.metaError : '');
+                    }
+                } else {
+                    this.metaErrorEl.classList.add('hidden');
+                }
+            }
+
             if (this.detailEmpty) this.detailEmpty.classList.add('hidden');
             if (this.detailContent) this.detailContent.classList.remove('hidden');
 
@@ -334,9 +356,44 @@ class LibraryController {
         this.currentEntryId = null;
         if (this.detailEmpty) this.detailEmpty.classList.remove('hidden');
         if (this.detailContent) this.detailContent.classList.add('hidden');
+        if (this.metaErrorEl) this.metaErrorEl.classList.add('hidden');
         const transcriptionController = window.whisperApp && window.whisperApp.controllers && window.whisperApp.controllers.transcription;
         if (transcriptionController) {
             transcriptionController.hideAudioPlayer();
+        }
+    }
+
+    async regenerateMeta() {
+        if (!this.currentEntryId) return;
+        if (!window.electronAPI || !window.electronAPI.transcriptions) return;
+
+        if (this.regenerateMetaBtn) this.regenerateMetaBtn.disabled = true;
+        if (this.regenerateBtn) this.regenerateBtn.disabled = true;
+
+        try {
+            const result = await window.electronAPI.transcriptions.regenerateMeta(this.currentEntryId);
+            if (result && result.success && result.entry) {
+                await this.showDetail(this.currentEntryId);
+                await this.search();
+            } else {
+                const errMsg = (result && result.entry && result.entry.metaError) || (result && result.error) || 'Unknown error';
+                if (this.metaErrorEl) {
+                    this.metaErrorEl.classList.remove('hidden');
+                    if (this.metaErrorText) {
+                        this.metaErrorText.textContent = 'AI meta generation failed: ' + errMsg;
+                    }
+                }
+            }
+        } catch (err) {
+            if (this.metaErrorEl) {
+                this.metaErrorEl.classList.remove('hidden');
+                if (this.metaErrorText) {
+                    this.metaErrorText.textContent = 'AI meta generation failed: ' + err.message;
+                }
+            }
+        } finally {
+            if (this.regenerateMetaBtn) this.regenerateMetaBtn.disabled = false;
+            if (this.regenerateBtn) this.regenerateBtn.disabled = false;
         }
     }
 

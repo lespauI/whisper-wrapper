@@ -18,6 +18,7 @@ jest.mock('../../../src/config', () => {
 
 jest.mock('../../../src/services/ollamaService', () => ({
   generateTranscriptionMeta: jest.fn().mockResolvedValue({
+    title: 'Test Title',
     summary: 'Test summary.',
     labels: ['test', 'unit']
   })
@@ -53,6 +54,8 @@ describe('TranscriptionStoreService', () => {
       expect(entry.summary).toBe('Test summary.');
       expect(entry.labels).toEqual(['test', 'unit']);
       expect(entry.wordCount).toBe(3);
+      expect(entry.metaStatus).toBe('success');
+      expect(entry.title).toBe('Test Title');
 
       const txtPath = path.join(testDataDir, `${entry.id}.txt`);
       expect(fs.existsSync(txtPath)).toBe(true);
@@ -72,17 +75,38 @@ describe('TranscriptionStoreService', () => {
       expect(entry.id).toBeDefined();
       expect(entry.summary).toBe('');
       expect(entry.labels).toEqual([]);
+      expect(entry.metaStatus).toBe('failed');
+      expect(entry.metaError).toBe('Ollama down');
 
       const txtPath = path.join(testDataDir, `${entry.id}.txt`);
       expect(fs.existsSync(txtPath)).toBe(true);
     });
 
-    it('uses title from metadata when provided', async () => {
+    it('stores transcription with metaFailed flag from ollamaService', async () => {
+      ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+        title: '', summary: '', labels: [], metaFailed: true, metaError: 'Request failed with status code 404'
+      });
+
+      const entry = await service.store('Some text', {});
+
+      expect(entry.metaStatus).toBe('failed');
+      expect(entry.metaError).toBe('Request failed with status code 404');
+    });
+
+    it('uses title from metadata when provided (overrides meta title)', async () => {
       const entry = await service.store('Text', { title: 'My Custom Title' });
       expect(entry.title).toBe('My Custom Title');
     });
 
-    it('derives title from sourceFile when no title given', async () => {
+    it('uses meta-generated title when no metadata title given', async () => {
+      const entry = await service.store('Text', {});
+      expect(entry.title).toBe('Test Title');
+    });
+
+    it('falls back to sourceFile when no title from metadata or meta', async () => {
+      ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+        title: '', summary: '', labels: []
+      });
       const entry = await service.store('Text', { sourceFile: '/path/to/meeting.wav' });
       expect(entry.title).toBe('meeting.wav');
     });
@@ -111,9 +135,9 @@ describe('TranscriptionStoreService', () => {
 
     beforeEach(async () => {
       ollamaService.generateTranscriptionMeta
-        .mockResolvedValueOnce({ summary: 'Alpha summary', labels: ['alpha', 'meeting'] })
-        .mockResolvedValueOnce({ summary: 'Beta summary', labels: ['beta'] })
-        .mockResolvedValueOnce({ summary: 'Gamma summary', labels: ['alpha', 'beta'] });
+        .mockResolvedValueOnce({ title: 'Alpha Title', summary: 'Alpha summary', labels: ['alpha', 'meeting'] })
+        .mockResolvedValueOnce({ title: 'Beta Title', summary: 'Beta summary', labels: ['beta'] })
+        .mockResolvedValueOnce({ title: 'Gamma Title', summary: 'Gamma summary', labels: ['alpha', 'beta'] });
 
       e1 = await service.store('alpha text content', { title: 'Alpha', sourceFile: 'alpha.wav' });
       e2 = await service.store('beta text content', { title: 'Beta', sourceFile: 'beta.wav' });
@@ -262,6 +286,41 @@ describe('TranscriptionStoreService', () => {
       await service.update(entry.id, { title: 'New Title' });
 
       expect(fs.readFileSync(txtPath, 'utf8')).toBe('Original text');
+    });
+  });
+
+  describe('regenerateMeta()', () => {
+    it('regenerates meta successfully and updates entry', async () => {
+      ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+        title: 'Old', summary: '', labels: [], metaFailed: true, metaError: 'fail'
+      });
+      const entry = await service.store('Some text for regen', {});
+      expect(entry.metaStatus).toBe('failed');
+
+      ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+        title: 'New AI Title', summary: 'New summary', labels: ['new']
+      });
+      const updated = await service.regenerateMeta(entry.id);
+      expect(updated.metaStatus).toBe('success');
+      expect(updated.title).toBe('New AI Title');
+      expect(updated.summary).toBe('New summary');
+      expect(updated.labels).toEqual(['new']);
+    });
+
+    it('returns null for unknown id', async () => {
+      const result = await service.regenerateMeta('non-existent-id');
+      expect(result).toBeNull();
+    });
+
+    it('sets metaStatus to failed when regeneration fails', async () => {
+      const entry = await service.store('Some text', {});
+
+      ollamaService.generateTranscriptionMeta.mockResolvedValueOnce({
+        title: '', summary: '', labels: [], metaFailed: true, metaError: 'Ollama 404'
+      });
+      const updated = await service.regenerateMeta(entry.id);
+      expect(updated.metaStatus).toBe('failed');
+      expect(updated.metaError).toBe('Ollama 404');
     });
   });
 

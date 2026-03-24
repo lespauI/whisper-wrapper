@@ -865,7 +865,7 @@ class OllamaService {
     try {
       this.updateSettings();
       if (!this.settings.enabled) {
-        return { summary: '', labels: [] };
+        return { title: '', summary: '', labels: [], metaFailed: false };
       }
       const endpoint = this.settings.endpoint || 'http://localhost:11434';
 
@@ -875,7 +875,7 @@ class OllamaService {
 
       const truncated = text.length > 4000 ? text.slice(0, 4000) + '...' : text;
       const prompt = `You are a transcription archivist. Given the transcription below, respond ONLY with valid JSON (no markdown, no extra text) in this exact format:
-{"summary":"2-3 sentence summary of the transcription","labels":["label1","label2","label3"]}
+{"title":"short descriptive title for the transcription","summary":"2-3 sentence summary of the transcription","labels":["label1","label2","label3"]}
 
 Transcription:
 ${truncated}`;
@@ -909,6 +909,7 @@ ${truncated}`;
       if (!jsonMatch) throw new Error('No JSON found in response');
       const parsed = JSON.parse(jsonMatch[0]);
       const result = {
+        title: typeof parsed.title === 'string' ? parsed.title : '',
         summary: typeof parsed.summary === 'string' ? parsed.summary : '',
         labels: Array.isArray(parsed.labels) ? parsed.labels.filter(l => typeof l === 'string') : []
       };
@@ -923,7 +924,7 @@ ${truncated}`;
       return result;
     } catch (error) {
       console.error('generateTranscriptionMeta failed, using empty meta:', error.message);
-      return { summary: '', labels: [] };
+      return { title: '', summary: '', labels: [], metaFailed: true, metaError: error.message };
     }
   }
 }

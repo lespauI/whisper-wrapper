@@ -255,10 +255,11 @@ describe('Ollama Service', () => {
 
     it('parses clean JSON response', async () => {
       mockAxios.mockResolvedValueOnce({
-        data: { response: '{"summary":"A meeting about budgets","labels":["meeting","budget"]}' }
+        data: { response: '{"title":"Budget Meeting","summary":"A meeting about budgets","labels":["meeting","budget"]}' }
       });
       mockAxios.mockResolvedValueOnce({ data: {} });
       const result = await ollamaService.generateTranscriptionMeta('text', 'qwen3.5:0.8b');
+      expect(result.title).toBe('Budget Meeting');
       expect(result.summary).toBe('A meeting about budgets');
       expect(result.labels).toEqual(['meeting', 'budget']);
     });
@@ -324,18 +325,26 @@ describe('Ollama Service', () => {
       expect(result.labels).toEqual(['project', 'update']);
     });
 
-    it('returns empty fallback when no JSON found after stripping thinking', async () => {
+    it('returns empty fallback with metaFailed when no JSON found after stripping thinking', async () => {
       mockAxios.mockResolvedValueOnce({
         data: { response: '<think>I cannot produce JSON right now.</think>Sorry, I cannot help.' }
       });
       const result = await ollamaService.generateTranscriptionMeta('text', 'qwen3.5:0.8b');
-      expect(result).toEqual({ summary: '', labels: [] });
+      expect(result.title).toBe('');
+      expect(result.summary).toBe('');
+      expect(result.labels).toEqual([]);
+      expect(result.metaFailed).toBe(true);
+      expect(result.metaError).toBeDefined();
     });
 
-    it('returns empty fallback on network error', async () => {
+    it('returns empty fallback with metaFailed on network error', async () => {
       mockAxios.mockRejectedValueOnce(new Error('ECONNREFUSED'));
       const result = await ollamaService.generateTranscriptionMeta('text', 'qwen3.5:0.8b');
-      expect(result).toEqual({ summary: '', labels: [] });
+      expect(result.title).toBe('');
+      expect(result.summary).toBe('');
+      expect(result.labels).toEqual([]);
+      expect(result.metaFailed).toBe(true);
+      expect(result.metaError).toBe('ECONNREFUSED');
     });
   });
 });

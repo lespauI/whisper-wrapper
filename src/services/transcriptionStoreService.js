@@ -60,17 +60,27 @@ class TranscriptionStoreService {
 
     let summary = '';
     let labels = [];
+    let metaTitle = '';
+    let metaStatus = 'success';
+    let metaError = '';
     try {
       const meta = await ollamaService.generateTranscriptionMeta(text);
       summary = meta.summary || '';
       labels = meta.labels || [];
+      metaTitle = meta.title || '';
+      if (meta.metaFailed) {
+        metaStatus = 'failed';
+        metaError = meta.metaError || 'Unknown error';
+      }
     } catch (err) {
       console.error('generateTranscriptionMeta threw unexpectedly:', err.message);
+      metaStatus = 'failed';
+      metaError = err.message;
     }
 
     const title =
-      metadata.title ||
-      (metadata.sourceFile ? path.basename(metadata.sourceFile) : `Transcription ${new Date().toLocaleDateString()}`);
+      metaTitle ||
+      `Transcription ${new Date().toLocaleDateString()}`;
 
     const entry = {
       id,
@@ -84,7 +94,9 @@ class TranscriptionStoreService {
       duration: metadata.duration || null,
       model: metadata.model || '',
       wordCount: text.trim().split(/\s+/).filter(Boolean).length,
-      filePath: path.join('data', 'transcriptions', `${id}.txt`)
+      filePath: path.join('data', 'transcriptions', `${id}.txt`),
+      metaStatus,
+      metaError
     };
 
     this.index.push(entry);
@@ -171,6 +183,44 @@ class TranscriptionStoreService {
     this.index.splice(idx, 1);
     this._saveIndex();
     return true;
+  }
+
+  /**
+   * Regenerate AI meta (title, summary, labels) for an existing transcription.
+   * @param {string} id
+   * @returns {Promise<Object|null>} Updated entry or null if not found.
+   */
+  async regenerateMeta(id) {
+    const entry = this.index.find(e => e.id === id);
+    if (!entry) return null;
+    const txtPath = path.join(this.transcriptionsDir, `${id}.txt`);
+    if (!fs.existsSync(txtPath)) return null;
+    const text = fs.readFileSync(txtPath, 'utf8');
+
+    let meta;
+    try {
+      meta = await ollamaService.generateTranscriptionMeta(text);
+    } catch (err) {
+      entry.metaStatus = 'failed';
+      entry.metaError = err.message;
+      this._saveIndex();
+      return entry;
+    }
+
+    if (meta.metaFailed) {
+      entry.metaStatus = 'failed';
+      entry.metaError = meta.metaError || 'Unknown error';
+      this._saveIndex();
+      return entry;
+    }
+
+    entry.summary = meta.summary || '';
+    entry.labels = meta.labels || [];
+    entry.title = meta.title || entry.title || `Transcription ${new Date().toLocaleDateString()}`;
+    entry.metaStatus = 'success';
+    entry.metaError = '';
+    this._saveIndex();
+    return entry;
   }
 
   /**

@@ -861,11 +861,11 @@ class OllamaService {
    * @param {string} [model] - Optional model override
    * @returns {Promise<{summary: string, labels: string[]}>}
    */
-  async generateTranscriptionMeta(text, model) {
+  async generateTranscriptionMeta(text, model, { force = false } = {}) {
     try {
       this.updateSettings();
-      if (!this.settings.enabled) {
-        return { title: '', summary: '', labels: [], metaFailed: false };
+      if (!force && !this.settings.enabled) {
+        return { title: '', summary: '', labels: [], metaDisabled: true };
       }
       const endpoint = this.settings.endpoint || 'http://localhost:11434';
 

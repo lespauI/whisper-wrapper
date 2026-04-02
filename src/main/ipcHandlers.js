@@ -1008,7 +1008,28 @@ class IPCHandlers {
             if (!result || !result.text) {
                 return { success: false, error: 'Transcript not found' };
             }
-            const notesData = await this.meetingNotesService.generate(result.text, transcriptionId, options || {});
+
+            const genOptions = { ...(options || {}) };
+
+            // Resolve context transcript IDs into text
+            if (genOptions.contextTranscriptIds && genOptions.contextTranscriptIds.length > 0) {
+                const contextTranscripts = [];
+                for (const ctxId of genOptions.contextTranscriptIds) {
+                    if (ctxId === transcriptionId) continue; // skip self
+                    const ctxResult = await this.transcriptionStoreService.get(ctxId);
+                    if (ctxResult && ctxResult.text) {
+                        contextTranscripts.push({
+                            id: ctxId,
+                            title: ctxResult.entry ? ctxResult.entry.title : ctxId,
+                            text: ctxResult.text
+                        });
+                    }
+                }
+                genOptions.contextTranscripts = contextTranscripts;
+                delete genOptions.contextTranscriptIds;
+            }
+
+            const notesData = await this.meetingNotesService.generate(result.text, transcriptionId, genOptions);
             return { success: true, notes: notesData };
         } catch (error) {
             console.error('Error generating meeting notes:', error);

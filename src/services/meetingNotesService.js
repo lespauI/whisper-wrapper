@@ -153,12 +153,14 @@ class MeetingNotesService {
    * @param {string} options.provider - 'ollama' | 'claude' | 'codex'
    * @param {string} [options.model] - Model name (provider-specific)
    * @param {string} [options.templateId] - Template to use
+   * @param {Array<{id: string, title: string, text: string}>} [options.contextTranscripts] - Other transcripts for context
    * @returns {Promise<Object>} Generated notes data
    */
   async generate(transcriptionText, transcriptionId, options = {}) {
     const provider = options.provider || this._getDefaultProvider();
     const templateId = options.templateId || null;
     const model = options.model || this._getDefaultModel(provider);
+    const contextTranscripts = options.contextTranscripts || [];
 
     // Resolve prompt from template
     const template = templateId ? this.getTemplate(templateId) : this.getDefaultTemplate();
@@ -166,11 +168,22 @@ class MeetingNotesService {
       throw new Error('No meeting notes template found. Please create one in settings.');
     }
 
+    // Build context block from other transcripts
+    let contextBlock = '';
+    if (contextTranscripts.length > 0) {
+      const contextParts = contextTranscripts.map(ct =>
+        `--- Context transcript: ${ct.title || ct.id} ---\n${ct.text}`
+      );
+      contextBlock = 'The following are previous meeting transcripts provided for context. Use them to understand recurring topics, people, projects, and terminology. Do NOT generate notes for these — only use them as background context.\n\n' +
+        contextParts.join('\n\n') +
+        '\n\n--- END OF CONTEXT ---\n\nNow generate notes for the following transcript:\n\n';
+    }
+
     let prompt = template.prompt;
     if (prompt.includes('{{text}}')) {
-      prompt = prompt.replace(/\{\{text\}\}/g, transcriptionText);
+      prompt = prompt.replace(/\{\{text\}\}/g, contextBlock + transcriptionText);
     } else {
-      prompt = `${prompt}\n\n${transcriptionText}`;
+      prompt = `${prompt}\n\n${contextBlock}${transcriptionText}`;
     }
 
     let notesText;

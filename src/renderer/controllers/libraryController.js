@@ -63,6 +63,9 @@ class LibraryController {
         this.notesCopyBtn = document.getElementById('meeting-notes-copy-btn');
         this.notesRegenerateBtn = document.getElementById('meeting-notes-regenerate-btn');
         this.notesDeleteBtn = document.getElementById('meeting-notes-delete-btn');
+        this.notesUseContextCheckbox = document.getElementById('meeting-notes-use-context');
+        this.notesContextList = document.getElementById('meeting-notes-context-list');
+        this.notesContextListInner = document.getElementById('meeting-notes-context-list-inner');
 
         this.init();
     }
@@ -148,6 +151,9 @@ class LibraryController {
         }
         if (this.notesProviderSelect) {
             this.notesProviderSelect.addEventListener('change', () => this.onProviderChange());
+        }
+        if (this.notesUseContextCheckbox) {
+            this.notesUseContextCheckbox.addEventListener('change', () => this.toggleContextList());
         }
 
         this.loadNotesTemplates();
@@ -254,6 +260,43 @@ class LibraryController {
         this.loadNotesTemplates();
     }
 
+    toggleContextList() {
+        const checked = this.notesUseContextCheckbox && this.notesUseContextCheckbox.checked;
+        if (this.notesContextList) {
+            this.notesContextList.classList.toggle('hidden', !checked);
+        }
+        if (checked) {
+            this.populateContextList();
+        }
+    }
+
+    populateContextList() {
+        if (!this.notesContextListInner) return;
+        const otherEntries = this.entries.filter(e => e.id !== this.currentEntryId);
+        if (otherEntries.length === 0) {
+            this.notesContextListInner.innerHTML = '<div class="meeting-notes-context-empty">No other transcripts available</div>';
+            return;
+        }
+        // Show most recent first, limit to 20
+        const recent = otherEntries.slice(0, 20);
+        this.notesContextListInner.innerHTML = recent.map(e => {
+            const title = e.title || e.id;
+            const date = e.date ? new Date(e.date).toLocaleDateString() : '';
+            return `<label class="meeting-notes-context-item">
+                <input type="checkbox" value="${e.id}" class="meeting-notes-context-cb">
+                <span class="meeting-notes-context-title">${title}</span>
+                <span class="meeting-notes-context-date">${date}</span>
+            </label>`;
+        }).join('');
+    }
+
+    getSelectedContextIds() {
+        if (!this.notesUseContextCheckbox || !this.notesUseContextCheckbox.checked) return [];
+        if (!this.notesContextListInner) return [];
+        const checked = this.notesContextListInner.querySelectorAll('.meeting-notes-context-cb:checked');
+        return Array.from(checked).map(cb => cb.value);
+    }
+
     async generateMeetingNotes() {
         if (!this.currentEntryId) return;
         if (!window.electronAPI || !window.electronAPI.meetingNotes) return;
@@ -261,6 +304,7 @@ class LibraryController {
         const provider = this.notesProviderSelect ? this.notesProviderSelect.value : 'claude';
         const model = this.notesModelInput ? this.notesModelInput.value.trim() : '';
         const templateId = this.notesTemplateSelect ? this.notesTemplateSelect.value : '';
+        const contextTranscriptIds = this.getSelectedContextIds();
 
         // Show loading
         if (this.notesGeneratePanel) this.notesGeneratePanel.classList.add('hidden');
@@ -273,6 +317,7 @@ class LibraryController {
             const options = { provider };
             if (model) options.model = model;
             if (templateId) options.templateId = templateId;
+            if (contextTranscriptIds.length > 0) options.contextTranscriptIds = contextTranscriptIds;
 
             const result = await window.electronAPI.meetingNotes.generate(this.currentEntryId, options);
             if (result && result.success && result.notes) {

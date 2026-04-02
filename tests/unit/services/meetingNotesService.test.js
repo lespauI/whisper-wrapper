@@ -384,5 +384,50 @@ describe('MeetingNotesService', () => {
       expect(promptArg).toContain('MY TRANSCRIPT TEXT');
       expect(promptArg).not.toContain('{{text}}');
     });
+
+    it('includes context transcripts in prompt when provided', async () => {
+      let capturedArgs;
+      execFile.mockImplementation((cmd, args, opts, callback) => {
+        capturedArgs = args;
+        callback(null, 'Output with context', '');
+      });
+
+      await service.generate('MAIN TRANSCRIPT', 'tx-012', {
+        provider: 'claude',
+        templateId: 'test-template-1',
+        contextTranscripts: [
+          { id: 'ctx-1', title: 'Previous Standup', text: 'Yesterday we discussed X' },
+          { id: 'ctx-2', title: 'Planning Meeting', text: 'Sprint goals are Y' }
+        ]
+      });
+
+      const promptArg = capturedArgs[1];
+      expect(promptArg).toContain('MAIN TRANSCRIPT');
+      expect(promptArg).toContain('Previous Standup');
+      expect(promptArg).toContain('Yesterday we discussed X');
+      expect(promptArg).toContain('Planning Meeting');
+      expect(promptArg).toContain('Sprint goals are Y');
+      expect(promptArg).toContain('background context');
+      expect(promptArg).toContain('END OF CONTEXT');
+    });
+
+    it('does not include context block when contextTranscripts is empty', async () => {
+      let capturedArgs;
+      execFile.mockImplementation((cmd, args, opts, callback) => {
+        capturedArgs = args;
+        callback(null, 'Output no context', '');
+      });
+
+      await service.generate('MAIN ONLY', 'tx-013', {
+        provider: 'claude',
+        templateId: 'test-template-1',
+        contextTranscripts: []
+      });
+
+      const promptArg = capturedArgs[1];
+      expect(promptArg).toContain('MAIN ONLY');
+      expect(promptArg).not.toContain('background context');
+      expect(promptArg).not.toContain('END OF CONTEXT');
+    });
   });
 });

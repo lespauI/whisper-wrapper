@@ -10,6 +10,7 @@ const FileService = require('../services/fileService');
 const TranscriptionService = require('../services/transcriptionService');
 const RecordingService = require('../services/recordingService');
 const TranscriptionStoreService = require('../services/transcriptionStoreService');
+const MeetingNotesService = require('../services/meetingNotesService');
 const config = require('../config');
 
 class IPCHandlers {
@@ -19,6 +20,7 @@ class IPCHandlers {
         this.transcriptionService = new TranscriptionService();
         this.recordingService = new RecordingService();
         this.transcriptionStoreService = new TranscriptionStoreService();
+        this.meetingNotesService = new MeetingNotesService();
         this.vadMetrics = null; // non-persistent in-memory snapshot
         this.setupHandlers();
     }
@@ -80,6 +82,18 @@ class IPCHandlers {
 
         // GPU backend detection
         ipcMain.handle('whisper:detectGpuBackend', this.handleDetectGpuBackend.bind(this));
+
+        // Meeting notes handlers
+        ipcMain.handle('meetingNotes:getConfig', this.handleMeetingNotesGetConfig.bind(this));
+        ipcMain.handle('meetingNotes:saveConfig', this.handleMeetingNotesSaveConfig.bind(this));
+        ipcMain.handle('meetingNotes:generate', this.handleMeetingNotesGenerate.bind(this));
+        ipcMain.handle('meetingNotes:get', this.handleMeetingNotesGet.bind(this));
+        ipcMain.handle('meetingNotes:delete', this.handleMeetingNotesDelete.bind(this));
+        ipcMain.handle('meetingNotes:hasNotes', this.handleMeetingNotesHasNotes.bind(this));
+        ipcMain.handle('meetingNotes:getTemplates', this.handleMeetingNotesGetTemplates.bind(this));
+        ipcMain.handle('meetingNotes:createTemplate', this.handleMeetingNotesCreateTemplate.bind(this));
+        ipcMain.handle('meetingNotes:updateTemplate', this.handleMeetingNotesUpdateTemplate.bind(this));
+        ipcMain.handle('meetingNotes:deleteTemplate', this.handleMeetingNotesDeleteTemplate.bind(this));
 
         // Audio file reading for playback
         ipcMain.handle('audio:readFile', this.handleAudioReadFile.bind(this));
@@ -949,6 +963,124 @@ class IPCHandlers {
             return { success: true, dataUrl: `data:${mime};base64,${base64}` };
         } catch (error) {
             console.error('Error reading audio file:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // Meeting Notes Handlers
+
+    async handleMeetingNotesGetConfig() {
+        try {
+            return {
+                success: true,
+                config: {
+                    defaultProvider: config.get('meetingNotes.defaultProvider', 'claude'),
+                    claudeModel: config.get('meetingNotes.claudeModel', 'claude-sonnet-4-20250514'),
+                    codexModel: config.get('meetingNotes.codexModel', ''),
+                    cliTimeoutSeconds: config.get('meetingNotes.cliTimeoutSeconds', 600)
+                }
+            };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleMeetingNotesSaveConfig(event, { settings } = {}) {
+        try {
+            if (!settings) return { success: false, error: 'No settings provided' };
+            const allowedKeys = ['defaultProvider', 'claudeModel', 'codexModel', 'cliTimeoutSeconds'];
+            for (const key of allowedKeys) {
+                if (settings[key] !== undefined) {
+                    config.set(`meetingNotes.${key}`, settings[key]);
+                }
+            }
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleMeetingNotesGenerate(event, { transcriptionId, options } = {}) {
+        if (!transcriptionId) return { success: false, error: 'Missing transcriptionId' };
+        try {
+            // Get transcript text
+            const result = await this.transcriptionStoreService.get(transcriptionId);
+            if (!result || !result.text) {
+                return { success: false, error: 'Transcript not found' };
+            }
+            const notesData = await this.meetingNotesService.generate(result.text, transcriptionId, options || {});
+            return { success: true, notes: notesData };
+        } catch (error) {
+            console.error('Error generating meeting notes:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleMeetingNotesGet(event, { transcriptionId } = {}) {
+        try {
+            const notes = this.meetingNotesService.getNotes(transcriptionId);
+            return { success: true, notes };
+        } catch (error) {
+            console.error('Error getting meeting notes:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleMeetingNotesDelete(event, { transcriptionId } = {}) {
+        try {
+            const deleted = this.meetingNotesService.deleteNotes(transcriptionId);
+            return { success: deleted };
+        } catch (error) {
+            console.error('Error deleting meeting notes:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleMeetingNotesHasNotes(event, { transcriptionId } = {}) {
+        try {
+            return { hasNotes: this.meetingNotesService.hasNotes(transcriptionId) };
+        } catch (error) {
+            return { hasNotes: false };
+        }
+    }
+
+    async handleMeetingNotesGetTemplates() {
+        try {
+            const templates = this.meetingNotesService.loadTemplates();
+            return { success: true, templates };
+        } catch (error) {
+            console.error('Error getting meeting notes templates:', error);
+            return { success: true, templates: [] };
+        }
+    }
+
+    async handleMeetingNotesCreateTemplate(event, { template } = {}) {
+        try {
+            const created = this.meetingNotesService.createTemplate(template || {});
+            return { success: true, template: created };
+        } catch (error) {
+            console.error('Error creating meeting notes template:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleMeetingNotesUpdateTemplate(event, { id, changes } = {}) {
+        try {
+            const updated = this.meetingNotesService.updateTemplate(id, changes || {});
+            if (!updated) return { success: false, error: 'Template not found' };
+            return { success: true, template: updated };
+        } catch (error) {
+            console.error('Error updating meeting notes template:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleMeetingNotesDeleteTemplate(event, { id } = {}) {
+        try {
+            const deleted = this.meetingNotesService.deleteTemplate(id);
+            return { success: deleted };
+        } catch (error) {
+            console.error('Error deleting meeting notes template:', error);
             return { success: false, error: error.message };
         }
     }

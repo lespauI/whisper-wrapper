@@ -55,6 +55,14 @@ const defaultConfig = {
         silenceIndicator: true
     },
 
+    // Meeting Notes settings
+    meetingNotes: {
+        defaultProvider: 'claude',       // 'ollama' | 'claude' | 'codex'
+        claudeModel: 'claude-sonnet-4-20250514',
+        codexModel: '',
+        cliTimeoutSeconds: 600
+    },
+
     // Voice Activity Detection (VAD) settings
     vad: {
         engine: 'energy',

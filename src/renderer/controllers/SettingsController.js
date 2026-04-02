@@ -80,6 +80,11 @@ export class SettingsController {
         EventHandler.addListener('#use-gpu-checkbox', 'change', () => {
             this.updateGpuSettingsState();
         });
+
+        // Meeting Notes Templates management
+        EventHandler.addListener('#manage-meeting-notes-templates-btn', 'click', () => {
+            this.openMeetingNotesTemplateManager();
+        });
     }
 
     /**
@@ -199,7 +204,10 @@ export class SettingsController {
             
             // Save AI Refinement settings
             await this.saveAIRefinementSettings();
-            
+
+            // Save Meeting Notes settings
+            await this.saveMeetingNotesSettings();
+
             this.closeSettings();
             this.statusController.updateStatus('Settings saved successfully');
             
@@ -252,7 +260,10 @@ export class SettingsController {
             
             // Load AI Refinement settings
             await this.loadAIRefinementSettings();
-            
+
+            // Load Meeting Notes settings
+            await this.loadMeetingNotesSettings();
+
         } catch (error) {
             console.error('Error loading settings:', error);
             this.statusController.showError('Failed to load settings');
@@ -672,6 +683,99 @@ AI Refinement Debug Info:
             isSettingsOpen: this.isSettingsOpen,
             availableModels: this.availableModels
         };
+    }
+
+    // ── Meeting Notes Settings ─────────────────────────────
+
+    /**
+     * Save Meeting Notes settings
+     */
+    async saveMeetingNotesSettings() {
+        try {
+            if (!window.electronAPI || !window.electronAPI.meetingNotes) return;
+
+            const defaultProvider = UIHelpers.getValue('#meeting-notes-default-provider') || 'claude';
+            const claudeModel = UIHelpers.getValue('#meeting-notes-claude-model') || 'claude-sonnet-4-20250514';
+            const cliTimeoutSeconds = parseInt(UIHelpers.getValue('#meeting-notes-cli-timeout')) || 600;
+
+            await window.electronAPI.meetingNotes.saveConfig({
+                defaultProvider,
+                claudeModel,
+                cliTimeoutSeconds
+            });
+
+            console.log('Meeting Notes settings saved successfully');
+        } catch (error) {
+            console.error('Error saving Meeting Notes settings:', error);
+        }
+    }
+
+    /**
+     * Load Meeting Notes settings
+     */
+    async loadMeetingNotesSettings() {
+        try {
+            if (!window.electronAPI || !window.electronAPI.meetingNotes) return;
+
+            const result = await window.electronAPI.meetingNotes.getConfig();
+            if (result && result.success && result.config) {
+                const cfg = result.config;
+                UIHelpers.setValue('#meeting-notes-default-provider', cfg.defaultProvider || 'claude');
+                UIHelpers.setValue('#meeting-notes-claude-model', cfg.claudeModel || 'claude-sonnet-4-20250514');
+                UIHelpers.setValue('#meeting-notes-cli-timeout', cfg.cliTimeoutSeconds || 600);
+            }
+
+            // Load templates list for display
+            await this.loadMeetingNotesTemplatesList();
+        } catch (error) {
+            console.error('Error loading Meeting Notes settings:', error);
+        }
+    }
+
+    /**
+     * Load meeting notes templates list into settings panel
+     */
+    async loadMeetingNotesTemplatesList() {
+        if (!window.electronAPI || !window.electronAPI.meetingNotes) return;
+        const listEl = document.getElementById('meeting-notes-templates-list');
+        if (!listEl) return;
+
+        try {
+            const result = await window.electronAPI.meetingNotes.getTemplates();
+            const templates = (result && result.templates) || [];
+
+            if (templates.length === 0) {
+                listEl.innerHTML = '<div class="form-text">No templates configured</div>';
+                return;
+            }
+
+            listEl.innerHTML = templates.map(t => `
+                <div class="template-item">
+                    <span class="template-item-name">${this._escapeHtml(t.name)}</span>
+                    ${t.isDefault ? '<span class="template-item-default">Default</span>' : ''}
+                </div>
+            `).join('');
+        } catch (err) {
+            console.error('Failed to load meeting notes templates list:', err);
+            listEl.innerHTML = '<div class="form-text">Failed to load templates</div>';
+        }
+    }
+
+    /**
+     * Open meeting notes template manager (simple alert-based for now)
+     */
+    openMeetingNotesTemplateManager() {
+        // For now, inform user templates are in data/meeting-notes-templates.json
+        alert('Meeting notes templates can be edited in:\ndata/meeting-notes-templates.json\n\nEach template has: name, description, prompt (use {{text}} as placeholder for transcript).\n\nTemplates are also selectable per-generation in the library view.');
+    }
+
+    _escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
 
     /**

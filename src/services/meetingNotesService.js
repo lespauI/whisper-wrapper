@@ -10,12 +10,11 @@ const { execFile } = require('child_process');
 const axios = require('axios');
 const config = require('../config');
 
-const TEMPLATES_FILE = path.join(process.cwd(), 'data', 'meeting-notes-templates.json');
-
 class MeetingNotesService {
   constructor() {
     const dataDir = config.get ? config.get('app.dataDirectory') : (config.app && config.app.dataDirectory);
     this.notesDir = path.join(dataDir || path.join(process.cwd(), 'data'), 'meeting-notes');
+    this.templatesFile = path.join(process.cwd(), 'data', 'meeting-notes-templates.json');
     this._ensureDir();
   }
 
@@ -33,8 +32,8 @@ class MeetingNotesService {
 
   loadTemplates() {
     try {
-      if (fs.existsSync(TEMPLATES_FILE)) {
-        return JSON.parse(fs.readFileSync(TEMPLATES_FILE, 'utf8'));
+      if (fs.existsSync(this.templatesFile)) {
+        return JSON.parse(fs.readFileSync(this.templatesFile, 'utf8'));
       }
     } catch (err) {
       console.error('Error loading meeting notes templates:', err.message);
@@ -43,9 +42,9 @@ class MeetingNotesService {
   }
 
   saveTemplates(templates) {
-    const dir = path.dirname(TEMPLATES_FILE);
+    const dir = path.dirname(this.templatesFile);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(TEMPLATES_FILE, JSON.stringify(templates, null, 2), 'utf8');
+    fs.writeFileSync(this.templatesFile, JSON.stringify(templates, null, 2), 'utf8');
   }
 
   getTemplate(templateId) {

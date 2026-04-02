@@ -66,6 +66,7 @@ class LibraryController {
         this.notesUseContextCheckbox = document.getElementById('meeting-notes-use-context');
         this.notesContextList = document.getElementById('meeting-notes-context-list');
         this.notesContextListInner = document.getElementById('meeting-notes-context-list-inner');
+        this.notesPrePrompt = document.getElementById('meeting-notes-preprompt');
 
         this.init();
     }
@@ -305,6 +306,7 @@ class LibraryController {
         const model = this.notesModelInput ? this.notesModelInput.value.trim() : '';
         const templateId = this.notesTemplateSelect ? this.notesTemplateSelect.value : '';
         const contextTranscriptIds = this.getSelectedContextIds();
+        const prePrompt = this.notesPrePrompt ? this.notesPrePrompt.value.trim() : '';
 
         // Show loading
         if (this.notesGeneratePanel) this.notesGeneratePanel.classList.add('hidden');
@@ -318,6 +320,7 @@ class LibraryController {
             if (model) options.model = model;
             if (templateId) options.templateId = templateId;
             if (contextTranscriptIds.length > 0) options.contextTranscriptIds = contextTranscriptIds;
+            if (prePrompt) options.prePrompt = prePrompt;
 
             const result = await window.electronAPI.meetingNotes.generate(this.currentEntryId, options);
             if (result && result.success && result.notes) {

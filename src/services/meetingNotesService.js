@@ -161,11 +161,18 @@ class MeetingNotesService {
     const templateId = options.templateId || null;
     const model = options.model || this._getDefaultModel(provider);
     const contextTranscripts = options.contextTranscripts || [];
+    const prePrompt = options.prePrompt || '';
 
     // Resolve prompt from template
     const template = templateId ? this.getTemplate(templateId) : this.getDefaultTemplate();
     if (!template) {
       throw new Error('No meeting notes template found. Please create one in settings.');
+    }
+
+    // Build pre-prompt block
+    let prePromptBlock = '';
+    if (prePrompt.trim()) {
+      prePromptBlock = `Additional context from the user: ${prePrompt.trim()}\n\n`;
     }
 
     // Build context block from other transcripts
@@ -180,10 +187,11 @@ class MeetingNotesService {
     }
 
     let prompt = template.prompt;
+    const transcriptWithContext = prePromptBlock + contextBlock + transcriptionText;
     if (prompt.includes('{{text}}')) {
-      prompt = prompt.replace(/\{\{text\}\}/g, contextBlock + transcriptionText);
+      prompt = prompt.replace(/\{\{text\}\}/g, transcriptWithContext);
     } else {
-      prompt = `${prompt}\n\n${contextBlock}${transcriptionText}`;
+      prompt = `${prompt}\n\n${transcriptWithContext}`;
     }
 
     let notesText;

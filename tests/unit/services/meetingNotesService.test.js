@@ -429,5 +429,41 @@ describe('MeetingNotesService', () => {
       expect(promptArg).not.toContain('background context');
       expect(promptArg).not.toContain('END OF CONTEXT');
     });
+
+    it('includes pre-prompt in the generated prompt', async () => {
+      let capturedArgs;
+      execFile.mockImplementation((cmd, args, opts, callback) => {
+        capturedArgs = args;
+        callback(null, 'Output with preprompt', '');
+      });
+
+      await service.generate('TRANSCRIPT TEXT', 'tx-014', {
+        provider: 'claude',
+        templateId: 'test-template-1',
+        prePrompt: 'This is a 1-on-1 between Alex and Maria about Q2 planning'
+      });
+
+      const promptArg = capturedArgs[1];
+      expect(promptArg).toContain('1-on-1 between Alex and Maria');
+      expect(promptArg).toContain('Q2 planning');
+      expect(promptArg).toContain('TRANSCRIPT TEXT');
+    });
+
+    it('does not include pre-prompt block when prePrompt is empty', async () => {
+      let capturedArgs;
+      execFile.mockImplementation((cmd, args, opts, callback) => {
+        capturedArgs = args;
+        callback(null, 'Output', '');
+      });
+
+      await service.generate('TEXT', 'tx-015', {
+        provider: 'claude',
+        templateId: 'test-template-1',
+        prePrompt: '   '
+      });
+
+      const promptArg = capturedArgs[1];
+      expect(promptArg).not.toContain('Additional context from the user');
+    });
   });
 });

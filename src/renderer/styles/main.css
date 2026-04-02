@@ -3081,3 +3081,253 @@ textarea.disabled {
     overflow-y: auto;
     font-family: inherit;
 }
+
+/* ── Meeting Notes Section ─────────────────────────────── */
+
+.library-meeting-notes-section {
+    margin-top: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.library-meeting-notes-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    background: rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+}
+
+.library-meeting-notes-header:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.meeting-notes-expand-icon {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.5);
+    transition: transform 0.2s;
+    width: 1rem;
+    text-align: center;
+}
+
+.meeting-notes-badge {
+    margin-left: auto;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 10px;
+    background: rgba(76, 175, 80, 0.2);
+    color: #81c784;
+    font-weight: 500;
+}
+
+.meeting-notes-badge.hidden {
+    display: none;
+}
+
+.library-meeting-notes-body {
+    padding: 0.75rem;
+}
+
+.library-meeting-notes-body.hidden {
+    display: none;
+}
+
+/* Generate controls */
+.meeting-notes-generate-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.meeting-notes-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.meeting-notes-control-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.meeting-notes-control-row label {
+    min-width: 70px;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.meeting-notes-control-row .form-control-sm {
+    flex: 1;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8rem;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.meeting-notes-control-row select.form-control-sm {
+    appearance: auto;
+}
+
+/* Notes display */
+.meeting-notes-display-meta {
+    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.meeting-notes-content {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 0.75rem;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.meeting-notes-content h3,
+.meeting-notes-content h4,
+.meeting-notes-content h5 {
+    margin: 0.75rem 0 0.35rem 0;
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.meeting-notes-content h3 { font-size: 1.05rem; }
+.meeting-notes-content h4 { font-size: 0.95rem; }
+.meeting-notes-content h5 { font-size: 0.88rem; }
+
+.meeting-notes-content ul {
+    margin: 0.25rem 0;
+    padding-left: 1.25rem;
+}
+
+.meeting-notes-content li {
+    margin-bottom: 0.2rem;
+}
+
+.meeting-notes-content p {
+    margin: 0.4rem 0;
+}
+
+.meeting-notes-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.5rem 0;
+    font-size: 0.8rem;
+}
+
+.meeting-notes-table td {
+    padding: 0.35rem 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.meeting-notes-table tr:first-child td {
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.meeting-notes-checkbox {
+    padding: 0.15rem 0;
+    font-size: 0.85rem;
+}
+
+.meeting-notes-checkbox.checked {
+    color: #81c784;
+}
+
+.meeting-notes-display-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+}
+
+/* Loading state */
+.meeting-notes-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+}
+
+.meeting-notes-loading.hidden {
+    display: none;
+}
+
+.meeting-notes-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-top: 2px solid rgba(255, 255, 255, 0.8);
+    border-radius: 50%;
+    animation: notes-spin 0.8s linear infinite;
+}
+
+@keyframes notes-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Error state */
+.meeting-notes-error {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: rgba(244, 67, 54, 0.1);
+    border: 1px solid rgba(244, 67, 54, 0.2);
+    border-radius: 6px;
+    color: #ef9a9a;
+    font-size: 0.8rem;
+    margin-bottom: 0.5rem;
+}
+
+.meeting-notes-error.hidden {
+    display: none;
+}
+
+.meeting-notes-generate-panel.hidden,
+.meeting-notes-display.hidden {
+    display: none;
+}
+
+/* ── Meeting Notes Settings ─────────────────────────────── */
+
+.meeting-notes-settings-card .template-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 0.85rem;
+}
+
+.meeting-notes-settings-card .template-item:last-child {
+    border-bottom: none;
+}
+
+.meeting-notes-settings-card .template-item-name {
+    flex: 1;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.meeting-notes-settings-card .template-item-default {
+    font-size: 0.7rem;
+    color: #81c784;
+    margin-left: 0.5rem;
+}
+
+.meeting-notes-settings-card .template-actions {
+    display: flex;
+    gap: 0.25rem;
+}

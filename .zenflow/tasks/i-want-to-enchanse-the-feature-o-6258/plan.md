@@ -1,30 +1,48 @@
-# Auto
+# Meeting Notes Feature - Implementation Plan
 
-## Configuration
-- **Artifacts Path**: {@artifacts_path} → `.zenflow/tasks/{task_id}`
+## Summary
+Add AI-generated meeting notes to the library. Notes are linked 1:1 to transcripts, stored as individual JSON files in `data/meeting-notes/`. Users can generate notes using Ollama, Claude CLI, or Codex CLI with configurable prompt templates. Notes appear as an expandable section in the library detail view.
 
-## Agent Instructions
+## Key Decisions
+- Storage: `data/meeting-notes/{transcriptId}.json` — individual files keyed by transcript ID
+- AI backends: Ollama (reuse existing config), Claude CLI (`claude`), Codex CLI (`codex`) — via shell
+- Default provider: Claude CLI with claude-sonnet-4-20250514
+- Per-generation provider selection with a default in settings
+- Multiple prompt templates stored in `data/meeting-notes-templates.json`
+- Regeneration supported with different model/provider
 
-Ask the user questions when anything is unclear or needs their input. This includes:
-- Ambiguous or incomplete requirements
-- Technical decisions that affect architecture or user experience
-- Trade-offs that require business context
+## Affected Files
+- `src/config.js` — add `meetingNotes` config section
+- `src/services/meetingNotesService.js` — NEW: generate, store, load, delete notes
+- `src/main/ipcHandlers.js` — add meetingNotes:* handlers
+- `src/main/preload.js` — expose meetingNotes API
+- `src/renderer/index.html` — add expandable notes section in library detail + settings UI
+- `src/renderer/controllers/libraryController.js` — add notes UI logic
+- `src/renderer/controllers/SettingsController.js` — add meeting notes settings
+- `src/renderer/styles/main.css` — styles for notes section
+- `data/meeting-notes-templates.json` — NEW: default prompt templates
 
-Do not make assumptions on important decisions — get clarification first.
+### [x] Step 1: Backend Service & Config
+- Add `meetingNotes` config section to `src/config.js`
+- Create `src/services/meetingNotesService.js` with: generate (ollama/claude/codex), store, load, delete, list templates
+- Create `data/meeting-notes-templates.json` with default prompt templates
+- Add IPC handlers in `src/main/ipcHandlers.js`
+- Expose API in `src/main/preload.js`
 
-**Debug requests, questions, and investigations:** answer or investigate first. Do not create a plan upfront — the user needs an answer, not a plan. A plan may become relevant later once the investigation reveals what needs to change.
+### [x] Step 2: Library UI - Expandable Notes Section
+- Add expandable "Meeting Notes" section HTML in library detail view
+- Add "Generate Notes" button with provider/template selection
+- Add notes display with markdown rendering
+- Add regenerate/delete notes functionality
+- Wire up in `src/renderer/controllers/libraryController.js`
+- Add CSS styles
 
-**For all other tasks**, before writing any code, assess the scope of the actual change (not the prompt length — a one-sentence prompt can describe a large feature). Scale your approach:
+### [x] Step 3: Settings UI for Meeting Notes
+- Add "Meeting Notes" settings card in settings panel
+- Default provider and model selection
+- Meeting notes prompt template management (add/edit/delete)
+- Wire up in `src/renderer/controllers/SettingsController.js`
 
-- **Trivial** (typo, config tweak, single obvious change): implement directly, no plan needed.
-- **Small** (a few files, clear what to do): write 2–3 sentences in `plan.md` describing what and why, then implement. No substeps.
-- **Medium** (multiple components, design decisions, edge cases): write a plan in `plan.md` with requirements, affected files, key decisions, verification. Break into 3–5 steps.
-- **Large** (new feature, cross-cutting, unclear scope): gather requirements and write a technical spec first (`requirements.md`, `spec.md` in `{@artifacts_path}/`). Then write `plan.md` with concrete steps referencing the spec.
+### [x] Step 4: Security check
 
-**Skip planning and implement directly when** the task is trivial, or the user explicitly asks to "just do it" / gives a clear direct instruction.
-
-To reflect the actual purpose of the first step, you can rename it to something more relevant (e.g., Planning, Investigation). Do NOT remove meta information like comments for any step.
-
-Rule of thumb for step size: each step = a coherent unit of work (component, endpoint, test suite). Not too granular (single function), not too broad (entire feature). Unit tests are part of each step, not separate.
-
-Update `{@artifacts_path}/plan.md` if it makes sense to have a plan and task has more than 1 big step.
+Please check all our meeting notes and transcripts are stored localy and never left machine to Git or any other place

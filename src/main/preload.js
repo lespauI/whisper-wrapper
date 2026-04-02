@@ -104,6 +104,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
         regenerateMeta: (id) => ipcRenderer.invoke('transcriptions:regenerateMeta', { id })
     },
 
+    // Meeting notes
+    meetingNotes: {
+        getConfig: () => ipcRenderer.invoke('meetingNotes:getConfig'),
+        saveConfig: (settings) => ipcRenderer.invoke('meetingNotes:saveConfig', { settings }),
+        generate: (transcriptionId, options) => ipcRenderer.invoke('meetingNotes:generate', { transcriptionId, options }),
+        get: (transcriptionId) => ipcRenderer.invoke('meetingNotes:get', { transcriptionId }),
+        delete: (transcriptionId) => ipcRenderer.invoke('meetingNotes:delete', { transcriptionId }),
+        hasNotes: (transcriptionId) => ipcRenderer.invoke('meetingNotes:hasNotes', { transcriptionId }),
+        getTemplates: () => ipcRenderer.invoke('meetingNotes:getTemplates'),
+        createTemplate: (template) => ipcRenderer.invoke('meetingNotes:createTemplate', { template }),
+        updateTemplate: (id, changes) => ipcRenderer.invoke('meetingNotes:updateTemplate', { id, changes }),
+        deleteTemplate: (id) => ipcRenderer.invoke('meetingNotes:deleteTemplate', { id })
+    },
+
     // Audio playback
     readAudioFile: (filePath) => ipcRenderer.invoke('audio:readFile', filePath)
 });

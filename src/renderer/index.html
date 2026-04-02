@@ -213,6 +213,42 @@
                             <div class="form-text">Templates define how AI refines your transcriptions</div>
                         </div>
                     </div>
+
+                    <!-- Meeting Notes Settings -->
+                    <div class="settings-card meeting-notes-settings-card">
+                        <h4 class="settings-card-title">Meeting Notes</h4>
+
+                        <div class="form-group">
+                            <label for="meeting-notes-default-provider">Default AI Provider</label>
+                            <select id="meeting-notes-default-provider" class="form-control">
+                                <option value="claude">Claude CLI</option>
+                                <option value="ollama">Ollama (Local)</option>
+                                <option value="codex">Codex CLI</option>
+                            </select>
+                            <div class="form-text">Which AI provider to use by default for generating meeting notes</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="meeting-notes-claude-model">Claude Model</label>
+                            <input type="text" id="meeting-notes-claude-model" class="form-control" placeholder="claude-sonnet-4-20250514" value="claude-sonnet-4-20250514">
+                            <div class="form-text">Model to use with Claude CLI (e.g., claude-sonnet-4-20250514, claude-opus-4-20250514)</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="meeting-notes-cli-timeout">CLI Timeout (seconds)</label>
+                            <input type="number" id="meeting-notes-cli-timeout" class="form-control" min="30" max="1800" value="600">
+                            <div class="form-text">Maximum time to wait for CLI response</div>
+                        </div>
+
+                        <div class="form-group template-management">
+                            <div class="template-header">
+                                <label>Meeting Notes Templates</label>
+                                <button id="manage-meeting-notes-templates-btn" class="btn btn-sm">Manage Templates</button>
+                            </div>
+                            <div class="form-text">Prompt templates for generating meeting notes</div>
+                            <div id="meeting-notes-templates-list" class="meeting-notes-templates-list"></div>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="settings-actions">
@@ -618,6 +654,63 @@
                                             </div>
                                             <p id="library-detail-summary-text"></p>
                                         </div>
+                                        <!-- Meeting Notes Section -->
+                                        <div class="library-meeting-notes-section">
+                                            <div class="library-meeting-notes-header" id="library-meeting-notes-toggle">
+                                                <span class="meeting-notes-expand-icon" id="meeting-notes-expand-icon">▶</span>
+                                                <strong>Meeting Notes</strong>
+                                                <span id="meeting-notes-status-badge" class="meeting-notes-badge hidden">Generated</span>
+                                            </div>
+                                            <div id="library-meeting-notes-body" class="library-meeting-notes-body hidden">
+                                                <!-- Generate controls (shown when no notes exist) -->
+                                                <div id="meeting-notes-generate-panel" class="meeting-notes-generate-panel">
+                                                    <div class="meeting-notes-controls">
+                                                        <div class="meeting-notes-control-row">
+                                                            <label for="meeting-notes-provider">Provider:</label>
+                                                            <select id="meeting-notes-provider" class="form-control form-control-sm">
+                                                                <option value="claude">Claude CLI</option>
+                                                                <option value="ollama">Ollama (Local)</option>
+                                                                <option value="codex">Codex CLI</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="meeting-notes-control-row" id="meeting-notes-model-row">
+                                                            <label for="meeting-notes-model">Model:</label>
+                                                            <input type="text" id="meeting-notes-model" class="form-control form-control-sm" placeholder="Model name (optional)">
+                                                        </div>
+                                                        <div class="meeting-notes-control-row">
+                                                            <label for="meeting-notes-template">Template:</label>
+                                                            <select id="meeting-notes-template" class="form-control form-control-sm">
+                                                                <option value="">Loading...</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <button id="meeting-notes-generate-btn" class="btn btn-primary btn-small">Generate Meeting Notes</button>
+                                                </div>
+                                                <!-- Notes display (shown when notes exist) -->
+                                                <div id="meeting-notes-display" class="meeting-notes-display hidden">
+                                                    <div class="meeting-notes-display-meta">
+                                                        <span id="meeting-notes-meta-info" class="library-meta-tag"></span>
+                                                    </div>
+                                                    <div id="meeting-notes-content" class="meeting-notes-content"></div>
+                                                    <div class="meeting-notes-display-actions">
+                                                        <button id="meeting-notes-copy-btn" class="btn btn-secondary btn-small">📋 Copy Notes</button>
+                                                        <button id="meeting-notes-regenerate-btn" class="btn btn-secondary btn-small">🔄 Regenerate</button>
+                                                        <button id="meeting-notes-delete-btn" class="btn btn-danger btn-small">🗑️ Delete Notes</button>
+                                                    </div>
+                                                </div>
+                                                <!-- Loading state -->
+                                                <div id="meeting-notes-loading" class="meeting-notes-loading hidden">
+                                                    <div class="meeting-notes-spinner"></div>
+                                                    <span>Generating meeting notes...</span>
+                                                </div>
+                                                <!-- Error state -->
+                                                <div id="meeting-notes-error" class="meeting-notes-error hidden">
+                                                    <span class="library-meta-error-icon">⚠️</span>
+                                                    <span id="meeting-notes-error-text"></span>
+                                                </div>
+                                            </div>
+                                        </div>
+
                                         <div class="library-detail-text-section">
                                             <strong>Transcription:</strong>
                                             <pre id="library-detail-text" class="library-detail-text"></pre>

@@ -3,6 +3,7 @@ class LibraryController {
         this.currentEntryId = null;
         this.entries = [];
         this._pendingTags = [];
+        this._notesExpanded = false;
 
         this.searchInput = document.getElementById('library-search-input');
         this.dateFrom = document.getElementById('library-date-from');
@@ -42,6 +43,26 @@ class LibraryController {
         this.metaErrorText = document.getElementById('library-meta-error-text');
         this.regenerateMetaBtn = document.getElementById('library-regenerate-meta-btn');
         this.regenerateBtn = document.getElementById('library-regenerate-btn');
+
+        // Meeting notes elements
+        this.notesToggle = document.getElementById('library-meeting-notes-toggle');
+        this.notesExpandIcon = document.getElementById('meeting-notes-expand-icon');
+        this.notesBody = document.getElementById('library-meeting-notes-body');
+        this.notesBadge = document.getElementById('meeting-notes-status-badge');
+        this.notesGeneratePanel = document.getElementById('meeting-notes-generate-panel');
+        this.notesDisplay = document.getElementById('meeting-notes-display');
+        this.notesLoading = document.getElementById('meeting-notes-loading');
+        this.notesError = document.getElementById('meeting-notes-error');
+        this.notesErrorText = document.getElementById('meeting-notes-error-text');
+        this.notesContent = document.getElementById('meeting-notes-content');
+        this.notesMetaInfo = document.getElementById('meeting-notes-meta-info');
+        this.notesProviderSelect = document.getElementById('meeting-notes-provider');
+        this.notesModelInput = document.getElementById('meeting-notes-model');
+        this.notesTemplateSelect = document.getElementById('meeting-notes-template');
+        this.notesGenerateBtn = document.getElementById('meeting-notes-generate-btn');
+        this.notesCopyBtn = document.getElementById('meeting-notes-copy-btn');
+        this.notesRegenerateBtn = document.getElementById('meeting-notes-regenerate-btn');
+        this.notesDeleteBtn = document.getElementById('meeting-notes-delete-btn');
 
         this.init();
     }
@@ -108,7 +129,252 @@ class LibraryController {
         if (this.regenerateBtn) {
             this.regenerateBtn.addEventListener('click', () => this.regenerateMeta());
         }
+
+        // Meeting notes event listeners
+        if (this.notesToggle) {
+            this.notesToggle.addEventListener('click', () => this.toggleMeetingNotes());
+        }
+        if (this.notesGenerateBtn) {
+            this.notesGenerateBtn.addEventListener('click', () => this.generateMeetingNotes());
+        }
+        if (this.notesCopyBtn) {
+            this.notesCopyBtn.addEventListener('click', () => this.copyMeetingNotes());
+        }
+        if (this.notesRegenerateBtn) {
+            this.notesRegenerateBtn.addEventListener('click', () => this.showNotesGeneratePanel());
+        }
+        if (this.notesDeleteBtn) {
+            this.notesDeleteBtn.addEventListener('click', () => this.deleteMeetingNotes());
+        }
+        if (this.notesProviderSelect) {
+            this.notesProviderSelect.addEventListener('change', () => this.onProviderChange());
+        }
+
+        this.loadNotesTemplates();
     }
+
+    // ── Meeting Notes ────────────────────────────────────────
+
+    toggleMeetingNotes() {
+        this._notesExpanded = !this._notesExpanded;
+        if (this.notesBody) {
+            this.notesBody.classList.toggle('hidden', !this._notesExpanded);
+        }
+        if (this.notesExpandIcon) {
+            this.notesExpandIcon.textContent = this._notesExpanded ? '▼' : '▶';
+        }
+    }
+
+    async loadNotesTemplates() {
+        if (!window.electronAPI || !window.electronAPI.meetingNotes) return;
+        try {
+            const result = await window.electronAPI.meetingNotes.getTemplates();
+            const templates = (result && result.templates) || [];
+            if (this.notesTemplateSelect) {
+                this.notesTemplateSelect.innerHTML = templates.map(t =>
+                    `<option value="${t.id}" ${t.isDefault ? 'selected' : ''}>${this.escapeHtml(t.name)}</option>`
+                ).join('');
+            }
+        } catch (err) {
+            console.error('Failed to load meeting notes templates:', err);
+        }
+    }
+
+    onProviderChange() {
+        if (!this.notesProviderSelect || !this.notesModelInput) return;
+        const provider = this.notesProviderSelect.value;
+        // Show model hints based on provider
+        switch (provider) {
+            case 'claude':
+                this.notesModelInput.placeholder = 'claude-sonnet-4-20250514 (default)';
+                break;
+            case 'ollama':
+                this.notesModelInput.placeholder = 'Uses Ollama default model';
+                break;
+            case 'codex':
+                this.notesModelInput.placeholder = 'Model name (optional)';
+                break;
+        }
+    }
+
+    async loadMeetingNotes(transcriptionId) {
+        if (!window.electronAPI || !window.electronAPI.meetingNotes) return;
+
+        // Reset state
+        this._notesExpanded = false;
+        if (this.notesBody) this.notesBody.classList.add('hidden');
+        if (this.notesExpandIcon) this.notesExpandIcon.textContent = '▶';
+        if (this.notesError) this.notesError.classList.add('hidden');
+        if (this.notesLoading) this.notesLoading.classList.add('hidden');
+
+        try {
+            const result = await window.electronAPI.meetingNotes.get(transcriptionId);
+            if (result && result.notes) {
+                this.displayMeetingNotes(result.notes);
+                if (this.notesBadge) {
+                    this.notesBadge.classList.remove('hidden');
+                    this.notesBadge.textContent = 'Generated';
+                }
+            } else {
+                this.showNotesGeneratePanel();
+                if (this.notesBadge) this.notesBadge.classList.add('hidden');
+            }
+        } catch (err) {
+            console.error('Failed to load meeting notes:', err);
+            this.showNotesGeneratePanel();
+            if (this.notesBadge) this.notesBadge.classList.add('hidden');
+        }
+    }
+
+    displayMeetingNotes(notesData) {
+        if (this.notesGeneratePanel) this.notesGeneratePanel.classList.add('hidden');
+        if (this.notesDisplay) this.notesDisplay.classList.remove('hidden');
+
+        if (this.notesMetaInfo) {
+            const date = notesData.generatedAt ? new Date(notesData.generatedAt).toLocaleString() : '';
+            const provider = notesData.provider || '';
+            const model = notesData.model || '';
+            const template = notesData.templateName || '';
+            const parts = [];
+            if (date) parts.push(date);
+            if (provider) parts.push(provider + (model ? ` (${model})` : ''));
+            if (template) parts.push(`Template: ${template}`);
+            this.notesMetaInfo.textContent = parts.join(' | ');
+        }
+
+        if (this.notesContent) {
+            // Render as simple HTML — convert markdown-like formatting
+            this.notesContent.innerHTML = this.renderNotesMarkdown(notesData.notes || '');
+        }
+    }
+
+    showNotesGeneratePanel() {
+        if (this.notesGeneratePanel) this.notesGeneratePanel.classList.remove('hidden');
+        if (this.notesDisplay) this.notesDisplay.classList.add('hidden');
+        this.loadNotesTemplates();
+    }
+
+    async generateMeetingNotes() {
+        if (!this.currentEntryId) return;
+        if (!window.electronAPI || !window.electronAPI.meetingNotes) return;
+
+        const provider = this.notesProviderSelect ? this.notesProviderSelect.value : 'claude';
+        const model = this.notesModelInput ? this.notesModelInput.value.trim() : '';
+        const templateId = this.notesTemplateSelect ? this.notesTemplateSelect.value : '';
+
+        // Show loading
+        if (this.notesGeneratePanel) this.notesGeneratePanel.classList.add('hidden');
+        if (this.notesDisplay) this.notesDisplay.classList.add('hidden');
+        if (this.notesError) this.notesError.classList.add('hidden');
+        if (this.notesLoading) this.notesLoading.classList.remove('hidden');
+        if (this.notesGenerateBtn) this.notesGenerateBtn.disabled = true;
+
+        try {
+            const options = { provider };
+            if (model) options.model = model;
+            if (templateId) options.templateId = templateId;
+
+            const result = await window.electronAPI.meetingNotes.generate(this.currentEntryId, options);
+            if (result && result.success && result.notes) {
+                this.displayMeetingNotes(result.notes);
+                if (this.notesBadge) {
+                    this.notesBadge.classList.remove('hidden');
+                    this.notesBadge.textContent = 'Generated';
+                }
+            } else {
+                this.showNotesError((result && result.error) || 'Failed to generate meeting notes');
+            }
+        } catch (err) {
+            console.error('Meeting notes generation failed:', err);
+            this.showNotesError(err.message || 'Generation failed');
+        } finally {
+            if (this.notesLoading) this.notesLoading.classList.add('hidden');
+            if (this.notesGenerateBtn) this.notesGenerateBtn.disabled = false;
+        }
+    }
+
+    showNotesError(msg) {
+        if (this.notesError) this.notesError.classList.remove('hidden');
+        if (this.notesErrorText) this.notesErrorText.textContent = msg;
+        if (this.notesGeneratePanel) this.notesGeneratePanel.classList.remove('hidden');
+        if (this.notesDisplay) this.notesDisplay.classList.add('hidden');
+    }
+
+    async copyMeetingNotes() {
+        const text = this.notesContent ? this.notesContent.innerText : '';
+        if (!text) return;
+        try {
+            await navigator.clipboard.writeText(text);
+            if (this.notesCopyBtn) {
+                const orig = this.notesCopyBtn.textContent;
+                this.notesCopyBtn.textContent = '✅ Copied';
+                setTimeout(() => { this.notesCopyBtn.textContent = orig; }, 1500);
+            }
+        } catch (err) {
+            console.error('Copy notes failed:', err);
+        }
+    }
+
+    async deleteMeetingNotes() {
+        if (!this.currentEntryId) return;
+        if (!window.electronAPI || !window.electronAPI.meetingNotes) return;
+        if (!confirm('Delete meeting notes for this transcription?')) return;
+
+        try {
+            await window.electronAPI.meetingNotes.delete(this.currentEntryId);
+            this.showNotesGeneratePanel();
+            if (this.notesBadge) this.notesBadge.classList.add('hidden');
+        } catch (err) {
+            console.error('Delete notes failed:', err);
+        }
+    }
+
+    renderNotesMarkdown(text) {
+        // Simple markdown-to-HTML conversion for meeting notes display
+        let html = this.escapeHtml(text);
+        // Headers
+        html = html.replace(/^### (.+)$/gm, '<h5>$1</h5>');
+        html = html.replace(/^## (.+)$/gm, '<h4>$1</h4>');
+        html = html.replace(/^# (.+)$/gm, '<h3>$1</h3>');
+        // Bold
+        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        // Italic
+        html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        // Checkboxes
+        html = html.replace(/^- \[x\] (.+)$/gm, '<div class="meeting-notes-checkbox checked">☑ $1</div>');
+        html = html.replace(/^- \[ \] (.+)$/gm, '<div class="meeting-notes-checkbox">☐ $1</div>');
+        // Bullet lists
+        html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+        // Wrap consecutive <li> in <ul>
+        html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
+        // Tables (basic)
+        html = html.replace(/^\|(.+)\|$/gm, (match, content) => {
+            const cells = content.split('|').map(c => c.trim());
+            const tds = cells.map(c => {
+                if (/^-+$/.test(c)) return null; // separator row
+                return `<td>${c}</td>`;
+            });
+            if (tds.includes(null)) return ''; // skip separator rows
+            return `<tr>${tds.join('')}</tr>`;
+        });
+        html = html.replace(/((?:<tr>.*<\/tr>\n?)+)/g, '<table class="meeting-notes-table">$1</table>');
+        // Paragraphs - wrap remaining text blocks
+        html = html.replace(/\n\n/g, '</p><p>');
+        html = '<p>' + html + '</p>';
+        // Clean up empty paragraphs
+        html = html.replace(/<p>\s*<\/p>/g, '');
+        html = html.replace(/<p>(<h[345]>)/g, '$1');
+        html = html.replace(/(<\/h[345]>)<\/p>/g, '$1');
+        html = html.replace(/<p>(<ul>)/g, '$1');
+        html = html.replace(/(<\/ul>)<\/p>/g, '$1');
+        html = html.replace(/<p>(<table)/g, '$1');
+        html = html.replace(/(<\/table>)<\/p>/g, '$1');
+        html = html.replace(/<p>(<div)/g, '$1');
+        html = html.replace(/(<\/div>)<\/p>/g, '$1');
+        return html;
+    }
+
+    // ── Existing methods ─────────────────────────────────────
 
     openRenameForm() {
         if (!this.renameForm || !this.renameInput || !this.detailTitle) return;
@@ -348,6 +614,9 @@ class LibraryController {
             if (this.detailEmpty) this.detailEmpty.classList.add('hidden');
             if (this.detailContent) this.detailContent.classList.remove('hidden');
 
+            // Load meeting notes for this transcription
+            this.loadMeetingNotes(id);
+
             const transcriptionController = window.whisperApp && window.whisperApp.controllers && window.whisperApp.controllers.transcription;
             if (transcriptionController) {
                 if (entry.audioFilePath) {
@@ -431,6 +700,10 @@ class LibraryController {
         if (!confirm(`Delete transcription "${title}"? This cannot be undone.`)) return;
 
         try {
+            // Also delete associated meeting notes
+            if (window.electronAPI.meetingNotes) {
+                await window.electronAPI.meetingNotes.delete(this.currentEntryId).catch(() => {});
+            }
             await window.electronAPI.transcriptions.delete(this.currentEntryId);
             this.clearDetail();
             await this.search();

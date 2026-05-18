@@ -280,6 +280,32 @@ describe('IPCHandlers', () => {
             await expect(handlers.handleTranscribeAudio(mockEvent, audioData))
                 .rejects.toThrow('Local Whisper is not available');
         });
+
+        it('should auto-store final transcriptions by default', async () => {
+            const audioData = Buffer.from('audio data');
+            mockTranscriptionService.transcribeBuffer.mockResolvedValue({
+                success: true,
+                text: 'Hello world',
+                language: 'en'
+            });
+
+            await handlers.handleTranscribeAudio(mockEvent, audioData);
+
+            expect(handlers.transcriptionStoreService.store).toHaveBeenCalledTimes(1);
+        });
+
+        it('should not store ongoing chunks when skipStore is true', async () => {
+            const audioData = Buffer.from('audio data');
+            mockTranscriptionService.transcribeBuffer.mockResolvedValue({
+                success: true,
+                text: 'partial chunk',
+                language: 'en'
+            });
+
+            await handlers.handleTranscribeAudio(mockEvent, audioData, null, { skipStore: true });
+
+            expect(handlers.transcriptionStoreService.store).not.toHaveBeenCalled();
+        });
     });
 
     describe('handleGetConfig', () => {

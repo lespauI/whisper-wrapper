@@ -21,7 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
     // Transcription
     transcribeFile: (filePath) => ipcRenderer.invoke('transcription:file', filePath),
-    transcribeAudio: (audioData, prompt = null) => ipcRenderer.invoke('transcription:audio', audioData, prompt),
+    transcribeAudio: (audioData, prompt = null, options = {}) => ipcRenderer.invoke('transcription:audio', audioData, prompt, options),
   
     // Configuration
     getConfig: () => ipcRenderer.invoke('config:get'),

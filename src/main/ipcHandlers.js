@@ -373,7 +373,7 @@ class IPCHandlers {
         }
     }
 
-    async handleTranscribeAudio(event, audioData, prompt = null) {
+    async handleTranscribeAudio(event, audioData, prompt = null, options = {}) {
         try {
             // Get current configuration
             const currentConfig = config.getSimplified();
@@ -439,11 +439,13 @@ class IPCHandlers {
                 message: 'Transcription completed successfully' 
             });
 
-            this.transcriptionStoreService.store(result.text, {
-                language: result.language,
-                duration: result.duration,
-                model: currentConfig.model || ''
-            }).catch(err => console.error('Failed to auto-store transcription:', err));
+            if (!options.skipStore) {
+                this.transcriptionStoreService.store(result.text, {
+                    language: result.language,
+                    duration: result.duration,
+                    model: currentConfig.model || ''
+                }).catch(err => console.error('Failed to auto-store transcription:', err));
+            }
 
             return {
                 success: true,

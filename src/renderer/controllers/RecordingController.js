@@ -1429,7 +1429,7 @@ export class RecordingController {
 
                 for (let i = 0; i < wavBuffers.length; i++) {
                     try { VADMetrics.onSentSegment(1); } catch {}
-                    const subResult = await window.electronAPI.transcribeAudio(wavBuffers[i], runningPrompt || null);
+                    const subResult = await window.electronAPI.transcribeAudio(wavBuffers[i], runningPrompt || null, { skipStore: true });
                     if (subResult.success && subResult.text && subResult.text.trim()) {
                         const cleanText = subResult.text.trim();
                         console.log(`✓ Chunk ${queueItem.chunkNumber} seg ${i + 1}/${wavBuffers.length}: "${cleanText}"`);

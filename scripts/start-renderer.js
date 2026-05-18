@@ -5,10 +5,14 @@ const fs = require('fs');
 const app = express();
 const PORT = 3000;
 
-// Prefer serving from src during development; fall back to dist if present/forced
+// Always serve from src in dev so source-level changes (e.g. controller fixes)
+// take effect immediately. A stale `src/renderer/dist` from a previous build
+// would otherwise silently shadow source changes. Set USE_DIST=1 to opt in to
+// the built bundle for prod-like testing.
 const srcRoot = path.join(__dirname, '../src/renderer');
 const distRoot = path.join(__dirname, '../src/renderer/dist');
-const useDist = process.env.USE_DIST === '1' || (fs.existsSync(distRoot) && fs.existsSync(path.join(distRoot, 'index.html')));
+const distHasIndex = fs.existsSync(distRoot) && fs.existsSync(path.join(distRoot, 'index.html'));
+const useDist = process.env.USE_DIST === '1' && distHasIndex;
 const root = useDist ? distRoot : srcRoot;
 
 app.use(express.static(root));

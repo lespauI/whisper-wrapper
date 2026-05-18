@@ -7,6 +7,14 @@ export interface ModelOption {
   displayName: string;
 }
 
+/**
+ * Page object for the inline Settings panel.
+ *
+ * The settings UI is the `#settings-header` panel toggled by the
+ * SettingsController via the `visible` / `hidden` classes (see
+ * `src/renderer/styles/main.css`). The panel header text lives in
+ * `.settings-title`, not in any `.modal-header`.
+ */
 export class SettingsPage extends BasePage {
   readonly settingsBtn: Locator;
   readonly settingsModal: Locator;
@@ -18,13 +26,19 @@ export class SettingsPage extends BasePage {
   readonly translateCheckbox: Locator;
   readonly saveSettingsBtn: Locator;
   readonly cancelSettingsBtn: Locator;
+  readonly closeSettingsBtn: Locator;
   readonly modelInfoBtn: Locator;
+  readonly aiRefinementEnabledCheckbox: Locator;
+  readonly ollamaEndpointInput: Locator;
+  readonly ollamaTimeoutInput: Locator;
+  readonly ollamaModelSelect: Locator;
 
   constructor(page: Page) {
     super(page);
     this.settingsBtn = page.locator('#settings-btn');
-    this.settingsModal = page.locator('#settings-modal');
-    this.modalHeader = page.locator('#settings-modal .modal-header h3');
+    // The settings "modal" is actually an inline panel toggled by `.visible`.
+    this.settingsModal = page.locator('#settings-header');
+    this.modalHeader = page.locator('#settings-header .settings-title');
     this.modelSelect = page.locator('#model-select');
     this.modelDescription = page.locator('#model-description');
     this.languageSelect = page.locator('#language-select');
@@ -32,12 +46,18 @@ export class SettingsPage extends BasePage {
     this.translateCheckbox = page.locator('#translate-checkbox');
     this.saveSettingsBtn = page.locator('#save-settings-btn');
     this.cancelSettingsBtn = page.locator('#cancel-settings-btn');
+    this.closeSettingsBtn = page.locator('#close-settings-btn');
     this.modelInfoBtn = page.locator('#model-info-btn');
+    this.aiRefinementEnabledCheckbox = page.locator('#ai-refinement-enabled-checkbox');
+    this.ollamaEndpointInput = page.locator('#ollama-endpoint');
+    this.ollamaTimeoutInput = page.locator('#ollama-timeout');
+    this.ollamaModelSelect = page.locator('#ollama-model-select');
   }
 
   async openSettings() {
     await this.settingsBtn.click();
-    await expect(this.settingsModal).toBeVisible();
+    // The panel uses a class toggle, not display:none in its open state.
+    await expect(this.settingsModal).toHaveClass(/visible/);
     await expect(this.modalHeader).toContainText('Settings');
   }
 
@@ -63,9 +83,9 @@ export class SettingsPage extends BasePage {
   async verifyModelOptions() {
     await expect(this.modelSelect).toBeVisible();
     await this.waitForModelsToLoad();
-    
+
     const expectedModels = await this.getModelOptions();
-    
+
     // Verify each expected model option exists with correct pattern
     for (const model of expectedModels) {
       const option = this.modelSelect.locator(`option[value="${model.value}"]`);
@@ -75,7 +95,7 @@ export class SettingsPage extends BasePage {
         expect(optionText).toMatch(model.textPattern);
       }
     }
-    
+
     // Verify total number of options matches expected
     const allOptions = this.modelSelect.locator('option');
     await expect(allOptions).toHaveCount(expectedModels.length);
@@ -111,12 +131,12 @@ export class SettingsPage extends BasePage {
 
   async saveSettings() {
     await this.saveSettingsBtn.click();
-    // Note: Modal might stay open during download operations
-    await this.page.waitForTimeout(2000);
+    // After save, SettingsController removes `.visible` from the panel.
+    await expect(this.settingsModal).not.toHaveClass(/visible/);
   }
 
   async closeModal() {
-    // Close modal if it's still open (for cleanup)
+    // Close panel if it's still open (for cleanup)
     if (await this.isModalVisible()) {
       await this.cancelSettings();
     }
@@ -124,11 +144,12 @@ export class SettingsPage extends BasePage {
 
   async cancelSettings() {
     await this.cancelSettingsBtn.click();
-    await expect(this.settingsModal).toBeHidden();
+    await expect(this.settingsModal).not.toHaveClass(/visible/);
   }
 
   async isModalVisible(): Promise<boolean> {
-    return await this.settingsModal.isVisible();
+    const classes = (await this.settingsModal.getAttribute('class')) ?? '';
+    return classes.split(/\s+/).includes('visible');
   }
 
   async configureSettings(config: {

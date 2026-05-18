@@ -19,6 +19,9 @@ export class SettingsPage extends BasePage {
   readonly saveSettingsBtn: Locator;
   readonly cancelSettingsBtn: Locator;
   readonly modelInfoBtn: Locator;
+  readonly aiRefinementEnabledCheckbox: Locator;
+  readonly ollamaEndpointInput: Locator;
+  readonly ollamaTimeoutInput: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -33,6 +36,9 @@ export class SettingsPage extends BasePage {
     this.saveSettingsBtn = page.locator('#save-settings-btn');
     this.cancelSettingsBtn = page.locator('#cancel-settings-btn');
     this.modelInfoBtn = page.locator('#model-info-btn');
+    this.aiRefinementEnabledCheckbox = page.locator('#ai-refinement-enabled-checkbox');
+    this.ollamaEndpointInput = page.locator('#ollama-endpoint');
+    this.ollamaTimeoutInput = page.locator('#ollama-timeout');
   }
 
   async openSettings() {

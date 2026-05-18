@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { SettingsPage } from '../pages';
 
 /**
  * E2E tests guarding the Settings panel against state-loading regressions.
@@ -178,23 +179,6 @@ async function installElectronApiMock(page: Page, initial: ConfigState) {
   }, initial);
 }
 
-async function openSettingsPanel(page: Page) {
-  await page.locator('#settings-btn').click();
-  await expect(page.locator('#settings-header')).toHaveClass(/visible/);
-  // Wait for loadSettings() to populate the AI refinement section.
-  await expect(page.locator('#ai-refinement-enabled-checkbox')).toBeVisible();
-}
-
-async function closeSettingsPanel(page: Page) {
-  await page.locator('#cancel-settings-btn').click();
-  await expect(page.locator('#settings-header')).not.toHaveClass(/visible/);
-}
-
-async function saveSettingsPanel(page: Page) {
-  await page.locator('#save-settings-btn').click();
-  await expect(page.locator('#settings-header')).not.toHaveClass(/visible/);
-}
-
 async function getMockCalls(page: Page) {
   return page.evaluate(() =>
     (window as unknown as { __mockCalls: { name: string; args: unknown[] }[] }).__mockCalls
@@ -207,37 +191,44 @@ async function getMockState(page: Page) {
   );
 }
 
+// Local helper: install mock, navigate, and return a SettingsPage object.
+// We can't use the shared `settingsPage` fixture because it navigates before
+// `addInitScript` would have a chance to install the IPC mock.
+async function bootSettings(page: Page, state: ConfigState = DEFAULT_STATE) {
+  await installElectronApiMock(page, state);
+  const settingsPage = new SettingsPage(page);
+  await settingsPage.goto();
+  return settingsPage;
+}
+
 test.describe('Settings panel — AI Refinement persistence', () => {
   test('checkbox reflects saved enabled=true on open', async ({ page }) => {
-    await installElectronApiMock(page, DEFAULT_STATE);
-    await page.goto('/');
+    const settingsPage = await bootSettings(page);
 
-    await openSettingsPanel(page);
+    await settingsPage.openSettings();
 
-    await expect(page.locator('#ai-refinement-enabled-checkbox')).toBeChecked();
+    await expect(settingsPage.aiRefinementEnabledCheckbox).toBeChecked();
   });
 
   test('checkbox reflects saved enabled=false on open', async ({ page }) => {
     const state: ConfigState = JSON.parse(JSON.stringify(DEFAULT_STATE));
     state.aiRefinement.enabled = false;
-    await installElectronApiMock(page, state);
-    await page.goto('/');
+    const settingsPage = await bootSettings(page, state);
 
-    await openSettingsPanel(page);
+    await settingsPage.openSettings();
 
-    await expect(page.locator('#ai-refinement-enabled-checkbox')).not.toBeChecked();
+    await expect(settingsPage.aiRefinementEnabledCheckbox).not.toBeChecked();
   });
 
   test('saving unrelated changes (language) preserves enabled=true', async ({ page }) => {
-    await installElectronApiMock(page, DEFAULT_STATE);
-    await page.goto('/');
+    const settingsPage = await bootSettings(page);
 
-    await openSettingsPanel(page);
-    await expect(page.locator('#ai-refinement-enabled-checkbox')).toBeChecked();
+    await settingsPage.openSettings();
+    await expect(settingsPage.aiRefinementEnabledCheckbox).toBeChecked();
 
     // Change language only — the AI Refinement checkbox must be left alone.
-    await page.locator('#language-select').selectOption('es');
-    await saveSettingsPanel(page);
+    await settingsPage.configureSettings({ language: 'es' });
+    await settingsPage.saveSettings();
 
     const calls = await getMockCalls(page);
     const saveCall = calls.find(c => c.name === 'saveAIRefinementSettings');
@@ -248,34 +239,33 @@ test.describe('Settings panel — AI Refinement persistence', () => {
     expect(state.aiRefinement.enabled).toBe(true);
 
     // Re-open: checkbox should still be checked.
-    await openSettingsPanel(page);
-    await expect(page.locator('#ai-refinement-enabled-checkbox')).toBeChecked();
+    await settingsPage.openSettings();
+    await expect(settingsPage.aiRefinementEnabledCheckbox).toBeChecked();
   });
 
   test('checkbox state survives close/reopen without saving', async ({ page }) => {
-    await installElectronApiMock(page, DEFAULT_STATE);
-    await page.goto('/');
+    const settingsPage = await bootSettings(page);
 
-    await openSettingsPanel(page);
-    await expect(page.locator('#ai-refinement-enabled-checkbox')).toBeChecked();
-    await closeSettingsPanel(page);
+    await settingsPage.openSettings();
+    await expect(settingsPage.aiRefinementEnabledCheckbox).toBeChecked();
+    await settingsPage.cancelSettings();
 
-    await openSettingsPanel(page);
-    await expect(page.locator('#ai-refinement-enabled-checkbox')).toBeChecked();
+    await settingsPage.openSettings();
+    await expect(settingsPage.aiRefinementEnabledCheckbox).toBeChecked();
   });
 
   test('toggling the checkbox off and saving persists enabled=false', async ({ page }) => {
-    await installElectronApiMock(page, DEFAULT_STATE);
-    await page.goto('/');
+    const settingsPage = await bootSettings(page);
 
-    await openSettingsPanel(page);
-    await page.locator('#ai-refinement-enabled-checkbox').uncheck();
-    await saveSettingsPanel(page);
+    await settingsPage.openSettings();
+    // The styled-checkbox is opacity:0; toggle via the underlying input.
+    await settingsPage.aiRefinementEnabledCheckbox.setChecked(false, { force: true });
+    await settingsPage.saveSettings();
 
     const state = await getMockState(page);
     expect(state.aiRefinement.enabled).toBe(false);
 
-    await openSettingsPanel(page);
-    await expect(page.locator('#ai-refinement-enabled-checkbox')).not.toBeChecked();
+    await settingsPage.openSettings();
+    await expect(settingsPage.aiRefinementEnabledCheckbox).not.toBeChecked();
   });
 });

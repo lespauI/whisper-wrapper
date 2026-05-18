@@ -439,7 +439,8 @@ class IPCHandlers {
                 message: 'Transcription completed successfully' 
             });
 
-            if (!options.skipStore) {
+            const skipStore = !!(options && typeof options === 'object' && options.skipStore === true);
+            if (!skipStore) {
                 this.transcriptionStoreService.store(result.text, {
                     language: result.language,
                     duration: result.duration,

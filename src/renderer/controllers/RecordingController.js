@@ -254,6 +254,21 @@ export class RecordingController {
             this._applyVADRuntime({ engine });
         }));
 
+        // ---- Language Settings (mirror of settings panel) ----
+        EventHandler.addListener('#record-language-select', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const language = String(e.target.value || '');
+            try { await window.electronAPI.setConfig({ language }); } catch (err) { console.warn('Failed to persist language:', err?.message); }
+            const settingsEl = UIHelpers.getElementById('language-select');
+            if (settingsEl) settingsEl.value = language;
+        }));
+
+        EventHandler.addListener('#record-translate-checkbox', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const translate = !!e.target.checked;
+            try { await window.electronAPI.setConfig({ translate }); } catch (err) { console.warn('Failed to persist translate:', err?.message); }
+            const settingsEl = UIHelpers.getElementById('translate-checkbox');
+            if (settingsEl) settingsEl.checked = translate;
+        }));
+
         // Initialize VAD settings UI from persisted config
         this._loadVADSettingsIntoUI();
     }
@@ -281,6 +296,11 @@ export class RecordingController {
             const elCaptureMode = UIHelpers.getElementById('capture-mode-select');
             if (elCaptureMode) elCaptureMode.value = captureMode;
             await this._updateCaptureModeUI(captureMode);
+
+            const elLang = UIHelpers.getElementById('record-language-select');
+            if (elLang) elLang.value = cfg && cfg.language ? cfg.language : '';
+            const elTranslate = UIHelpers.getElementById('record-translate-checkbox');
+            if (elTranslate) elTranslate.checked = !!(cfg && cfg.translate);
         } catch (e) {
             console.warn('Failed to load VAD settings into UI:', e?.message);
         }

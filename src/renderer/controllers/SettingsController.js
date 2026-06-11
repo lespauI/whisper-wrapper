@@ -160,9 +160,15 @@ export class SettingsController {
             
             // Get basic Whisper settings
             const model = UIHelpers.getValue('#model-select');
-            const language = UIHelpers.getValue('#language-select');
+            const languageUi = UIHelpers.getValue('#language-select');
+            const language = languageUi === '' ? 'auto' : languageUi;
             const threads = parseInt(UIHelpers.getValue('#threads-select'));
             const translate = UIHelpers.isChecked('#translate-checkbox');
+            // Mirror into Recording-screen copies to keep both UIs in sync
+            const recordLangEl = UIHelpers.getElementById('record-language-select');
+            if (recordLangEl) recordLangEl.value = languageUi;
+            const recordTranslateEl = UIHelpers.getElementById('record-translate-checkbox');
+            if (recordTranslateEl) recordTranslateEl.checked = translate;
             const useInitialPrompt = UIHelpers.isChecked('#use-initial-prompt-checkbox');
             const initialPrompt = UIHelpers.getValue('#initial-prompt');
             const useGpu = UIHelpers.isChecked('#use-gpu-checkbox');
@@ -231,13 +237,16 @@ export class SettingsController {
                 this.updateModelDescription(settings.model);
             }
             if (settings.language) {
-                UIHelpers.setValue('#language-select', settings.language);
+                const langUi = settings.language === 'auto' ? '' : settings.language;
+                UIHelpers.setValue('#language-select', langUi);
+                UIHelpers.setValue('#record-language-select', langUi);
             }
             if (settings.threads) {
                 UIHelpers.setValue('#threads-select', settings.threads.toString());
             }
             if (settings.translate !== undefined) {
                 UIHelpers.setChecked('#translate-checkbox', settings.translate);
+                UIHelpers.setChecked('#record-translate-checkbox', settings.translate);
             }
             if (settings.useInitialPrompt !== undefined) {
                 UIHelpers.setChecked('#use-initial-prompt-checkbox', settings.useInitialPrompt);

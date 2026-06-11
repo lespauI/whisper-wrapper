@@ -256,10 +256,11 @@ export class RecordingController {
 
         // ---- Language Settings (mirror of settings panel) ----
         EventHandler.addListener('#record-language-select', 'change', EventHandler.createAsyncHandler(async (e) => {
-            const language = String(e.target.value || '');
+            const uiValue = String(e.target.value || '');
+            const language = uiValue === '' ? 'auto' : uiValue;
             try { await window.electronAPI.setConfig({ language }); } catch (err) { console.warn('Failed to persist language:', err?.message); }
             const settingsEl = UIHelpers.getElementById('language-select');
-            if (settingsEl) settingsEl.value = language;
+            if (settingsEl) settingsEl.value = uiValue;
         }));
 
         EventHandler.addListener('#record-translate-checkbox', 'change', EventHandler.createAsyncHandler(async (e) => {
@@ -298,7 +299,10 @@ export class RecordingController {
             await this._updateCaptureModeUI(captureMode);
 
             const elLang = UIHelpers.getElementById('record-language-select');
-            if (elLang) elLang.value = cfg && cfg.language ? cfg.language : '';
+            if (elLang) {
+                const persisted = cfg && cfg.language;
+                elLang.value = (!persisted || persisted === 'auto') ? '' : persisted;
+            }
             const elTranslate = UIHelpers.getElementById('record-translate-checkbox');
             if (elTranslate) elTranslate.checked = !!(cfg && cfg.translate);
         } catch (e) {

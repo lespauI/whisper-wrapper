@@ -255,7 +255,12 @@ export class RecordingController {
         }));
 
         // ---- Language Settings (mirror of settings panel) ----
+        // Per-field request sequence to ignore results from stale in-flight saves.
+        this._languageSaveSeq = 0;
+        this._translateSaveSeq = 0;
+
         EventHandler.addListener('#record-language-select', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const seq = ++this._languageSaveSeq;
             const uiValue = String(e.target.value || '');
             const language = uiValue === '' ? 'auto' : uiValue;
             let saved = false;
@@ -268,11 +273,17 @@ export class RecordingController {
                 errMsg = err?.message || 'Failed to save language';
                 console.warn('Failed to persist language:', errMsg);
             }
+            // Ignore stale results — only the latest request may touch the UI.
+            if (seq !== this._languageSaveSeq) return;
             if (saved) {
+                // Reassert the resolved value on both controls so an earlier
+                // failed rollback cannot leave the Recording control stale.
+                if (e.target) e.target.value = uiValue;
                 const settingsEl = UIHelpers.getElementById('language-select');
                 if (settingsEl) settingsEl.value = uiValue;
             } else {
                 await this._restoreLanguageUiFromConfig(e.target);
+                if (seq !== this._languageSaveSeq) return;
                 if (this.statusController && this.statusController.showError) {
                     this.statusController.showError(errMsg);
                 }
@@ -280,6 +291,7 @@ export class RecordingController {
         }));
 
         EventHandler.addListener('#record-translate-checkbox', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const seq = ++this._translateSaveSeq;
             const translate = !!e.target.checked;
             let saved = false;
             let errMsg = null;
@@ -291,11 +303,14 @@ export class RecordingController {
                 errMsg = err?.message || 'Failed to save translate option';
                 console.warn('Failed to persist translate:', errMsg);
             }
+            if (seq !== this._translateSaveSeq) return;
             if (saved) {
+                if (e.target) e.target.checked = translate;
                 const settingsEl = UIHelpers.getElementById('translate-checkbox');
                 if (settingsEl) settingsEl.checked = translate;
             } else {
                 await this._restoreTranslateUiFromConfig(e.target);
+                if (seq !== this._translateSaveSeq) return;
                 if (this.statusController && this.statusController.showError) {
                     this.statusController.showError(errMsg);
                 }

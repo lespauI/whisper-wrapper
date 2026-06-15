@@ -320,6 +320,39 @@ describe('Recording-screen Language Settings', () => {
         expect(document.getElementById('language-select').value).toBe('ko');
     });
 
+    test('overlapping Recording-screen saves: earlier failure must not leave the control stale after a later success', async () => {
+        global.window.electronAPI.getConfig.mockResolvedValue({ language: 'en', translate: false });
+        const controller = buildRecordingController();
+        await controller._loadVADSettingsIntoUI();
+
+        // Two pending setConfig calls: first fails (request A), second succeeds (request B).
+        let resolveA;
+        let resolveB;
+        global.window.electronAPI.setConfig
+            .mockImplementationOnce(() => new Promise((res) => { resolveA = res; }))
+            .mockImplementationOnce(() => new Promise((res) => { resolveB = res; }));
+
+        const recLang = document.getElementById('record-language-select');
+
+        // User changes to 'ja' (request A)
+        recLang.value = 'ja';
+        fireChange(recLang);
+        // User quickly changes to 'ko' (request B) before A resolves
+        recLang.value = 'ko';
+        fireChange(recLang);
+
+        // Request A fails first, then request B succeeds
+        resolveA({ success: false, message: 'no' });
+        resolveB({ success: true });
+
+        await new Promise((r) => setImmediate(r));
+        await new Promise((r) => setImmediate(r));
+
+        // Final state must match the latest successful request, not the rollback.
+        expect(recLang.value).toBe('ko');
+        expect(document.getElementById('language-select').value).toBe('ko');
+    });
+
     test('Settings panel load mirrors language/translate into Recording screen', async () => {
         global.window.electronAPI.getConfig.mockResolvedValue({
             model: 'base', language: 'it', threads: 4, translate: true

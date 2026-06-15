@@ -164,11 +164,6 @@ export class SettingsController {
             const language = languageUi === '' ? 'auto' : languageUi;
             const threads = parseInt(UIHelpers.getValue('#threads-select'));
             const translate = UIHelpers.isChecked('#translate-checkbox');
-            // Mirror into Recording-screen copies to keep both UIs in sync
-            const recordLangEl = UIHelpers.getElementById('record-language-select');
-            if (recordLangEl) recordLangEl.value = languageUi;
-            const recordTranslateEl = UIHelpers.getElementById('record-translate-checkbox');
-            if (recordTranslateEl) recordTranslateEl.checked = translate;
             const useInitialPrompt = UIHelpers.isChecked('#use-initial-prompt-checkbox');
             const initialPrompt = UIHelpers.getValue('#initial-prompt');
             const useGpu = UIHelpers.isChecked('#use-gpu-checkbox');
@@ -213,6 +208,12 @@ export class SettingsController {
 
             // Save Meeting Notes settings
             await this.saveMeetingNotesSettings();
+
+            // Mirror into Recording-screen copies only after a successful save
+            const recordLangEl = UIHelpers.getElementById('record-language-select');
+            if (recordLangEl) recordLangEl.value = languageUi;
+            const recordTranslateEl = UIHelpers.getElementById('record-translate-checkbox');
+            if (recordTranslateEl) recordTranslateEl.checked = translate;
 
             this.closeSettings();
             this.statusController.updateStatus('Settings saved successfully');

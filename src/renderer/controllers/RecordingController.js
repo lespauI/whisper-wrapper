@@ -258,16 +258,32 @@ export class RecordingController {
         EventHandler.addListener('#record-language-select', 'change', EventHandler.createAsyncHandler(async (e) => {
             const uiValue = String(e.target.value || '');
             const language = uiValue === '' ? 'auto' : uiValue;
-            try { await window.electronAPI.setConfig({ language }); } catch (err) { console.warn('Failed to persist language:', err?.message); }
-            const settingsEl = UIHelpers.getElementById('language-select');
-            if (settingsEl) settingsEl.value = uiValue;
+            let saved = false;
+            try {
+                const result = await window.electronAPI.setConfig({ language });
+                saved = !result || result.success !== false;
+            } catch (err) {
+                console.warn('Failed to persist language:', err?.message);
+            }
+            if (saved) {
+                const settingsEl = UIHelpers.getElementById('language-select');
+                if (settingsEl) settingsEl.value = uiValue;
+            }
         }));
 
         EventHandler.addListener('#record-translate-checkbox', 'change', EventHandler.createAsyncHandler(async (e) => {
             const translate = !!e.target.checked;
-            try { await window.electronAPI.setConfig({ translate }); } catch (err) { console.warn('Failed to persist translate:', err?.message); }
-            const settingsEl = UIHelpers.getElementById('translate-checkbox');
-            if (settingsEl) settingsEl.checked = translate;
+            let saved = false;
+            try {
+                const result = await window.electronAPI.setConfig({ translate });
+                saved = !result || result.success !== false;
+            } catch (err) {
+                console.warn('Failed to persist translate:', err?.message);
+            }
+            if (saved) {
+                const settingsEl = UIHelpers.getElementById('translate-checkbox');
+                if (settingsEl) settingsEl.checked = translate;
+            }
         }));
 
         // Initialize VAD settings UI from persisted config

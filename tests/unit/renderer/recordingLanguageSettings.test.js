@@ -289,6 +289,37 @@ describe('Recording-screen Language Settings', () => {
         expect(document.getElementById('record-language-select').value).toBe('');
     });
 
+    test('Recording rollback uses currently persisted value, not a stale cache, after Settings panel saved a new language', async () => {
+        // Start with persisted language=en
+        global.window.electronAPI.getConfig.mockResolvedValue({ language: 'en', translate: false });
+        const recording = buildRecordingController();
+        await recording._loadVADSettingsIntoUI();
+
+        // Settings panel persists language=ko
+        const settings = buildSettingsController();
+        document.getElementById('model-select').value = 'base';
+        document.getElementById('language-select').value = 'ko';
+        document.getElementById('threads-select').value = '4';
+        document.getElementById('translate-checkbox').checked = false;
+        await settings.saveSettings();
+        // From now on, getConfig reflects the new persisted state
+        global.window.electronAPI.getConfig.mockResolvedValue({ language: 'ko', translate: false });
+
+        // Recording screen now shows 'ko' (mirrored by Settings panel save)
+        expect(document.getElementById('record-language-select').value).toBe('ko');
+
+        // User changes Recording screen to 'ja' but the save fails
+        global.window.electronAPI.setConfig.mockResolvedValueOnce({ success: false, message: 'no' });
+        const recLang = document.getElementById('record-language-select');
+        recLang.value = 'ja';
+        fireChange(recLang);
+        await new Promise((r) => setImmediate(r));
+
+        // Rollback MUST restore the current persisted value 'ko', not stale 'en'
+        expect(recLang.value).toBe('ko');
+        expect(document.getElementById('language-select').value).toBe('ko');
+    });
+
     test('Settings panel load mirrors language/translate into Recording screen', async () => {
         global.window.electronAPI.getConfig.mockResolvedValue({
             model: 'base', language: 'it', threads: 4, translate: true

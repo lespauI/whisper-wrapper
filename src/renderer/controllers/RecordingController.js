@@ -255,12 +255,7 @@ export class RecordingController {
         }));
 
         // ---- Language Settings (mirror of settings panel) ----
-        // Cache the last persisted UI values so we can roll back on failure.
-        this._lastPersistedLanguageUi = '';
-        this._lastPersistedTranslate = false;
-
         EventHandler.addListener('#record-language-select', 'change', EventHandler.createAsyncHandler(async (e) => {
-            const previousUi = this._lastPersistedLanguageUi;
             const uiValue = String(e.target.value || '');
             const language = uiValue === '' ? 'auto' : uiValue;
             let saved = false;
@@ -274,11 +269,10 @@ export class RecordingController {
                 console.warn('Failed to persist language:', errMsg);
             }
             if (saved) {
-                this._lastPersistedLanguageUi = uiValue;
                 const settingsEl = UIHelpers.getElementById('language-select');
                 if (settingsEl) settingsEl.value = uiValue;
             } else {
-                e.target.value = previousUi;
+                await this._restoreLanguageUiFromConfig(e.target);
                 if (this.statusController && this.statusController.showError) {
                     this.statusController.showError(errMsg);
                 }
@@ -286,7 +280,6 @@ export class RecordingController {
         }));
 
         EventHandler.addListener('#record-translate-checkbox', 'change', EventHandler.createAsyncHandler(async (e) => {
-            const previous = this._lastPersistedTranslate;
             const translate = !!e.target.checked;
             let saved = false;
             let errMsg = null;
@@ -299,11 +292,10 @@ export class RecordingController {
                 console.warn('Failed to persist translate:', errMsg);
             }
             if (saved) {
-                this._lastPersistedTranslate = translate;
                 const settingsEl = UIHelpers.getElementById('translate-checkbox');
                 if (settingsEl) settingsEl.checked = translate;
             } else {
-                e.target.checked = previous;
+                await this._restoreTranslateUiFromConfig(e.target);
                 if (this.statusController && this.statusController.showError) {
                     this.statusController.showError(errMsg);
                 }
@@ -341,14 +333,46 @@ export class RecordingController {
             const persistedLang = cfg && cfg.language;
             const langUi = (!persistedLang || persistedLang === 'auto') ? '' : persistedLang;
             const persistedTranslate = !!(cfg && cfg.translate);
-            this._lastPersistedLanguageUi = langUi;
-            this._lastPersistedTranslate = persistedTranslate;
             const elLang = UIHelpers.getElementById('record-language-select');
             if (elLang) elLang.value = langUi;
             const elTranslate = UIHelpers.getElementById('record-translate-checkbox');
             if (elTranslate) elTranslate.checked = persistedTranslate;
         } catch (e) {
             console.warn('Failed to load VAD settings into UI:', e?.message);
+        }
+    }
+
+    /**
+     * Read the currently persisted language and write it back into the given
+     * Recording-screen select (and mirror into the Settings panel control).
+     * Used to roll back a failed save without relying on a local cache.
+     */
+    async _restoreLanguageUiFromConfig(targetEl) {
+        try {
+            const cfg = await window.electronAPI.getConfig();
+            const persisted = cfg && cfg.language;
+            const langUi = (!persisted || persisted === 'auto') ? '' : persisted;
+            if (targetEl) targetEl.value = langUi;
+            const settingsEl = UIHelpers.getElementById('language-select');
+            if (settingsEl) settingsEl.value = langUi;
+        } catch (err) {
+            console.warn('Failed to reload language from config:', err?.message);
+        }
+    }
+
+    /**
+     * Read the currently persisted translate flag and write it back into the
+     * given Recording-screen checkbox (and mirror into the Settings panel).
+     */
+    async _restoreTranslateUiFromConfig(targetEl) {
+        try {
+            const cfg = await window.electronAPI.getConfig();
+            const persisted = !!(cfg && cfg.translate);
+            if (targetEl) targetEl.checked = persisted;
+            const settingsEl = UIHelpers.getElementById('translate-checkbox');
+            if (settingsEl) settingsEl.checked = persisted;
+        } catch (err) {
+            console.warn('Failed to reload translate from config:', err?.message);
         }
     }
 

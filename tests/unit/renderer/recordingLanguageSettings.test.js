@@ -172,9 +172,11 @@ describe('Recording-screen Language Settings', () => {
         expect(document.getElementById('translate-checkbox').checked).toBe(true);
     });
 
-    test('Recording -> Settings: do NOT mirror when setConfig reports success:false', async () => {
-        global.window.electronAPI.setConfig.mockResolvedValue({ success: false });
-        buildRecordingController();
+    test('Recording -> Settings: do NOT mirror and roll back originating control when setConfig reports success:false', async () => {
+        global.window.electronAPI.getConfig.mockResolvedValue({ language: 'en', translate: false });
+        global.window.electronAPI.setConfig.mockResolvedValue({ success: false, message: 'no' });
+        const controller = buildRecordingController();
+        await controller._loadVADSettingsIntoUI();
 
         // Seed settings panel with a known value so we can detect drift.
         document.getElementById('language-select').value = 'en';
@@ -185,11 +187,15 @@ describe('Recording-screen Language Settings', () => {
         await new Promise((r) => setImmediate(r));
 
         expect(document.getElementById('language-select').value).toBe('en');
+        expect(document.getElementById('record-language-select').value).toBe('en');
+        expect(statusController.showError).toHaveBeenCalled();
     });
 
-    test('Recording -> Settings: do NOT mirror when setConfig throws', async () => {
+    test('Recording -> Settings: roll back originating control when setConfig throws', async () => {
+        global.window.electronAPI.getConfig.mockResolvedValue({ language: 'en', translate: false });
         global.window.electronAPI.setConfig.mockRejectedValue(new Error('boom'));
-        buildRecordingController();
+        const controller = buildRecordingController();
+        await controller._loadVADSettingsIntoUI();
 
         document.getElementById('translate-checkbox').checked = false;
 
@@ -199,6 +205,8 @@ describe('Recording-screen Language Settings', () => {
         await new Promise((r) => setImmediate(r));
 
         expect(document.getElementById('translate-checkbox').checked).toBe(false);
+        expect(document.getElementById('record-translate-checkbox').checked).toBe(false);
+        expect(statusController.showError).toHaveBeenCalled();
     });
 
     test('Settings panel save mirrors language/translate into Recording screen', async () => {
@@ -232,6 +240,24 @@ describe('Recording-screen Language Settings', () => {
             expect.objectContaining({ language: 'auto' })
         );
         expect(document.getElementById('record-language-select').value).toBe('');
+    });
+
+    test('Settings panel save mirrors language to Recording screen even if AI Refinement save fails', async () => {
+        global.window.electronAPI.saveAIRefinementSettings.mockRejectedValue(new Error('ai down'));
+        const controller = buildSettingsController();
+
+        document.getElementById('model-select').value = 'base';
+        document.getElementById('language-select').value = 'ko';
+        document.getElementById('threads-select').value = '4';
+        document.getElementById('translate-checkbox').checked = true;
+
+        await controller.saveSettings();
+
+        // Whisper settings (incl. language/translate) were already persisted
+        // before the AI Refinement save, so the Recording-screen copy must
+        // match the persisted state, not the prior stale UI state.
+        expect(document.getElementById('record-language-select').value).toBe('ko');
+        expect(document.getElementById('record-translate-checkbox').checked).toBe(true);
     });
 
     test('Settings panel save does NOT mirror to Recording screen when setConfig rejects', async () => {

@@ -255,34 +255,58 @@ export class RecordingController {
         }));
 
         // ---- Language Settings (mirror of settings panel) ----
+        // Cache the last persisted UI values so we can roll back on failure.
+        this._lastPersistedLanguageUi = '';
+        this._lastPersistedTranslate = false;
+
         EventHandler.addListener('#record-language-select', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const previousUi = this._lastPersistedLanguageUi;
             const uiValue = String(e.target.value || '');
             const language = uiValue === '' ? 'auto' : uiValue;
             let saved = false;
+            let errMsg = null;
             try {
                 const result = await window.electronAPI.setConfig({ language });
                 saved = !result || result.success !== false;
+                if (!saved) errMsg = (result && result.message) || 'Failed to save language';
             } catch (err) {
-                console.warn('Failed to persist language:', err?.message);
+                errMsg = err?.message || 'Failed to save language';
+                console.warn('Failed to persist language:', errMsg);
             }
             if (saved) {
+                this._lastPersistedLanguageUi = uiValue;
                 const settingsEl = UIHelpers.getElementById('language-select');
                 if (settingsEl) settingsEl.value = uiValue;
+            } else {
+                e.target.value = previousUi;
+                if (this.statusController && this.statusController.showError) {
+                    this.statusController.showError(errMsg);
+                }
             }
         }));
 
         EventHandler.addListener('#record-translate-checkbox', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const previous = this._lastPersistedTranslate;
             const translate = !!e.target.checked;
             let saved = false;
+            let errMsg = null;
             try {
                 const result = await window.electronAPI.setConfig({ translate });
                 saved = !result || result.success !== false;
+                if (!saved) errMsg = (result && result.message) || 'Failed to save translate option';
             } catch (err) {
-                console.warn('Failed to persist translate:', err?.message);
+                errMsg = err?.message || 'Failed to save translate option';
+                console.warn('Failed to persist translate:', errMsg);
             }
             if (saved) {
+                this._lastPersistedTranslate = translate;
                 const settingsEl = UIHelpers.getElementById('translate-checkbox');
                 if (settingsEl) settingsEl.checked = translate;
+            } else {
+                e.target.checked = previous;
+                if (this.statusController && this.statusController.showError) {
+                    this.statusController.showError(errMsg);
+                }
             }
         }));
 
@@ -314,13 +338,15 @@ export class RecordingController {
             if (elCaptureMode) elCaptureMode.value = captureMode;
             await this._updateCaptureModeUI(captureMode);
 
+            const persistedLang = cfg && cfg.language;
+            const langUi = (!persistedLang || persistedLang === 'auto') ? '' : persistedLang;
+            const persistedTranslate = !!(cfg && cfg.translate);
+            this._lastPersistedLanguageUi = langUi;
+            this._lastPersistedTranslate = persistedTranslate;
             const elLang = UIHelpers.getElementById('record-language-select');
-            if (elLang) {
-                const persisted = cfg && cfg.language;
-                elLang.value = (!persisted || persisted === 'auto') ? '' : persisted;
-            }
+            if (elLang) elLang.value = langUi;
             const elTranslate = UIHelpers.getElementById('record-translate-checkbox');
-            if (elTranslate) elTranslate.checked = !!(cfg && cfg.translate);
+            if (elTranslate) elTranslate.checked = persistedTranslate;
         } catch (e) {
             console.warn('Failed to load VAD settings into UI:', e?.message);
         }

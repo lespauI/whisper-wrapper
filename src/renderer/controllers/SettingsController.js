@@ -202,18 +202,20 @@ export class SettingsController {
                     return;
                 }
             }
-            
+
+            // Basic Whisper settings (including language/translate) are now
+            // persisted. Mirror into the Recording-screen copies immediately so
+            // they stay in sync even if later section saves fail.
+            const recordLangEl = UIHelpers.getElementById('record-language-select');
+            if (recordLangEl) recordLangEl.value = languageUi;
+            const recordTranslateEl = UIHelpers.getElementById('record-translate-checkbox');
+            if (recordTranslateEl) recordTranslateEl.checked = translate;
+
             // Save AI Refinement settings
             await this.saveAIRefinementSettings();
 
             // Save Meeting Notes settings
             await this.saveMeetingNotesSettings();
-
-            // Mirror into Recording-screen copies only after a successful save
-            const recordLangEl = UIHelpers.getElementById('record-language-select');
-            if (recordLangEl) recordLangEl.value = languageUi;
-            const recordTranslateEl = UIHelpers.getElementById('record-translate-checkbox');
-            if (recordTranslateEl) recordTranslateEl.checked = translate;
 
             this.closeSettings();
             this.statusController.updateStatus('Settings saved successfully');

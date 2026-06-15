@@ -254,6 +254,69 @@ export class RecordingController {
             this._applyVADRuntime({ engine });
         }));
 
+        // ---- Language Settings (mirror of settings panel) ----
+        // Per-field request sequence to ignore results from stale in-flight saves.
+        this._languageSaveSeq = 0;
+        this._translateSaveSeq = 0;
+
+        EventHandler.addListener('#record-language-select', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const seq = ++this._languageSaveSeq;
+            const uiValue = String(e.target.value || '');
+            const language = uiValue === '' ? 'auto' : uiValue;
+            let saved = false;
+            let errMsg = null;
+            try {
+                const result = await window.electronAPI.setConfig({ language });
+                saved = !result || result.success !== false;
+                if (!saved) errMsg = (result && result.message) || 'Failed to save language';
+            } catch (err) {
+                errMsg = err?.message || 'Failed to save language';
+                console.warn('Failed to persist language:', errMsg);
+            }
+            // Ignore stale results — only the latest request may touch the UI.
+            if (seq !== this._languageSaveSeq) return;
+            if (saved) {
+                // Reassert the resolved value on both controls so an earlier
+                // failed rollback cannot leave the Recording control stale.
+                if (e.target) e.target.value = uiValue;
+                const settingsEl = UIHelpers.getElementById('language-select');
+                if (settingsEl) settingsEl.value = uiValue;
+            } else {
+                await this._restoreLanguageUiFromConfig(e.target);
+                if (seq !== this._languageSaveSeq) return;
+                if (this.statusController && this.statusController.showError) {
+                    this.statusController.showError(errMsg);
+                }
+            }
+        }));
+
+        EventHandler.addListener('#record-translate-checkbox', 'change', EventHandler.createAsyncHandler(async (e) => {
+            const seq = ++this._translateSaveSeq;
+            const translate = !!e.target.checked;
+            let saved = false;
+            let errMsg = null;
+            try {
+                const result = await window.electronAPI.setConfig({ translate });
+                saved = !result || result.success !== false;
+                if (!saved) errMsg = (result && result.message) || 'Failed to save translate option';
+            } catch (err) {
+                errMsg = err?.message || 'Failed to save translate option';
+                console.warn('Failed to persist translate:', errMsg);
+            }
+            if (seq !== this._translateSaveSeq) return;
+            if (saved) {
+                if (e.target) e.target.checked = translate;
+                const settingsEl = UIHelpers.getElementById('translate-checkbox');
+                if (settingsEl) settingsEl.checked = translate;
+            } else {
+                await this._restoreTranslateUiFromConfig(e.target);
+                if (seq !== this._translateSaveSeq) return;
+                if (this.statusController && this.statusController.showError) {
+                    this.statusController.showError(errMsg);
+                }
+            }
+        }));
+
         // Initialize VAD settings UI from persisted config
         this._loadVADSettingsIntoUI();
     }
@@ -281,8 +344,50 @@ export class RecordingController {
             const elCaptureMode = UIHelpers.getElementById('capture-mode-select');
             if (elCaptureMode) elCaptureMode.value = captureMode;
             await this._updateCaptureModeUI(captureMode);
+
+            const persistedLang = cfg && cfg.language;
+            const langUi = (!persistedLang || persistedLang === 'auto') ? '' : persistedLang;
+            const persistedTranslate = !!(cfg && cfg.translate);
+            const elLang = UIHelpers.getElementById('record-language-select');
+            if (elLang) elLang.value = langUi;
+            const elTranslate = UIHelpers.getElementById('record-translate-checkbox');
+            if (elTranslate) elTranslate.checked = persistedTranslate;
         } catch (e) {
             console.warn('Failed to load VAD settings into UI:', e?.message);
+        }
+    }
+
+    /**
+     * Read the currently persisted language and write it back into the given
+     * Recording-screen select (and mirror into the Settings panel control).
+     * Used to roll back a failed save without relying on a local cache.
+     */
+    async _restoreLanguageUiFromConfig(targetEl) {
+        try {
+            const cfg = await window.electronAPI.getConfig();
+            const persisted = cfg && cfg.language;
+            const langUi = (!persisted || persisted === 'auto') ? '' : persisted;
+            if (targetEl) targetEl.value = langUi;
+            const settingsEl = UIHelpers.getElementById('language-select');
+            if (settingsEl) settingsEl.value = langUi;
+        } catch (err) {
+            console.warn('Failed to reload language from config:', err?.message);
+        }
+    }
+
+    /**
+     * Read the currently persisted translate flag and write it back into the
+     * given Recording-screen checkbox (and mirror into the Settings panel).
+     */
+    async _restoreTranslateUiFromConfig(targetEl) {
+        try {
+            const cfg = await window.electronAPI.getConfig();
+            const persisted = !!(cfg && cfg.translate);
+            if (targetEl) targetEl.checked = persisted;
+            const settingsEl = UIHelpers.getElementById('translate-checkbox');
+            if (settingsEl) settingsEl.checked = persisted;
+        } catch (err) {
+            console.warn('Failed to reload translate from config:', err?.message);
         }
     }
 

@@ -511,7 +511,7 @@ class LocalWhisperService {
      * @returns {boolean}
      */
     isSupportedAudioFile(filePath) {
-        const supportedExtensions = ['.wav', '.mp3', '.flac', '.ogg'];
+        const supportedExtensions = ['.wav', '.mp3', '.flac', '.ogg', '.m4a', '.aac'];
         const ext = path.extname(filePath).toLowerCase();
         return supportedExtensions.includes(ext);
     }
@@ -537,6 +537,15 @@ class LocalWhisperService {
 
         const fileStats = fs.statSync(filePath);
         console.log(`📊 Input file size: ${(fileStats.size / 1024 / 1024).toFixed(2)} MB`);
+
+        // Check the requested model exists before doing any (expensive) audio conversion,
+        // so a missing model fails fast instead of leaking a converted temp WAV file
+        const requestedModel = options.model || 'base';
+        if (!this.findModelPath(requestedModel)) {
+            const availableModels = this.getAvailableModels().map(m => m.name).join(', ');
+            console.log(`❌ LocalWhisperService: Model '${requestedModel}' not found. Available: ${availableModels}`);
+            throw new Error(`Model '${requestedModel}' not found. Available models: ${availableModels}`);
+        }
 
         // Determine if we need to extract audio from video
         let audioFilePath = filePath;
@@ -591,7 +600,7 @@ class LocalWhisperService {
         } else {
             console.log('❌ LocalWhisperService: Unsupported file format');
             const ext = path.extname(filePath);
-            throw new Error(`Unsupported file format: ${ext}. Supported formats: .wav, .mp3, .flac, .ogg, .mp4, .mov, .avi, .mkv, .webm`);
+            throw new Error(`Unsupported file format: ${ext}. Supported formats: .wav, .mp3, .flac, .ogg, .m4a, .aac, .mp4, .mov, .avi, .mkv, .webm`);
         }
 
         const {

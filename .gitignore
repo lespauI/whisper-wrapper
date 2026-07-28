@@ -16,7 +16,7 @@ yarn-error.log*
 /dist
 /out
 /release
-app/
+/app/
 src/renderer/dist/
 *.dmg
 *.exe

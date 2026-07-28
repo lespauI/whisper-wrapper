@@ -21,7 +21,10 @@ const defaultConfig = {
         tempDirectory: path.join(os.tmpdir(), 'whisper-wrapper'),
         useInitialPrompt: true,  // Default to using initial prompt if provided
         initialPrompt: '',       // Default empty initial prompt
-        translate: false
+        translate: false,
+        useGpu: true,
+        flashAttn: true,
+        gpuDevice: 0
     },
     
     // Application settings
@@ -152,7 +155,10 @@ config.getSimplified = function() {
         threads: this.whisper.defaultThreads,
         translate: this.whisper.translate !== undefined ? this.whisper.translate : false,
         useInitialPrompt: this.whisper.useInitialPrompt !== undefined ? this.whisper.useInitialPrompt : true,
-        initialPrompt: this.whisper.initialPrompt || ''
+        initialPrompt: this.whisper.initialPrompt || '',
+        useGpu: this.whisper.useGpu !== undefined ? this.whisper.useGpu : true,
+        flashAttn: this.whisper.flashAttn !== undefined ? this.whisper.flashAttn : true,
+        gpuDevice: this.whisper.gpuDevice !== undefined ? this.whisper.gpuDevice : 0
     };
 };
 
@@ -189,7 +195,23 @@ config.setSimplified = function(newConfig) {
         this.whisper.initialPrompt = newConfig.initialPrompt;
         changed = true;
     }
-    
+
+    if (newConfig.useGpu !== undefined && this.whisper.useGpu !== newConfig.useGpu) {
+        this.whisper.useGpu = newConfig.useGpu;
+        console.log(`🔄 Config: GPU acceleration ${newConfig.useGpu ? 'ENABLED' : 'DISABLED'}`);
+        changed = true;
+    }
+
+    if (newConfig.flashAttn !== undefined && this.whisper.flashAttn !== newConfig.flashAttn) {
+        this.whisper.flashAttn = newConfig.flashAttn;
+        changed = true;
+    }
+
+    if (newConfig.gpuDevice !== undefined && this.whisper.gpuDevice !== newConfig.gpuDevice) {
+        this.whisper.gpuDevice = newConfig.gpuDevice;
+        changed = true;
+    }
+
     // Save changes to the config file if anything was modified
     if (changed) {
         saveConfig(this);

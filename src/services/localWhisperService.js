@@ -644,6 +644,17 @@ class LocalWhisperService {
 
         console.log(`📦 Model path: ${modelPath}`);
 
+        if (language === 'auto' && !options.autoDetectChunk &&
+            fs.statSync(audioFilePath).size > 30 * 16000 * 2 + 4096) {
+            try {
+                return await this.transcribeAutoDetectAudio(audioFilePath, options);
+            } finally {
+                if (needsCleanup && fs.existsSync(audioFilePath)) {
+                    fs.unlinkSync(audioFilePath);
+                }
+            }
+        }
+
         // Prepare output file
         const outputFile = path.join(this.tempDir, `transcription_${Date.now()}.json`);
         console.log(`📄 Output file: ${outputFile}`);
@@ -663,6 +674,9 @@ class LocalWhisperService {
         } else if (language === 'auto') {
             // Enable automatic language detection
             args.push('-l', 'auto');
+            if (!effectiveInitialPrompt) {
+                args.push('-mc', '0');
+            }
         }
 
         // Add translate flag if needed
@@ -671,7 +685,7 @@ class LocalWhisperService {
         }
 
         // Add context prompt for chunk processing (takes precedence over initial prompt)
-        if (contextPrompt && contextPrompt.trim().length > 0) {
+        if (language !== 'auto' && contextPrompt && contextPrompt.trim().length > 0) {
             // Sanitize context prompt to avoid command line parsing issues
             const sanitizedPrompt = this.sanitizePrompt(contextPrompt.trim());
             if (sanitizedPrompt.length > 0) {
@@ -802,7 +816,7 @@ class LocalWhisperService {
                             console.log(`📝 Extracted text (${text.length} chars): ${text.substring(0, 100)}...`);
 
                             // Detect language from result
-                            const detectedLanguage = this.detectLanguageFromOutput(stderr) || language;
+                            const detectedLanguage = result.result?.language || this.detectLanguageFromOutput(stderr) || language;
                             console.log(`🌍 Detected language: ${detectedLanguage}`);
 
                             // Check for segments in different possible properties
@@ -953,6 +967,89 @@ class LocalWhisperService {
                 reject(new Error(`Failed to start whisper.cpp: ${error.message}`));
             });
         });
+    }
+
+    async transcribeAutoDetectAudio(audioFilePath, options) {
+        const chunkDuration = options.autoDetectWindowSeconds || 30;
+        const chunkDir = fs.mkdtempSync(path.join(this.tempDir, 'language-chunks-'));
+        try {
+            await new Promise((resolve, reject) => {
+                const splitProcess = spawn('ffmpeg', [
+                    '-v', 'error', '-i', audioFilePath,
+                    '-af', 'asetnsamples=n=1600:p=0', '-c:a', 'pcm_s16le',
+                    '-f', 'segment', '-segment_time', chunkDuration.toString(),
+                    '-reset_timestamps', '1', path.join(chunkDir, 'chunk-%06d.wav')
+                ], { stdio: ['ignore', 'ignore', 'pipe'] });
+                let stderr = '';
+                splitProcess.stderr.on('data', data => { stderr += data.toString(); });
+                splitProcess.on('error', error => reject(new Error(`Failed to split audio: ${error.message}`)));
+                splitProcess.on('close', code => {
+                    if (code === 0) {
+                        resolve();
+                    } else {
+                        reject(new Error(`Audio splitting failed with code ${code}: ${stderr}`));
+                    }
+                });
+            });
+
+            const chunkFiles = fs.readdirSync(chunkDir).filter(file => /^chunk-\d+\.wav$/.test(file)).sort();
+            if (chunkFiles.length === 0) {
+                throw new Error('Audio splitting produced no chunks');
+            }
+            const texts = [];
+            const segments = [];
+            const languages = new Set();
+            let duration = 0;
+            const chunkResults = [];
+            for (const file of chunkFiles) {
+                chunkResults.push(await this.transcribeFile(path.join(chunkDir, file), {
+                    ...options, language: 'auto', contextPrompt: '', autoDetectChunk: true
+                }));
+            }
+            if (chunkDuration === 30 && options.refineLanguageChanges !== false) {
+                const transitionWindows = new Set();
+                for (let index = 1; index < chunkResults.length; index++) {
+                    const previous = chunkResults[index - 1];
+                    const current = chunkResults[index];
+                    if (previous.text.trim() && current.text.trim() &&
+                        previous.language !== 'auto' && current.language !== 'auto' &&
+                        previous.language !== current.language) {
+                        transitionWindows.add(index - 1);
+                        transitionWindows.add(index);
+                    }
+                }
+                for (const index of transitionWindows) {
+                    chunkResults[index] = await this.transcribeAutoDetectAudio(path.join(chunkDir, chunkFiles[index]), {
+                        ...options, autoDetectWindowSeconds: 5
+                    });
+                }
+            }
+            for (const [index, result] of chunkResults.entries()) {
+                texts.push(result.text);
+                if (result.text.trim() && result.language && result.language !== 'auto') {
+                    languages.add(result.language);
+                }
+                for (const segment of result.segments || []) {
+                    segments.push({
+                        ...segment, id: segments.length,
+                        start: segment.start + index * chunkDuration,
+                        end: segment.end + index * chunkDuration,
+                        language: segment.language || result.language
+                    });
+                }
+                duration += result.duration || 0;
+            }
+            return {
+                success: true, text: texts.join(' ').trim(), segments,
+                language: languages.size > 1 ? 'mixed' : [...languages][0] || 'auto',
+                model: options.model || 'base', duration
+            };
+        } finally {
+            for (const file of fs.readdirSync(chunkDir)) {
+                fs.unlinkSync(path.join(chunkDir, file));
+            }
+            fs.rmdirSync(chunkDir);
+        }
     }
 
     /**

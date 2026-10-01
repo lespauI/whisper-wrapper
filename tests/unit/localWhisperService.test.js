@@ -6,6 +6,8 @@ jest.mock('fs', () => ({
     readdirSync: jest.fn(),
     statSync: jest.fn(),
     mkdirSync: jest.fn(),
+    mkdtempSync: jest.fn(),
+    rmdirSync: jest.fn(),
     writeFileSync: jest.fn(),
     unlinkSync: jest.fn(),
     readFileSync: jest.fn()
@@ -23,14 +25,15 @@ describe('LocalWhisperService', () => {
     let service;
 
     beforeEach(() => {
-        jest.clearAllMocks();
+        jest.restoreAllMocks();
+        jest.resetAllMocks();
         
         // Default fs mocks
         fs.existsSync.mockReturnValue(false);
         fs.mkdirSync.mockReturnValue(undefined);
         // Default empty models directory
         fs.readdirSync.mockReturnValue([]);
-        fs.statSync.mockReturnValue({ size: 1000000 });
+        fs.statSync.mockReturnValue({ size: 160000 });
         
         service = new LocalWhisperService();
     });
@@ -51,7 +54,7 @@ describe('LocalWhisperService', () => {
             jest.clearAllMocks();
             fs.existsSync.mockReturnValue(true);
             fs.readdirSync.mockReturnValue(['ggml-tiny.bin', 'ggml-base.bin']);
-            fs.statSync.mockReturnValue({ size: 1000000 });
+            fs.statSync.mockReturnValue({ size: 160000 });
             
             // Create a new service instance with our mocks
             const tinyService = new LocalWhisperService();
@@ -264,7 +267,7 @@ describe('LocalWhisperService', () => {
         it('should return available models', () => {
             fs.existsSync.mockReturnValue(true);
             fs.readdirSync.mockReturnValue(['ggml-base.bin', 'ggml-small.bin']);
-            fs.statSync.mockReturnValue({ size: 1000000 });
+            fs.statSync.mockReturnValue({ size: 160000 });
             
             const models = service.getAvailableModels();
             expect(models).toHaveLength(2);
@@ -289,7 +292,7 @@ describe('LocalWhisperService', () => {
             service.whisperPath = '/path/to/whisper';
             fs.existsSync.mockReturnValue(true);
             fs.readdirSync.mockReturnValue(['ggml-base.bin']);
-            fs.statSync.mockReturnValue({ size: 1000000 });
+            fs.statSync.mockReturnValue({ size: 160000 });
             
             const result = await service.testInstallation();
             
@@ -390,7 +393,7 @@ describe('LocalWhisperService', () => {
             service.whisperPath = '/path/to/whisper-cli';
             fs.existsSync.mockReturnValue(true);
             fs.readdirSync.mockReturnValue(['ggml-base.bin']);
-            fs.statSync.mockReturnValue({ size: 1000000 });
+            fs.statSync.mockReturnValue({ size: 160000 });
         });
 
         it('should include context prompt in arguments when provided', async () => {
@@ -415,6 +418,7 @@ describe('LocalWhisperService', () => {
 
             // Call transcribeFile with context prompt
             const promise = service.transcribeFile('/path/to/audio.wav', {
+                language: 'en',
                 contextPrompt: contextPrompt
             });
 
@@ -449,6 +453,7 @@ describe('LocalWhisperService', () => {
             fs.readFileSync = jest.fn().mockReturnValue(JSON.stringify(jsonOutput));
 
             const promise = service.transcribeFile('/path/to/audio.wav', {
+                language: 'en',
                 contextPrompt: contextPrompt
             });
 
@@ -485,6 +490,7 @@ describe('LocalWhisperService', () => {
             fs.readFileSync = jest.fn().mockReturnValue(JSON.stringify(jsonOutput));
 
             const promise = service.transcribeFile('/path/to/audio.wav', {
+                language: 'en',
                 contextPrompt: contextPrompt
             });
 
@@ -611,6 +617,7 @@ describe('LocalWhisperService', () => {
             fs.readFileSync = jest.fn().mockReturnValue(JSON.stringify(jsonOutput));
 
             const promise = service.transcribeFile('/path/to/audio.wav', {
+                language: 'en',
                 contextPrompt: contextPrompt
             });
 
@@ -630,6 +637,197 @@ describe('LocalWhisperService', () => {
             if (promptIndex + 2 < spawnArgs.length) {
                 expect(spawnArgs[promptIndex + 2]).toMatch(/^-/);
             }
+        });
+    });
+
+    describe('automatic language changes', () => {
+        const { EventEmitter } = require('events');
+        const chunkDir = '/tmp/language-chunks-test';
+        let results;
+        let processError;
+        let splitCode;
+        let decodeIndex;
+
+        beforeEach(() => {
+            service.whisperPath = '/path/to/whisper-cli';
+            fs.existsSync.mockReturnValue(true);
+            fs.statSync.mockReturnValue({ size: 160000 });
+            fs.mkdtempSync.mockReturnValue(chunkDir);
+            fs.readdirSync.mockImplementation(dir => dir === chunkDir ?
+                ['chunk-000002.wav', 'chunk-000000.wav', 'chunk-000001.wav'] : []);
+            jest.spyOn(service, 'convertAudioToWav').mockResolvedValue();
+            results = [
+                { language: 'ru', text: 'Давай на английский.', end: 5000 },
+                { language: 'en', text: 'I would like to ask about AI testing.', end: 5000 },
+                { language: 'en', text: 'We use different agents.', end: 3000 }
+            ];
+            processError = null;
+            splitCode = 0;
+            decodeIndex = 0;
+            spawn.mockImplementation(command => {
+                const proc = new EventEmitter();
+                proc.stdout = new EventEmitter();
+                proc.stderr = new EventEmitter();
+                const index = command === 'ffmpeg' ? -1 : decodeIndex++;
+                setImmediate(() => {
+                    if (command === 'ffmpeg') {
+                        if (processError) {
+                            proc.emit('error', processError);
+                        } else {
+                            proc.stderr.emit('data', Buffer.from('split diagnostic'));
+                            proc.emit('close', splitCode);
+                        }
+                    } else {
+                        proc.stderr.emit('data', Buffer.from(
+                            `auto-detected language: ${results[index].language}\ntotal time = 10 ms`));
+                        proc.emit('close', 0);
+                    }
+                });
+                return proc;
+            });
+            fs.readFileSync.mockImplementation(() => {
+                const result = results[decodeIndex - 1];
+                return JSON.stringify({ result: { language: result.language }, transcription: [{
+                    offsets: { from: 0, to: result.end }, text: result.text
+                }] });
+            });
+        });
+
+        it('does not condition automatic decoding on the previous language or transcript', async () => {
+            await service.transcribeFile('/audio.wav', { contextPrompt: 'Старый русский текст' });
+            const args = spawn.mock.calls[0][1];
+            expect(args.slice(args.indexOf('-l'), args.indexOf('-l') + 2)).toEqual(['-l', 'auto']);
+            expect(args.slice(args.indexOf('-mc'), args.indexOf('-mc') + 2)).toEqual(['-mc', '0']);
+            expect(args).not.toContain('--prompt');
+            expect(spawn).toHaveBeenCalledTimes(1);
+        });
+
+        it('reads the detected language from JSON when diagnostic output is suppressed', async () => {
+            fs.readFileSync.mockReturnValue(JSON.stringify({
+                result: { language: 'en' },
+                transcription: [{ offsets: { from: 0, to: 5000 }, text: 'English speech' }]
+            }));
+            const result = await service.transcribeFile('/audio.wav');
+            expect(result.language).toBe('en');
+        });
+
+        it('preserves an explicit initial prompt in automatic mode', async () => {
+            await service.transcribeFile('/audio.wav', { initialPrompt: 'Whisper, Codex' });
+            const args = spawn.mock.calls[0][1];
+            expect(args).toContain('--prompt');
+            expect(args).toContain('Whisper, Codex');
+            expect(args).not.toContain('-mc');
+        });
+
+        it('redetects each window and preserves order, timestamps, and the final short window', async () => {
+            fs.statSync.mockReturnValue({ size: 2000000 });
+            const result = await service.transcribeFile('/audio.wav', {
+                model: 'large', contextPrompt: 'Old context', useGpu: false, refineLanguageChanges: false
+            });
+            expect(result.language).toBe('mixed');
+            expect(result.model).toBe('large');
+            expect(result.duration).toBe(30);
+            expect(result.text).toBe(results.map(item => item.text).join(' '));
+            expect(result.segments).toEqual([
+                expect.objectContaining({ id: 0, start: 0, end: 5, language: 'ru' }),
+                expect.objectContaining({ id: 1, start: 30, end: 35, language: 'en' }),
+                expect.objectContaining({ id: 2, start: 60, end: 63, language: 'en' })
+            ]);
+            expect(spawn).toHaveBeenCalledTimes(4);
+            expect(spawn.mock.calls[0][1]).toEqual(expect.arrayContaining([
+                'asetnsamples=n=1600:p=0', '-segment_time', '30'
+            ]));
+            for (const [, args] of spawn.mock.calls.slice(1)) {
+                expect(args).toContain('auto');
+                expect(args).toContain('-mc');
+                expect(args).not.toContain('--prompt');
+            }
+            for (let index = 0; index < 3; index++) {
+                expect(fs.unlinkSync).toHaveBeenCalledWith(`${chunkDir}/chunk-00000${index}.wav`);
+            }
+            expect(fs.rmdirSync).toHaveBeenCalledWith(chunkDir);
+        });
+
+        it('refines both sides of a language change and preserves the smaller-window timestamps', async () => {
+            fs.statSync.mockReturnValue({ size: 2000000 });
+            fs.mkdtempSync.mockReturnValueOnce(chunkDir)
+                .mockReturnValueOnce(`${chunkDir}-first`).mockReturnValueOnce(`${chunkDir}-second`);
+            fs.readdirSync.mockImplementation(dir => dir === chunkDir ?
+                ['chunk-000002.wav', 'chunk-000000.wav', 'chunk-000001.wav'] :
+                Array.from({ length: 6 }, (_, index) => `chunk-00000${index}.wav`));
+            results.push(
+                { language: 'ru', text: 'Русская речь.', end: 5000 },
+                { language: 'en', text: 'First English question.', end: 5000 },
+                ...Array.from({ length: 10 }, () => ({ language: 'en', text: 'English answer.', end: 5000 }))
+            );
+            const result = await service.transcribeFile('/audio.wav');
+            expect(result.language).toBe('mixed');
+            expect(result.segments.map(segment => segment.start)).toEqual(Array.from({ length: 13 }, (_, index) => index * 5));
+            expect(result.segments.map(segment => segment.language)).toEqual(['ru', ...Array(12).fill('en')]);
+            expect(result.text).toContain('First English question.');
+            expect(result.text).not.toContain('Давай на английский.');
+            expect(spawn.mock.calls.filter(([command]) => command === 'ffmpeg')
+                .map(([, args]) => args[args.indexOf('-segment_time') + 1])).toEqual(['30', '5', '5']);
+            expect(fs.rmdirSync).toHaveBeenCalledWith(`${chunkDir}-first`);
+            expect(fs.rmdirSync).toHaveBeenCalledWith(`${chunkDir}-second`);
+            expect(fs.rmdirSync).toHaveBeenCalledWith(chunkDir);
+        });
+
+        it('keeps fixed-language files in one decoding run with their context', async () => {
+            fs.statSync.mockReturnValue({ size: 2000000 });
+            await service.transcribeFile('/audio.wav', { language: 'ru', contextPrompt: 'Контекст' });
+            expect(spawn).toHaveBeenCalledTimes(1);
+            const args = spawn.mock.calls[0][1];
+            expect(args).toContain('ru');
+            expect(args).toContain('Контекст');
+            expect(args).not.toContain('-mc');
+        });
+
+        it('retains a single detected language when every voiced window uses it', async () => {
+            fs.statSync.mockReturnValue({ size: 2000000 });
+            results.forEach(result => { result.language = 'en'; });
+            const result = await service.transcribeFile('/audio.wav');
+            expect(result.language).toBe('en');
+        });
+
+        it('does not count language detected from a silent window', async () => {
+            fs.statSync.mockReturnValue({ size: 2000000 });
+            results[0].text = '';
+            const result = await service.transcribeFile('/audio.wav');
+            expect(result.language).toBe('en');
+        });
+
+        it.each([1, null])('cleans up and rejects splitting failures (%s)', async code => {
+            fs.statSync.mockReturnValue({ size: 2000000 });
+            splitCode = code;
+            await expect(service.transcribeFile('/audio.wav')).rejects.toThrow('Audio splitting failed');
+            expect(fs.rmdirSync).toHaveBeenCalledWith(chunkDir);
+        });
+
+        it('cleans up when ffmpeg cannot start', async () => {
+            fs.statSync.mockReturnValue({ size: 2000000 });
+            processError = new Error('spawn ffmpeg ENOENT');
+            await expect(service.transcribeFile('/audio.wav')).rejects.toThrow('Failed to split audio');
+            expect(fs.rmdirSync).toHaveBeenCalledWith(chunkDir);
+        });
+
+        it('rejects empty chunk output rather than returning an empty success', async () => {
+            fs.statSync.mockReturnValue({ size: 2000000 });
+            fs.readdirSync.mockReturnValue([]);
+            await expect(service.transcribeFile('/audio.wav')).rejects.toThrow('produced no chunks');
+            expect(fs.rmdirSync).toHaveBeenCalledWith(chunkDir);
+        });
+
+        it('rejects a failed window and cleans all chunks instead of returning a partial transcript', async () => {
+            fs.statSync.mockReturnValue({ size: 2000000 });
+            fs.readFileSync.mockImplementationOnce(() => JSON.stringify({
+                transcription: [{ offsets: { from: 0, to: 5000 }, text: 'First window' }]
+            })).mockImplementationOnce(() => { throw new Error('Invalid window output'); });
+            await expect(service.transcribeFile('/audio.wav', { useGpu: false }))
+                .rejects.toThrow('Invalid window output');
+            expect(spawn).toHaveBeenCalledTimes(3);
+            expect(fs.unlinkSync).toHaveBeenCalledWith(`${chunkDir}/chunk-000002.wav`);
+            expect(fs.rmdirSync).toHaveBeenCalledWith(chunkDir);
         });
     });
 
@@ -863,7 +1061,7 @@ describe('LocalWhisperService', () => {
             service.whisperPath = '/path/to/whisper-cli';
             fs.existsSync.mockReturnValue(true);
             fs.readdirSync.mockReturnValue(['ggml-base.bin']);
-            fs.statSync.mockReturnValue({ size: 1000000 });
+            fs.statSync.mockReturnValue({ size: 160000 });
             fs.readFileSync = jest.fn().mockReturnValue(jsonOutput);
         });
 
@@ -982,7 +1180,7 @@ describe('LocalWhisperService', () => {
             service.whisperPath = '/path/to/whisper-cli';
             fs.existsSync.mockReturnValue(true);
             fs.readdirSync.mockReturnValue(['ggml-base.bin']);
-            fs.statSync.mockReturnValue({ size: 1000000 });
+            fs.statSync.mockReturnValue({ size: 160000 });
             fs.readFileSync = jest.fn().mockReturnValue(jsonOutput);
         });
 
@@ -1216,7 +1414,7 @@ describe('LocalWhisperService', () => {
             service.whisperPath = '/path/to/whisper-cli';
             fs.existsSync.mockReturnValue(true);
             fs.readdirSync.mockReturnValue(['ggml-base.bin']);
-            fs.statSync.mockReturnValue({ size: 1000000 });
+            fs.statSync.mockReturnValue({ size: 160000 });
             fs.readFileSync = jest.fn().mockReturnValue(jsonOutput);
         });
 
@@ -1333,7 +1531,7 @@ describe('LocalWhisperService', () => {
             service.whisperPath = '/path/to/whisper-cli';
             fs.existsSync.mockReturnValue(true);
             fs.readdirSync.mockReturnValue(['ggml-base.bin']);
-            fs.statSync.mockReturnValue({ size: 1000000 });
+            fs.statSync.mockReturnValue({ size: 160000 });
             fs.readFileSync = jest.fn().mockReturnValue(jsonOutput);
             fs.unlinkSync = jest.fn();
         });

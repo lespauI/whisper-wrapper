@@ -165,6 +165,68 @@ describe('resident multilingual transcription', () => {
         service.close();
         await expect(service.transcribe(wav(30), settings)).rejects.toThrow('closed');
     });
+
+    describe('terminal progress', () => {
+        let log;
+
+        beforeEach(() => {
+            log = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+        });
+
+        afterEach(() => {
+            log.mockRestore();
+            jest.useRealTimers();
+        });
+
+        it('reports stages, language, audio ranges, and completed progress without logging transcript text', async () => {
+            await service.transcribe(wav(130), settings);
+            const output = log.mock.calls.flat().join('\n');
+            expect(output).toContain('Starting transcription: 2.2 minutes of audio, model large');
+            expect(output).toContain('Language detection: 5/5 windows (100%)');
+            expect(output).toContain('Refining');
+            expect(output).toContain('Transcribing part 2/3 [en]: 0:40–1:20');
+            expect(output).toContain('Completed part 3/3: 100% of audio processed');
+            expect(output).toContain('Finished transcription: 3 segments, languages ru/en');
+            expect(output).not.toContain('en speech');
+        });
+
+        it('reports elapsed time while inference waits and stops the heartbeat after success', async () => {
+            jest.useFakeTimers();
+            detection = () => ({ ru: 0.99 });
+            const factory = WhisperServerWorker.getMockImplementation();
+            let finish;
+            WhisperServerWorker.mockImplementation((...args) => {
+                const worker = factory(...args);
+                const infer = worker.infer.getMockImplementation();
+                worker.infer.mockImplementation((audio, fields) => fields.detect_language ? infer(audio, fields) :
+                    new Promise(resolve => { finish = resolve; }));
+                return worker;
+            });
+            const task = service.transcribe(wav(30), settings);
+            for (let i = 0; i < 30 && !finish; i++) await Promise.resolve();
+            expect(finish).toBeDefined();
+            jest.advanceTimersByTime(20000);
+            expect(log.mock.calls.filter(([message]) => message.includes('Waiting for processing'))).toHaveLength(2);
+            expect(log).toHaveBeenCalledWith(expect.stringContaining('Transcribing part 1/1 [ru]: 0:00–0:30 (20s total elapsed)'));
+            finish({ segments: [] });
+            await task;
+            expect(jest.getTimerCount()).toBe(0);
+            const count = log.mock.calls.length;
+            jest.advanceTimersByTime(20000);
+            expect(log).toHaveBeenCalledTimes(count);
+        });
+
+        it('reports failure and stops the heartbeat when a worker rejects', async () => {
+            jest.useFakeTimers();
+            detection = () => { throw new Error('worker failed'); };
+            await expect(service.transcribe(wav(30), settings)).rejects.toThrow('worker failed');
+            expect(log).toHaveBeenCalledWith(expect.stringContaining('Failed during Detecting languages'));
+            expect(jest.getTimerCount()).toBe(0);
+            const count = log.mock.calls.length;
+            jest.advanceTimersByTime(20000);
+            expect(log).toHaveBeenCalledTimes(count);
+        });
+    });
 });
 
 describe('PCM windows', () => {

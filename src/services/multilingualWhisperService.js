@@ -124,6 +124,27 @@ class MultilingualWhisperService {
         const started = Date.now();
         if (this.closed) throw new Error('Multilingual transcription service has been closed');
         const audio = new PcmAudio(wav);
+        let stage = 'Starting language detection';
+        const report = message => {
+            stage = message;
+            console.info(`[Whisper] ${message}`);
+        };
+        report(`Starting transcription: ${(audio.duration / 60).toFixed(1)} minutes of audio, model ${settings.options.model}`);
+        const heartbeat = setInterval(() => {
+            console.info(`[Whisper] Waiting for processing: ${stage} (${Math.floor((Date.now() - started) / 1000)}s total elapsed)`);
+        }, 10000);
+        heartbeat.unref();
+        try {
+            return await this.processAudio(audio, settings, report, started);
+        } catch (error) {
+            report(`Failed during ${stage} after ${((Date.now() - started) / 1000).toFixed(1)}s`);
+            throw error;
+        } finally {
+            clearInterval(heartbeat);
+        }
+    }
+
+    async processAudio(audio, settings, report, started) {
         const { binary, modelPath, tinyModelPath, options } = settings;
         const configuration = JSON.stringify([binary, modelPath, tinyModelPath, options.threads, options.useGpu, options.flashAttn, options.gpuDevice]);
         if (configuration !== this.configuration) {
@@ -133,10 +154,18 @@ class MultilingualWhisperService {
         const decoder = this.worker(binary, modelPath, options);
         const detector = this.worker(binary, tinyModelPath || modelPath, options);
         const windows = [];
+        const totalWindows = Math.ceil(audio.duration / 30);
+        const reportDetection = () => {
+            if (windows.length % 10 === 0 || windows.length === totalWindows) {
+                report(`Language detection: ${windows.length}/${totalWindows} windows (${Math.round(windows.length / totalWindows * 100)}%)`);
+            }
+        };
+        report(`Detecting languages: 0/${totalWindows} windows`);
         for (let start = 0; start < audio.duration; start += 30) {
             const end = Math.min(start + 30, audio.duration);
             if (audio.isSilent(start, end)) {
                 windows.push({ start, end, silent: true });
+                reportDetection();
                 continue;
             }
             let detection = await this.detect(detector, audio, start, end);
@@ -148,7 +177,9 @@ class MultilingualWhisperService {
                 detection.language = previous.language;
             }
             windows.push({ start, end, ...detection });
+            reportDetection();
         }
+        report('Checking uncertain language detections');
         for (let i = 1; i + 1 < windows.length; i++) {
             const previous = windows[i - 1];
             const current = windows[i];
@@ -165,6 +196,7 @@ class MultilingualWhisperService {
             }
         }
         const refined = [];
+        if (boundaryWindows.size) report(`Refining ${boundaryWindows.size} language transition windows with ${options.model}`);
         for (let i = 0; i < windows.length; i++) {
             const window = windows[i];
             if (!boundaryWindows.has(i)) { refined.push(window); continue; }
@@ -194,9 +226,14 @@ class MultilingualWhisperService {
             }
         }
         const segments = [];
+        const totalParts = sections.reduce((count, section) => count + Math.ceil((section.end - section.start) / 600), 0);
+        let part = 0;
+        const timestamp = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
         for (const section of sections) {
             for (let start = section.start; start < section.end; start += 600) {
                 const end = Math.min(start + 600, section.end);
+                part++;
+                report(`Transcribing part ${part}/${totalParts} [${section.language}]: ${timestamp(start)}–${timestamp(end)}`);
                 const result = await decoder.infer(audio.slice(start, end), {
                     language: section.language, translate: !!options.translate,
                     prompt: options.prompt || '', carry_initial_prompt: false,
@@ -214,9 +251,11 @@ class MultilingualWhisperService {
                     segments.push({ id: segments.length, start: Math.min(end, Math.max(start, start + segment.start)),
                         end: Math.min(end, Math.max(start, start + segment.end)), text, language: section.language });
                 }
+                report(`Completed part ${part}/${totalParts}: ${Math.round(end / audio.duration * 100)}% of audio processed, ${segments.length} segments`);
             }
         }
         const languages = [...new Set(sections.map(section => section.language))];
+        report(`Finished transcription: ${segments.length} segments, languages ${languages.join('/') || 'none'}, ${((Date.now() - started) / 1000).toFixed(1)}s elapsed`);
         return { success: true, text: segments.map(segment => segment.text).join(' '), segments,
             language: languages.length > 1 ? 'mixed' : languages[0] || 'auto', languages,
             model: options.model, duration: Date.now() - started, audioDuration: audio.duration };

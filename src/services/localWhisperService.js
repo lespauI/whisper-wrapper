@@ -6,6 +6,8 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { randomBytes } = require('crypto');
+const { MultilingualWhisperService } = require('./multilingualWhisperService');
 
 /**
  * LocalWhisperService class provides an interface to the whisper.cpp library
@@ -16,6 +18,8 @@ class LocalWhisperService {
         console.log('🔧 LocalWhisperService: Initializing...');
         
         this.whisperPath = this.findWhisperBinary();
+        this.whisperServerPath = this.findWhisperServerBinary();
+        this.multilingualService = new MultilingualWhisperService();
         this.modelsPath = path.join(process.cwd(), 'models');
         this.tempDir = path.join(os.tmpdir(), 'whisper-wrapper');
         
@@ -100,6 +104,46 @@ class LocalWhisperService {
         return !!(this.whisperPath && fs.existsSync(this.whisperPath));
     }
 
+    findWhisperServerBinary() {
+        const name = process.platform === 'win32' ? 'whisper-server.exe' : 'whisper-server';
+        const candidates = [
+            this.whisperPath && path.join(path.dirname(this.whisperPath), name),
+            path.join(process.cwd(), 'whisper.cpp', 'build', 'bin', name),
+            path.join(process.cwd(), 'whisper.cpp', 'build', 'bin', 'Release', name)
+        ].filter(Boolean);
+        return candidates.find(candidate => fs.existsSync(candidate)) || null;
+    }
+
+    async transcribeMultilingualFile(filePath, options) {
+        const audioFilePath = path.join(this.tempDir, `multilingual-${randomBytes(12).toString('hex')}.wav`);
+        const workerOptions = {
+            model: options.model || 'base', threads: options.threads || 4,
+            translate: options.translate || false,
+            useGpu: options.useGpu === undefined ? this.useGpu : options.useGpu,
+            flashAttn: options.flashAttn === undefined ? this.flashAttn : options.flashAttn,
+            gpuDevice: options.gpuDevice === undefined ? this.gpuDevice : options.gpuDevice,
+            prompt: this.sanitizePrompt(options.contextPrompt ||
+                (options.useInitialPrompt === false ? '' : options.initialPrompt === undefined ? this.initialPrompt : options.initialPrompt))
+        };
+        try {
+            await this.convertAudioToWav(filePath, audioFilePath);
+            const wav = fs.readFileSync(audioFilePath);
+            const settings = { binary: this.whisperServerPath,
+                modelPath: this.findModelPath(workerOptions.model),
+                tinyModelPath: this.findModelPath('tiny'), options: workerOptions };
+            try {
+                return await this.multilingualService.transcribe(wav, settings);
+            } catch (error) {
+                if (!workerOptions.useGpu || !/metal|cuda|gpu|ggml.*alloc/i.test(error.message)) throw error;
+                console.warn('Resident Whisper GPU inference failed; retrying the prepared audio on CPU:', error.message);
+                return await this.multilingualService.transcribe(wav,
+                    { ...settings, options: { ...workerOptions, useGpu: false } });
+            }
+        } finally {
+            if (fs.existsSync(audioFilePath)) fs.unlinkSync(audioFilePath);
+        }
+    }
+
     /**
      * Get available models
      */
@@ -145,7 +189,7 @@ class LocalWhisperService {
         // Remove or replace problematic characters that can cause shell parsing issues
         let sanitized = prompt
             // Remove shell wildcards and special characters
-            .replace(/[\*\?\[\]{}|&;<>()$`\\!]/g, '')
+            .replace(/[*?[\]{}|&;<>()$`\\!]/g, '')
             // Replace multiple spaces with single space
             .replace(/\s+/g, ' ')
             // Remove quotes that could break command parsing
@@ -522,7 +566,7 @@ class LocalWhisperService {
     async transcribeFile(filePath, options = {}) {
         console.log('🎤 LocalWhisperService: Starting transcription...');
         console.log(`📁 Input file: ${filePath}`);
-        console.log(`⚙️ Options:`, options);
+        console.log('⚙️ Options:', options);
         
         if (!this.isAvailable()) {
             console.log('❌ LocalWhisperService: whisper.cpp is not available');
@@ -536,6 +580,7 @@ class LocalWhisperService {
         }
 
         const fileStats = fs.statSync(filePath);
+        if (fileStats.size === 0) throw new Error('Input audio file is empty');
         console.log(`📊 Input file size: ${(fileStats.size / 1024 / 1024).toFixed(2)} MB`);
 
         // Check the requested model exists before doing any (expensive) audio conversion,
@@ -545,6 +590,16 @@ class LocalWhisperService {
             const availableModels = this.getAvailableModels().map(m => m.name).join(', ');
             console.log(`❌ LocalWhisperService: Model '${requestedModel}' not found. Available: ${availableModels}`);
             throw new Error(`Model '${requestedModel}' not found. Available models: ${availableModels}`);
+        }
+
+        if ((options.language || 'auto') === 'auto' && !requestedModel.endsWith('.en')) {
+            if (!this.whisperServerPath) {
+                throw new Error('Automatic multilingual transcription requires whisper-server. Build the whisper.cpp whisper-server target, or select a language explicitly.');
+            }
+            if (!this.isVideoFile(filePath) && !this.isSupportedAudioFile(filePath)) {
+                throw new Error(`Unsupported file format: ${path.extname(filePath)}`);
+            }
+            return this.transcribeMultilingualFile(filePath, options);
         }
 
         // Determine if we need to extract audio from video
@@ -619,7 +674,7 @@ class LocalWhisperService {
         
         // Only use initialPrompt if explicitly provided in options or if useInitialPrompt is true
         const effectiveInitialPrompt = initialPrompt !== undefined ? initialPrompt : 
-                                      (useInitialPrompt ? this.initialPrompt : '');
+            (useInitialPrompt ? this.initialPrompt : '');
 
         console.log(`🤖 Using model: ${model}`);
         console.log(`🌍 Language: ${language}`);
@@ -712,7 +767,7 @@ class LocalWhisperService {
         console.log(`   Full command: ${this.whisperPath} ${quotedArgs.join(' ')}`);
         
         // Log argument array for debugging
-        console.log(`   Argument array:`, args);
+        console.log('   Argument array:', args);
 
         // Validate argument structure
         const promptIndex = args.indexOf('--prompt');
@@ -963,48 +1018,20 @@ class LocalWhisperService {
         console.log(`📊 Buffer size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)} MB`);
         
         // Save buffer to temporary file with original format (likely WebM from MediaRecorder)
-        const tempInputFile = path.join(this.tempDir, `temp_audio_input_${Date.now()}.webm`);
-        const tempWavFile = path.join(this.tempDir, `temp_audio_${Date.now()}.wav`);
+        const tempInputFile = path.join(this.tempDir, `temp_audio_input_${randomBytes(12).toString('hex')}.webm`);
         
         try {
             // Write the original audio buffer to temp file
             fs.writeFileSync(tempInputFile, audioBuffer);
             console.log(`📁 Saved audio buffer to: ${tempInputFile}`);
             
-            // Convert to WAV format using FFmpeg
-            console.log('🔄 Converting audio to WAV format...');
-            await this.extractAudioFromVideo(tempInputFile, tempWavFile);
-            console.log(`✅ Audio converted to WAV: ${tempWavFile}`);
-            
-            // Verify the WAV file was created and has content
-            if (!fs.existsSync(tempWavFile)) {
-                throw new Error('Failed to convert audio to WAV format');
-            }
-            
-            const wavStats = fs.statSync(tempWavFile);
-            console.log(`📊 WAV file size: ${(wavStats.size / 1024).toFixed(2)} KB`);
-            
-            if (wavStats.size === 0) {
-                throw new Error('Converted WAV file is empty');
-            }
-            
-            // Pass all options directly to transcribeFile, including useInitialPrompt flag
-            const transcribeOptions = { ...options };
-            
-            // Don't add initialPrompt here - let transcribeFile handle it with the useInitialPrompt flag
-            
-            // Transcribe the converted WAV file
-            const result = await this.transcribeFile(tempWavFile, transcribeOptions);
+            const result = await this.transcribeFile(tempInputFile, options);
             return result;
         } finally {
             // Clean up temp files
             if (fs.existsSync(tempInputFile)) {
                 fs.unlinkSync(tempInputFile);
                 console.log(`🗑️ Cleaned up input file: ${tempInputFile}`);
-            }
-            if (fs.existsSync(tempWavFile)) {
-                fs.unlinkSync(tempWavFile);
-                console.log(`🗑️ Cleaned up WAV file: ${tempWavFile}`);
             }
         }
     }
@@ -1251,6 +1278,7 @@ class LocalWhisperService {
      * Clean up temporary files
      */
     cleanup() {
+        this.multilingualService.close();
         try {
             if (fs.existsSync(this.tempDir)) {
                 const files = fs.readdirSync(this.tempDir);

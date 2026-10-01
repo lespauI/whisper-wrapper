@@ -21,9 +21,10 @@ const { spawn } = require('child_process');
 
 describe('LocalWhisperService', () => {
     let service;
+    const transcribeWithCli = (filePath, options) => service.transcribeFile(filePath, { language: 'en', ...options });
 
     beforeEach(() => {
-        jest.clearAllMocks();
+        jest.resetAllMocks();
         
         // Default fs mocks
         fs.existsSync.mockReturnValue(false);
@@ -414,7 +415,7 @@ describe('LocalWhisperService', () => {
             fs.readFileSync = jest.fn().mockReturnValue(JSON.stringify(jsonOutput));
 
             // Call transcribeFile with context prompt
-            const promise = service.transcribeFile('/path/to/audio.wav', {
+            const promise = transcribeWithCli('/path/to/audio.wav', {
                 contextPrompt: contextPrompt
             });
 
@@ -448,7 +449,7 @@ describe('LocalWhisperService', () => {
             };
             fs.readFileSync = jest.fn().mockReturnValue(JSON.stringify(jsonOutput));
 
-            const promise = service.transcribeFile('/path/to/audio.wav', {
+            const promise = transcribeWithCli('/path/to/audio.wav', {
                 contextPrompt: contextPrompt
             });
 
@@ -484,7 +485,7 @@ describe('LocalWhisperService', () => {
             };
             fs.readFileSync = jest.fn().mockReturnValue(JSON.stringify(jsonOutput));
 
-            const promise = service.transcribeFile('/path/to/audio.wav', {
+            const promise = transcribeWithCli('/path/to/audio.wav', {
                 contextPrompt: contextPrompt
             });
 
@@ -519,7 +520,7 @@ describe('LocalWhisperService', () => {
             };
             fs.readFileSync = jest.fn().mockReturnValue(JSON.stringify(jsonOutput));
 
-            const promise = service.transcribeFile('/path/to/audio.wav', {
+            const promise = transcribeWithCli('/path/to/audio.wav', {
                 useInitialPrompt: true
             });
 
@@ -550,7 +551,7 @@ describe('LocalWhisperService', () => {
             };
             fs.readFileSync = jest.fn().mockReturnValue(JSON.stringify(jsonOutput));
 
-            const promise = service.transcribeFile('/path/to/audio.wav', {});
+            const promise = transcribeWithCli('/path/to/audio.wav', {});
 
             const closeCallback = mockProcess.on.mock.calls.find(call => call[0] === 'close')[1];
             closeCallback(0);
@@ -578,7 +579,7 @@ describe('LocalWhisperService', () => {
             };
             fs.readFileSync = jest.fn().mockReturnValue(JSON.stringify(jsonOutput));
 
-            const promise = service.transcribeFile('/path/to/audio.wav', {
+            const promise = transcribeWithCli('/path/to/audio.wav', {
                 contextPrompt: '   '  // Just whitespace
             });
 
@@ -610,7 +611,7 @@ describe('LocalWhisperService', () => {
             };
             fs.readFileSync = jest.fn().mockReturnValue(JSON.stringify(jsonOutput));
 
-            const promise = service.transcribeFile('/path/to/audio.wav', {
+            const promise = transcribeWithCli('/path/to/audio.wav', {
                 contextPrompt: contextPrompt
             });
 
@@ -871,7 +872,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0));
 
-            await service.transcribeFile('/path/to/audio.wav', {
+            await transcribeWithCli('/path/to/audio.wav', {
                 useGpu: true,
                 flashAttn: true
             });
@@ -885,7 +886,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0));
 
-            await service.transcribeFile('/path/to/audio.wav', {
+            await transcribeWithCli('/path/to/audio.wav', {
                 useGpu: false
             });
 
@@ -898,7 +899,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0));
 
-            await service.transcribeFile('/path/to/audio.wav', {
+            await transcribeWithCli('/path/to/audio.wav', {
                 useGpu: true,
                 flashAttn: false
             });
@@ -912,7 +913,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0));
 
-            await service.transcribeFile('/path/to/audio.wav', {
+            await transcribeWithCli('/path/to/audio.wav', {
                 useGpu: true,
                 flashAttn: true,
                 gpuDevice: 2
@@ -927,7 +928,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0));
 
-            await service.transcribeFile('/path/to/audio.wav', {
+            await transcribeWithCli('/path/to/audio.wav', {
                 translate: true,
                 useGpu: false
             });
@@ -940,7 +941,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0));
 
-            await service.transcribeFile('/path/to/audio.wav', {
+            await transcribeWithCli('/path/to/audio.wav', {
                 language: 'en',
                 useGpu: false
             });
@@ -1002,7 +1003,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(1, 'ggml_metal not compiled'));
 
-            const result = await service.transcribeFile('/path/to/audio.wav', {
+            const result = await transcribeWithCli('/path/to/audio.wav', {
                 useGpu: true,
                 flashAttn: true
             });
@@ -1020,7 +1021,7 @@ describe('LocalWhisperService', () => {
                 .mockImplementationOnce(() => makeProcess(1, 'some unrelated error'));
 
             await expect(
-                service.transcribeFile('/path/to/audio.wav', {
+                transcribeWithCli('/path/to/audio.wav', {
                     useGpu: false
                 })
             ).rejects.toThrow();
@@ -1033,7 +1034,7 @@ describe('LocalWhisperService', () => {
         it('should throw when whisper.cpp is not available', async () => {
             service.whisperPath = null;
             await expect(
-                service.transcribeFile('/path/to/audio.wav', {})
+                transcribeWithCli('/path/to/audio.wav', {})
             ).rejects.toThrow('whisper.cpp is not available');
         });
 
@@ -1042,7 +1043,7 @@ describe('LocalWhisperService', () => {
             fs.existsSync.mockImplementation((p) => p === '/path/to/whisper');
 
             await expect(
-                service.transcribeFile('/nonexistent/audio.wav', {})
+                transcribeWithCli('/nonexistent/audio.wav', {})
             ).rejects.toThrow('Input file does not exist');
         });
 
@@ -1052,7 +1053,7 @@ describe('LocalWhisperService', () => {
             fs.statSync.mockReturnValue({ size: 1000 });
 
             await expect(
-                service.transcribeFile('/path/to/file.xyz', {})
+                transcribeWithCli('/path/to/file.xyz', {})
             ).rejects.toThrow('Unsupported file format');
         });
 
@@ -1081,7 +1082,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProcess(0));
 
             await expect(
-                service.transcribeFile('/path/to/audio.wav', { model: 'nonexistent-model' })
+                transcribeWithCli('/path/to/audio.wav', { model: 'nonexistent-model' })
             ).rejects.toThrow('Model \'nonexistent-model\' not found');
         });
     });
@@ -1224,7 +1225,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0, '', '[00:00:00.000] Hello world'));
 
-            const result = await service.transcribeFile('/path/to/audio.wav', {
+            const result = await transcribeWithCli('/path/to/audio.wav', {
                 useGpu: false
             });
 
@@ -1235,7 +1236,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0, 'whisper_print_timings: total time = 1234.56 ms', ''));
 
-            const result = await service.transcribeFile('/path/to/audio.wav', {
+            const result = await transcribeWithCli('/path/to/audio.wav', {
                 useGpu: false
             });
 
@@ -1247,7 +1248,7 @@ describe('LocalWhisperService', () => {
                 .mockImplementationOnce(() => makeProcess(0, 'error: something failed to process'));
 
             await expect(
-                service.transcribeFile('/path/to/audio.wav', { useGpu: false })
+                transcribeWithCli('/path/to/audio.wav', { useGpu: false })
             ).rejects.toThrow();
         });
 
@@ -1260,7 +1261,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProcess(0))
                 .mockImplementationOnce(() => makeProcess(0, '', '[00:00:01.000 --> 00:00:05.000] Fallback text'));
 
-            const result = await service.transcribeFile('/path/to/audio.wav', {
+            const result = await transcribeWithCli('/path/to/audio.wav', {
                 useGpu: false
             });
 
@@ -1343,7 +1344,7 @@ describe('LocalWhisperService', () => {
                 .mockImplementationOnce(() => makeProc(0, 'time=00:00:05'))
                 .mockImplementationOnce(() => makeProc(0));
 
-            const result = await service.transcribeFile('/path/to/video.mp4', {
+            const result = await transcribeWithCli('/path/to/video.mp4', {
                 useGpu: true,
                 flashAttn: true
             });
@@ -1358,7 +1359,7 @@ describe('LocalWhisperService', () => {
                 .mockImplementationOnce(() => makeProc(0, 'size=1234kB'))
                 .mockImplementationOnce(() => makeProc(0));
 
-            const result = await service.transcribeFile('/path/to/video.avi', {
+            const result = await transcribeWithCli('/path/to/video.avi', {
                 useGpu: false
             });
 
@@ -1370,7 +1371,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProc(1, 'ffmpeg error'));
 
             await expect(
-                service.transcribeFile('/path/to/video.mp4', { useGpu: false })
+                transcribeWithCli('/path/to/video.mp4', { useGpu: false })
             ).rejects.toThrow('Audio processing failed');
         });
 
@@ -1382,8 +1383,98 @@ describe('LocalWhisperService', () => {
                 .mockImplementationOnce(() => convertProc);
 
             await expect(
-                service.transcribeFile('/path/to/video.mp4', { useGpu: false })
+                transcribeWithCli('/path/to/video.mp4', { useGpu: false })
             ).rejects.toThrow('Audio processing failed');
+        });
+    });
+
+    describe('multilingual worker integration', () => {
+        let wav;
+        let result;
+
+        beforeEach(() => {
+            service.whisperPath = '/bin/whisper-cli';
+            service.whisperServerPath = '/bin/whisper-server';
+            fs.existsSync.mockReturnValue(true);
+            wav = Buffer.from('prepared PCM WAV');
+            fs.readFileSync.mockReturnValue(wav);
+            service.convertAudioToWav = jest.fn().mockResolvedValue(undefined);
+            service.extractAudioFromVideo = jest.fn();
+            result = { success: true, language: 'mixed', text: 'Привет. Hello.', segments: [] };
+            service.multilingualService.transcribe = jest.fn().mockResolvedValue(result);
+        });
+
+        it('routes auto transcription through resident workers with one conversion', async () => {
+            await expect(service.transcribeFile('/recording.wav', { language: 'auto', model: 'large' })).resolves.toBe(result);
+            expect(service.convertAudioToWav).toHaveBeenCalledTimes(1);
+            expect(service.multilingualService.transcribe).toHaveBeenCalledWith(wav, expect.objectContaining({
+                binary: '/bin/whisper-server', modelPath: expect.stringContaining('ggml-large.bin'),
+                tinyModelPath: expect.stringContaining('ggml-tiny.bin'), options: expect.objectContaining({ model: 'large' })
+            }));
+            expect(spawn).not.toHaveBeenCalled();
+            expect(fs.unlinkSync).toHaveBeenCalledWith(expect.stringContaining('multilingual-'));
+        });
+
+        it('converts a video directly once', async () => {
+            await service.transcribeFile('/call.mp4', { language: 'auto', model: 'large' });
+            expect(service.convertAudioToWav).toHaveBeenCalledTimes(1);
+            expect(service.extractAudioFromVideo).not.toHaveBeenCalled();
+        });
+
+        it('converts a recorded buffer once and removes its temporary input', async () => {
+            await service.transcribeBuffer(Buffer.from('recording'), { model: 'large' });
+            expect(service.convertAudioToWav).toHaveBeenCalledTimes(1);
+            expect(fs.writeFileSync).toHaveBeenCalledWith(expect.stringContaining('.webm'), Buffer.from('recording'));
+            expect(fs.unlinkSync).toHaveBeenCalledWith(expect.stringContaining('temp_audio_input_'));
+        });
+
+        it('retries a GPU failure on CPU with the same converted audio', async () => {
+            service.multilingualService.transcribe.mockRejectedValueOnce(new Error('Metal allocation failed'));
+            await expect(service.transcribeFile('/call.wav', { useGpu: true })).resolves.toBe(result);
+            expect(service.convertAudioToWav).toHaveBeenCalledTimes(1);
+            expect(service.multilingualService.transcribe).toHaveBeenCalledTimes(2);
+            expect(service.multilingualService.transcribe.mock.calls[0][0]).toBe(service.multilingualService.transcribe.mock.calls[1][0]);
+            expect(service.multilingualService.transcribe.mock.calls[1][1].options.useGpu).toBe(false);
+        });
+
+        it('propagates non-GPU errors and cleans converted audio', async () => {
+            service.multilingualService.transcribe.mockRejectedValue(new Error('Invalid server response'));
+            await expect(service.transcribeFile('/call.wav', {})).rejects.toThrow('Invalid server response');
+            expect(service.multilingualService.transcribe).toHaveBeenCalledTimes(1);
+            expect(fs.unlinkSync).toHaveBeenCalledWith(expect.stringContaining('multilingual-'));
+        });
+
+        it('cleans partial audio after conversion failure', async () => {
+            service.convertAudioToWav.mockRejectedValue(new Error('ffmpeg failed'));
+            await expect(service.transcribeFile('/call.wav', {})).rejects.toThrow('ffmpeg failed');
+            expect(service.multilingualService.transcribe).not.toHaveBeenCalled();
+            expect(fs.unlinkSync).toHaveBeenCalledWith(expect.stringContaining('multilingual-'));
+        });
+
+        it('reports a missing resident server before conversion', async () => {
+            service.whisperServerPath = null;
+            await expect(service.transcribeFile('/call.wav', {})).rejects.toThrow('requires whisper-server');
+            expect(service.convertAudioToWav).not.toHaveBeenCalled();
+        });
+
+        it('honors disabled prompts and explicit context prompts', async () => {
+            service.initialPrompt = 'default';
+            await service.transcribeFile('/call.wav', { useInitialPrompt: false, initialPrompt: 'ignored' });
+            expect(service.multilingualService.transcribe.mock.calls[0][1].options.prompt).toBe('');
+            await service.transcribeFile('/call.wav', { useInitialPrompt: false, contextPrompt: 'Acme' });
+            expect(service.multilingualService.transcribe.mock.calls[1][1].options.prompt).toBe('Acme');
+        });
+
+        it('rejects unsupported formats before conversion', async () => {
+            await expect(service.transcribeFile('/call.txt', {})).rejects.toThrow('Unsupported');
+            expect(service.convertAudioToWav).not.toHaveBeenCalled();
+        });
+
+        it('closes workers during service cleanup', () => {
+            const close = jest.spyOn(service.multilingualService, 'close');
+            fs.readdirSync.mockReturnValue([]);
+            service.cleanup();
+            expect(close).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -1425,6 +1516,7 @@ describe('LocalWhisperService', () => {
 
             const audioBuffer = Buffer.from('fake audio data');
             const result = await service.transcribeBuffer(audioBuffer, {
+                language: 'en',
                 useGpu: true,
                 flashAttn: true
             });
@@ -1444,6 +1536,7 @@ describe('LocalWhisperService', () => {
                 .mockImplementationOnce(() => makeProc(0));
 
             const result = await service.transcribeBuffer(Buffer.from('audio data'), {
+                language: 'en',
                 useGpu: false
             });
 
@@ -1454,7 +1547,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProc(1, 'ffmpeg failed'));
 
             await expect(
-                service.transcribeBuffer(Buffer.from('audio'), {})
+                service.transcribeBuffer(Buffer.from('audio'), { language: 'en' })
             ).rejects.toThrow();
         });
 
@@ -1464,7 +1557,7 @@ describe('LocalWhisperService', () => {
             spawn.mockImplementationOnce(() => makeProc(0));
 
             await expect(
-                service.transcribeBuffer(Buffer.from('audio'), {})
+                service.transcribeBuffer(Buffer.from('audio'), { language: 'en' })
             ).rejects.toThrow('empty');
         });
 
@@ -1474,7 +1567,7 @@ describe('LocalWhisperService', () => {
 
             try {
                 await service.transcribeBuffer(Buffer.from('audio'), {
-                    useGpu: false
+                    language: 'en',                    useGpu: false
                 });
             } catch (e) {
                 // Expected to fail

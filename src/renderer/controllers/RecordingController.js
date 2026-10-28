@@ -697,6 +697,7 @@ export class RecordingController {
     async stopRecording() {
         if (this.mediaRecorder) {
             // Save final chunk before stopping
+            this.stopAutoSaveTimer();
             await this.saveCurrentRecordingChunk();
             
             const recorderStream = this.mediaRecorder.stream;
@@ -759,8 +760,7 @@ export class RecordingController {
             
             // Create filename with timestamp
             const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-            const recordingState = this.appState.getRecordingState();
-            const extension = recordingState.format === 'webm' ? 'webm' : 'wav';
+            const extension = this.getRecordingExtension(this.recordingBlob.type);
             const filename = `recording-${timestamp}.${extension}`;
             
             // Save file using Electron API
@@ -1888,23 +1888,27 @@ export class RecordingController {
             constraints.audio = {
                 sampleRate: { ideal: 22050 },
                 channelCount: { ideal: 1 },
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false
             };
             break;
         case 'low':
             constraints.audio = {
                 sampleRate: { ideal: 16000 },
                 channelCount: { ideal: 1 },
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false
             };
             break;
         default:
             // Fallback to basic audio constraints
-            constraints.audio = true;
+            constraints.audio = {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false
+            };
             break;
         }
         
@@ -1922,11 +1926,20 @@ export class RecordingController {
             return 'audio/webm;codecs=opus';
         } else if (MediaRecorder.isTypeSupported('audio/wav')) {
             return 'audio/wav';
+        } else if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            return 'audio/webm;codecs=opus';
         } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
             return 'audio/mp4';
         } else {
             return 'audio/webm';
         }
+    }
+
+    getRecordingExtension(mimeType = this.getMimeType()) {
+        const type = mimeType.split(';')[0].toLowerCase();
+        const extensions = { 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/wav': 'wav' };
+        if (!extensions[type]) throw new Error(`Unsupported recording type: ${mimeType}`);
+        return extensions[type];
     }
 
     // ============================================================================
@@ -2152,6 +2165,16 @@ export class RecordingController {
      * Save current recording chunk
      */
     async saveCurrentRecordingChunk() {
+        if (this._pendingAutoSave) return this._pendingAutoSave;
+        this._pendingAutoSave = this._saveRecordingChunk();
+        try {
+            await this._pendingAutoSave;
+        } finally {
+            this._pendingAutoSave = null;
+        }
+    }
+
+    async _saveRecordingChunk() {
         const recordingState = this.appState.getRecordingState();
         if (!recordingState.enableAutoSave || !this.audioChunks.length) {
             return;
@@ -2159,11 +2182,12 @@ export class RecordingController {
 
         try {
             // Create a blob from current chunks
-            const chunkBlob = new Blob(this.audioChunks, { type: this.getMimeType() });
+            const chunks = this.audioChunks.slice();
+            const chunkBlob = new Blob(chunks, { type: this.getMimeType() });
             const arrayBuffer = await chunkBlob.arrayBuffer();
             
             // Generate chunk filename
-            const chunkFilename = `${this.recordingAutoSave.sessionId}_chunk_${this.recordingAutoSave.chunkIndex.toString().padStart(3, '0')}.webm`;
+            const chunkFilename = `${this.recordingAutoSave.sessionId}_chunk_${this.recordingAutoSave.chunkIndex.toString().padStart(3, '0')}.${this.getRecordingExtension()}`;
             
             // Save chunk using Electron API
             const result = await window.electronAPI.saveRecordingChunk(arrayBuffer, chunkFilename);
@@ -2176,16 +2200,18 @@ export class RecordingController {
                     size: arrayBuffer.byteLength,
                     timestamp: Date.now(),
                     chunkIndex: this.recordingAutoSave.chunkIndex,
-                    originalChunksCount: this.audioChunks.length
+                    originalChunksCount: chunks.length
                 });
                 
                 this.recordingAutoSave.chunkIndex++;
                 
                 // Clear processed chunks from memory
-                this.audioChunks = [];
+                this.audioChunks.splice(0, chunks.length);
                 
                 // Update status to show auto-save progress
                 this.statusController.updateStatus(`Recording... (Auto-saved ${this.recordingAutoSave.savedChunks.length} chunks)`);
+            } else {
+                throw new Error(result.error || 'Recording chunk was not saved');
             }
         } catch (error) {
             console.error('Failed to save recording chunk:', error);

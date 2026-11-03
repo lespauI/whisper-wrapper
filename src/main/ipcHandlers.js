@@ -16,6 +16,7 @@ const config = require('../config');
 class IPCHandlers {
     constructor(mainWindow = null) {
         this.mainWindow = mainWindow;
+        this.activeTranscriptions = new Map();
         this.fileService = new FileService();
         this.transcriptionService = new TranscriptionService();
         this.recordingService = new RecordingService();
@@ -31,8 +32,11 @@ class IPCHandlers {
         ipcMain.handle('dialog:saveFile', this.handleSaveFile.bind(this));
 
         // Transcription handlers
-        ipcMain.handle('transcription:file', this.handleTranscribeFile.bind(this));
-        ipcMain.handle('transcription:audio', this.handleTranscribeAudio.bind(this));
+        ipcMain.handle('transcription:file', (event, filePath) =>
+            this.runTranscription(event, signal => this.handleTranscribeFile(event, filePath, signal)));
+        ipcMain.handle('transcription:audio', (event, audioData, prompt = null, options = {}) =>
+            this.runTranscription(event, signal => this.handleTranscribeAudio(event, audioData, prompt, options, signal)));
+        ipcMain.handle('transcription:cancel', this.handleCancelTranscription.bind(this));
 
         // Recording handlers
         ipcMain.handle('recording:start', this.handleStartRecording.bind(this));
@@ -246,7 +250,38 @@ class IPCHandlers {
         }
     }
 
-    async handleTranscribeFile(event, filePath) {
+    async runTranscription(event, task) {
+        const owner = event.sender;
+        const pending = this.activeTranscriptions.get(owner) || new Set();
+        const previous = Array.from(pending).pop();
+        const operation = { controller: new AbortController() };
+        pending.add(operation);
+        this.activeTranscriptions.set(owner, pending);
+        operation.done = (async () => {
+            try {
+                if (previous) await previous.done.catch(() => undefined);
+                if (operation.controller.signal.aborted) return { success: false, canceled: true };
+                return await task(operation.controller.signal);
+            } catch (error) {
+                if (operation.controller.signal.aborted) return { success: false, canceled: true };
+                throw error;
+            } finally {
+                pending.delete(operation);
+                if (pending.size === 0) this.activeTranscriptions.delete(owner);
+            }
+        })();
+        return operation.done;
+    }
+
+    handleCancelTranscription(event) {
+        const pending = this.activeTranscriptions.get(event.sender);
+        if (pending) {
+            for (const operation of pending) operation.controller.abort();
+        }
+        return { success: true, canceled: !!pending?.size };
+    }
+
+    async handleTranscribeFile(event, filePath, signal) {
         console.log('🎬 IPC: handleTranscribeFile called');
         console.log(`📁 File path: ${filePath}`);
         
@@ -254,6 +289,7 @@ class IPCHandlers {
             // Validate the file
             console.log('🔍 IPC: Validating file...');
             await this.fileService.validateFile(filePath);
+            if (signal?.aborted) throw new Error('Transcription canceled');
             console.log('✅ IPC: File validation passed');
 
             // Get current configuration
@@ -285,6 +321,7 @@ class IPCHandlers {
             console.log(`📂 IPC: Temp file created: ${tempFilePath}`);
 
             try {
+                if (signal?.aborted) throw new Error('Transcription canceled');
                 // Send progress update
                 console.log('📡 IPC: Sending progress update - processing');
                 event.sender.send('transcription:progress', { 
@@ -295,6 +332,7 @@ class IPCHandlers {
                 // Transcribe the file
                 console.log('🎤 IPC: Starting transcription...');
                 const transcriptionOptions = {
+                    signal,
                     threads: currentConfig.threads || 4,
                     translate: currentConfig.translate || false,
                     useGpu: currentConfig.useGpu !== undefined ? currentConfig.useGpu : true,
@@ -312,6 +350,7 @@ class IPCHandlers {
                 console.log('🎤 IPC: Transcription options:', transcriptionOptions);
                 
                 const result = await this.transcriptionService.transcribeFile(tempFilePath, transcriptionOptions);
+                if (signal?.aborted) throw new Error('Transcription canceled');
                 console.log('🎤 IPC: Transcription result:', {
                     success: result.success,
                     textLength: result.text?.length || 0,
@@ -323,6 +362,7 @@ class IPCHandlers {
                 console.log('🗑️ IPC: Cleaning up temp file...');
                 await this.fileService.cleanup(tempFilePath);
                 console.log('✅ IPC: Temp file cleaned up');
+                if (signal?.aborted) return { success: false, canceled: true };
 
                 // Send completion update
                 console.log('📡 IPC: Sending progress update - completed');
@@ -359,6 +399,7 @@ class IPCHandlers {
             }
 
         } catch (error) {
+            if (signal?.aborted) return { success: false, canceled: true };
             console.error('❌ IPC: Error transcribing file:', error);
             console.error('❌ IPC: Error stack:', error.stack);
             
@@ -373,7 +414,7 @@ class IPCHandlers {
         }
     }
 
-    async handleTranscribeAudio(event, audioData, prompt = null, options = {}) {
+    async handleTranscribeAudio(event, audioData, prompt = null, options = {}, signal) {
         try {
             // Get current configuration
             const currentConfig = config.getSimplified();
@@ -409,6 +450,7 @@ class IPCHandlers {
 
             // Prepare transcription options
             const transcriptionOptions = {
+                signal,
                 threads: currentConfig.threads || 4,
                 translate: currentConfig.translate || false,
                 useGpu: currentConfig.useGpu !== undefined ? currentConfig.useGpu : true,
@@ -433,6 +475,7 @@ class IPCHandlers {
                 transcriptionOptions
             );
 
+            if (signal?.aborted) return { success: false, canceled: true };
             // Send completion update
             event.sender.send('transcription:progress', { 
                 status: 'completed', 
@@ -457,6 +500,7 @@ class IPCHandlers {
             };
 
         } catch (error) {
+            if (signal?.aborted) return { success: false, canceled: true };
             console.error('Error transcribing audio:', error);
             
             // Send error update

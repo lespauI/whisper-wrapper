@@ -126,15 +126,15 @@ class LocalWhisperService {
                 (options.useInitialPrompt === false ? '' : options.initialPrompt === undefined ? this.initialPrompt : options.initialPrompt))
         };
         try {
-            await this.convertAudioToWav(filePath, audioFilePath);
+            await this.convertAudioToWav(filePath, audioFilePath, options.signal);
             const wav = fs.readFileSync(audioFilePath);
-            const settings = { binary: this.whisperServerPath,
+            const settings = { signal: options.signal, binary: this.whisperServerPath,
                 modelPath: this.findModelPath(workerOptions.model),
                 tinyModelPath: this.findModelPath('tiny'), options: workerOptions };
             try {
                 return await this.multilingualService.transcribe(wav, settings);
             } catch (error) {
-                if (!workerOptions.useGpu || !/metal|cuda|gpu|ggml.*alloc/i.test(error.message)) throw error;
+                if (options.signal?.aborted || !workerOptions.useGpu || !/metal|cuda|gpu|ggml.*alloc/i.test(error.message)) throw error;
                 console.warn('Resident Whisper GPU inference failed; retrying the prepared audio on CPU:', error.message);
                 return await this.multilingualService.transcribe(wav,
                     { ...settings, options: { ...workerOptions, useGpu: false } });
@@ -401,7 +401,7 @@ class LocalWhisperService {
      * @param {string} outputPath - Path for converted audio
      * @returns {Promise<void>}
      */
-    async convertAudioToWav(inputPath, outputPath) {
+    async convertAudioToWav(inputPath, outputPath, signal) {
         console.log('🔄 LocalWhisperService: Converting audio to proper WAV format...');
         console.log(`🎵 Input: ${inputPath}`);
         console.log(`🎵 Output: ${outputPath}`);
@@ -421,6 +421,7 @@ class LocalWhisperService {
             console.log(`   Command: ffmpeg ${ffmpegArgs.join(' ')}`);
 
             const ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
+                signal, killSignal: 'SIGKILL',
                 stdio: ['pipe', 'pipe', 'pipe']
             });
 
@@ -472,7 +473,7 @@ class LocalWhisperService {
      * @param {string} outputPath - Path for extracted audio
      * @returns {Promise<void>}
      */
-    async extractAudioFromVideo(inputPath, outputPath) {
+    async extractAudioFromVideo(inputPath, outputPath, signal) {
         console.log('🎬 LocalWhisperService: Extracting audio from video...');
         console.log(`📹 Input: ${inputPath}`);
         console.log(`🎵 Output: ${outputPath}`);
@@ -493,6 +494,7 @@ class LocalWhisperService {
             console.log(`   Command: ffmpeg ${ffmpegArgs.join(' ')}`);
 
             const ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
+                signal, killSignal: 'SIGKILL',
                 stdio: ['pipe', 'pipe', 'pipe']
             });
 
@@ -564,6 +566,18 @@ class LocalWhisperService {
      * Transcribe audio file using whisper.cpp
      */
     async transcribeFile(filePath, options = {}) {
+        if (options.signal?.aborted) throw new Error('Transcription canceled');
+        const temporaryFiles = new Set();
+        try {
+            return await this.runTranscriptionFile(filePath, { ...options, temporaryFiles });
+        } finally {
+            for (const file of temporaryFiles) {
+                if (fs.existsSync(file)) fs.unlinkSync(file);
+            }
+        }
+    }
+
+    async runTranscriptionFile(filePath, options = {}) {
         console.log('🎤 LocalWhisperService: Starting transcription...');
         console.log(`📁 Input file: ${filePath}`);
         console.log('⚙️ Options:', options);
@@ -612,20 +626,22 @@ class LocalWhisperService {
             // Create temporary audio file path for both extraction and conversion
             const extractedFileName = `extracted_audio_${Date.now()}.wav`;
             const extractedFilePath = path.join(this.tempDir, extractedFileName);
+            options.temporaryFiles.add(extractedFilePath);
             
             // We'll need to clean up the temp files
             needsCleanup = true;
 
             try {
                 // Extract audio from video
-                await this.extractAudioFromVideo(filePath, extractedFilePath);
+                await this.extractAudioFromVideo(filePath, extractedFilePath, options.signal);
                 console.log(`🎵 LocalWhisperService: Audio extracted to: ${extractedFilePath}`);
                 
                 // Now convert the extracted audio to ensure proper format
                 const convertedFileName = `converted_audio_${Date.now()}.wav`;
                 audioFilePath = path.join(this.tempDir, convertedFileName);
+                options.temporaryFiles.add(audioFilePath);
                 
-                await this.convertAudioToWav(extractedFilePath, audioFilePath);
+                await this.convertAudioToWav(extractedFilePath, audioFilePath, options.signal);
                 console.log(`🎵 LocalWhisperService: Audio converted to: ${audioFilePath}`);
                 
                 // Delete the intermediate extracted file
@@ -643,10 +659,11 @@ class LocalWhisperService {
             // Always convert audio files to ensure proper WAV format
             const convertedFileName = `converted_audio_${Date.now()}.wav`;
             audioFilePath = path.join(this.tempDir, convertedFileName);
+            options.temporaryFiles.add(audioFilePath);
             needsCleanup = true;
             
             try {
-                await this.convertAudioToWav(filePath, audioFilePath);
+                await this.convertAudioToWav(filePath, audioFilePath, options.signal);
                 console.log(`🎵 LocalWhisperService: Audio converted to: ${audioFilePath}`);
             } catch (conversionError) {
                 console.log('❌ LocalWhisperService: Audio conversion failed:', conversionError.message);
@@ -700,7 +717,8 @@ class LocalWhisperService {
         console.log(`📦 Model path: ${modelPath}`);
 
         // Prepare output file
-        const outputFile = path.join(this.tempDir, `transcription_${Date.now()}.json`);
+        const outputFile = path.join(this.tempDir, `transcription_${randomBytes(12).toString('hex')}.json`);
+        options.temporaryFiles.add(outputFile);
         console.log(`📄 Output file: ${outputFile}`);
 
         // Build whisper.cpp command
@@ -800,7 +818,9 @@ class LocalWhisperService {
 
         return new Promise((resolve, reject) => {
             const startTime = Date.now();
+            if (options.signal?.aborted) return reject(new Error('Transcription canceled'));
             const whisperProcess = spawn(this.whisperPath, args, {
+                signal: options.signal, killSignal: 'SIGKILL',
                 stdio: ['pipe', 'pipe', 'pipe']
             });
 
@@ -820,6 +840,7 @@ class LocalWhisperService {
             });
 
             whisperProcess.on('close', (code) => {
+                if (options.signal?.aborted) return reject(new Error('Transcription canceled'));
                 const duration = Date.now() - startTime;
                 console.log(`⏱️ LocalWhisperService: Process completed in ${duration}ms with code ${code}`);
                 

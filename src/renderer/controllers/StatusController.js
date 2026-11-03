@@ -9,11 +9,14 @@ import { UIHelpers } from '../utils/UIHelpers.js';
 export class StatusController {
     constructor(appState) {
         this.appState = appState;
+        this.transcriptionOperations = new Set();
         this.init();
     }
 
     init() {
         this.setupStatusSubscriptions();
+        const stopButton = UIHelpers.getElementById('stop-transcription-btn');
+        if (stopButton) stopButton.addEventListener('click', () => this.stopTranscription());
         this.setInitialStatus();
     }
 
@@ -22,6 +25,56 @@ export class StatusController {
         this.appState.subscribe('status', (statusData) => {
             this.updateStatusDisplay(statusData);
         });
+    }
+
+    beginTranscription(loading = true) {
+        if (this.stoppingTranscription) return null;
+        const operation = { canceled: false, loading };
+        this.transcriptionOperations.add(operation);
+        this.refreshTranscriptionState();
+        return operation;
+    }
+
+    endTranscription(operation) {
+        if (this.transcriptionOperations.delete(operation)) this.refreshTranscriptionState();
+    }
+
+    refreshTranscriptionState() {
+        this.showTranscriptionLoading(Array.from(this.transcriptionOperations).some(operation => operation.loading));
+    }
+
+    async stopTranscription() {
+        if (this.stoppingTranscription) return;
+        this.stoppingTranscription = true;
+        const operations = Array.from(this.transcriptionOperations);
+        for (const operation of operations) operation.canceled = true;
+        this.showTranscriptionStop(true);
+        this.updateStatus('Stopping transcription...');
+        try {
+            const recording = window.whisperApp?.controllers?.recording;
+            if (recording?.ongoingTranscription.processingQueue) {
+                recording.cancelOngoingTranscription();
+            }
+            const result = await window.electronAPI.cancelTranscription();
+            if (!result.success) throw new Error(result.error || 'Failed to stop transcription');
+            for (const operation of operations) this.endTranscription(operation);
+            this.refreshTranscriptionState();
+            this.updateStatus('Transcription stopped');
+        } catch (error) {
+            this.showError(error.message);
+        } finally {
+            this.stoppingTranscription = false;
+            const button = UIHelpers.getElementById('stop-transcription-btn');
+            if (button) button.disabled = false;
+        }
+    }
+
+    showTranscriptionStop(show) {
+        const button = UIHelpers.getElementById('stop-transcription-btn');
+        if (button) {
+            button.classList.toggle(CSS_CLASSES.HIDDEN, !show);
+            button.disabled = !!this.stoppingTranscription;
+        }
     }
 
     setInitialStatus() {
@@ -146,6 +199,9 @@ export class StatusController {
      * @param {boolean} show - Whether to show loading
      */
     showTranscriptionLoading(show) {
+        const operations = Array.from(this.transcriptionOperations);
+        show = show || operations.some(operation => operation.loading);
+        this.showTranscriptionStop(show || operations.length > 0);
         const loadingState = UIHelpers.getElementById('transcription-loading');
         const emptyState = UIHelpers.getElementById('transcription-empty');
         const editor = UIHelpers.getElementById('transcription-editor');

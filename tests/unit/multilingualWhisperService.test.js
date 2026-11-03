@@ -227,6 +227,37 @@ describe('resident multilingual transcription', () => {
             expect(log).toHaveBeenCalledTimes(count);
         });
     });
+    test('cancels resident inference, disposes workers and can restart', async () => {
+        const controller = new AbortController();
+        let started;
+        const ready = new Promise(resolve => { started = resolve; });
+        WhisperServerWorker.mockImplementation(() => {
+            let rejectInference;
+            const worker = {
+                infer: jest.fn(() => new Promise((resolve, reject) => {
+                    rejectInference = reject;
+                    started();
+                })),
+                close: jest.fn(() => { if (rejectInference) rejectInference(new Error('Worker closed')); })
+            };
+            workers.push(worker);
+            return worker;
+        });
+        const task = service.transcribe(wav(2), { ...settings, signal: controller.signal });
+        await ready;
+        controller.abort();
+        await expect(task).rejects.toThrow('Worker closed');
+        expect(workers.every(worker => worker.close.mock.calls.length > 0)).toBe(true);
+        expect(service.workers.size).toBe(0);
+        WhisperServerWorker.mockImplementation(() => ({
+            close: jest.fn(),
+            infer: jest.fn(async (audio, fields) => fields.detect_language
+                ? { language_probabilities: { en: 0.99 } }
+                : { segments: [{ start: 0, end: 2, text: 'Restarted' }] })
+        }));
+        await expect(service.transcribe(wav(2), settings)).resolves.toMatchObject({ text: 'Restarted' });
+    });
+
 });
 
 describe('PCM windows', () => {
@@ -281,4 +312,6 @@ describe('PCM windows', () => {
         input.fill(0, 44 + 4.0 * 32000, 44 + 4.04 * 32000);
         expect(new PcmAudio(input).nearestSilence(5, 0.1, 9.9)).toBe(5);
     });
+
+
 });

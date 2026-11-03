@@ -944,3 +944,100 @@ describe('IPCHandlers', () => {
         });
     });
 });
+
+describe('transcription cancellation ownership', () => {
+    let handlers;
+    let event;
+
+    beforeEach(() => {
+        handlers = Object.create(IPCHandlers.prototype);
+        handlers.activeTranscriptions = new Map();
+        event = { sender: { send: jest.fn() } };
+    });
+
+    test('aborts only the requesting renderer and allows the next transcription', async () => {
+        let signal;
+        const task = handlers.runTranscription(event, currentSignal => {
+            signal = currentSignal;
+            return new Promise((resolve, reject) => {
+                signal.addEventListener('abort', () => reject(new Error('Process stopped')), { once: true });
+            });
+        });
+        expect(handlers.handleCancelTranscription({ sender: {} }).canceled).toBe(false);
+        expect(signal.aborted).toBe(false);
+        expect(handlers.handleCancelTranscription(event).canceled).toBe(true);
+        await expect(task).resolves.toEqual({ success: false, canceled: true });
+        expect(handlers.activeTranscriptions.size).toBe(0);
+        await expect(handlers.runTranscription(event, async () => ({ success: true })))
+            .resolves.toEqual({ success: true });
+    });
+
+    test('queues overlapping transcription instead of discarding it', async () => {
+        let finish;
+        const first = handlers.runTranscription(event, () => new Promise(resolve => { finish = resolve; }));
+        const overlapping = jest.fn().mockResolvedValue({ success: true, text: 'Background speech' });
+        const second = handlers.runTranscription(event, overlapping);
+        expect(overlapping).not.toHaveBeenCalled();
+        finish({ success: true });
+        await first;
+        await expect(second).resolves.toEqual({ success: true, text: 'Background speech' });
+        expect(overlapping).toHaveBeenCalledTimes(1);
+        expect(handlers.activeTranscriptions.size).toBe(0);
+    });
+
+    test('cancels queued work without starting it and allows subsequent requests', async () => {
+        const first = handlers.runTranscription(event, signal => new Promise((resolve, reject) => {
+            signal.addEventListener('abort', () => reject(new Error('Stopped')), { once: true });
+        }));
+        const queued = jest.fn();
+        const second = handlers.runTranscription(event, queued);
+        expect(handlers.handleCancelTranscription(event).canceled).toBe(true);
+        await expect(first).resolves.toEqual({ success: false, canceled: true });
+        await expect(second).resolves.toEqual({ success: false, canceled: true });
+        expect(queued).not.toHaveBeenCalled();
+        await expect(handlers.runTranscription(event, async () => ({ success: true })))
+            .resolves.toEqual({ success: true });
+    });
+
+    test('processes background speech after an active file without dropping segments', async () => {
+        const { RecordingController } = require('../../src/renderer/controllers/RecordingController');
+        const recording = Object.create(RecordingController.prototype);
+        let finishFile;
+        const file = handlers.runTranscription(event, () => new Promise(resolve => { finishFile = resolve; }));
+        const infer = jest.fn(async () => {
+            if (infer.mock.calls.length === 2) recording.ongoingTranscription.processingQueue = false;
+            return { success: true, text: `segment ${infer.mock.calls.length}` };
+        });
+        global.window = { electronAPI: {
+            transcribeAudio: () => handlers.runTranscription(event, infer)
+        } };
+        Object.assign(recording, {
+            ongoingTranscription: {
+                processingQueue: true, enabled: true, chunks: [], transcriptionText: '',
+                chunkQueue: [{ chunkNumber: 1, blob: { arrayBuffer: async () => new ArrayBuffer(1) } }]
+            },
+            statusController: { beginTranscription: () => ({ canceled: false }), endTranscription: jest.fn() },
+            _segmentChunkToWavs: async () => ({ wavBuffers: [new ArrayBuffer(1), new ArrayBuffer(1)], segments: [] }),
+            generateContextPrompt: () => '', updateOngoingTranscriptionDisplay: jest.fn()
+        });
+        try {
+            const background = recording.processTranscriptionQueue();
+            for (let i = 0; i < 5; i++) await Promise.resolve();
+            expect(infer).not.toHaveBeenCalled();
+            finishFile({ success: true });
+            await file;
+            await background;
+            expect(infer).toHaveBeenCalledTimes(2);
+            expect(recording.ongoingTranscription.transcriptionText).toBe('segment 1 segment 2');
+            expect(recording.ongoingTranscription.chunkQueue).toEqual([]);
+        } finally {
+            delete global.window;
+        }
+    });
+
+    test('propagates real failures and releases the active operation', async () => {
+        await expect(handlers.runTranscription(event, async () => { throw new Error('Disk failure'); }))
+            .rejects.toThrow('Disk failure');
+        expect(handlers.activeTranscriptions.size).toBe(0);
+    });
+});

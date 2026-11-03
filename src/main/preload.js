@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAudioSources: () => ipcRenderer.invoke('recording:getAudioSources'),
   
     // Transcription
+    cancelTranscription: () => ipcRenderer.invoke('transcription:cancel'),
     transcribeFile: (filePath) => ipcRenderer.invoke('transcription:file', filePath),
     transcribeAudio: (audioData, prompt = null, options = {}) => ipcRenderer.invoke('transcription:audio', audioData, prompt, options),
   
@@ -74,6 +75,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Event listeners
     onTranscriptionProgress: (callback) => {
         ipcRenderer.on('transcription:progress', callback);
+        return () => ipcRenderer.removeListener('transcription:progress', callback);
     },
     onRecordingUpdate: (callback) => {
         ipcRenderer.on('recording:update', callback);

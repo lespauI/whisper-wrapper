@@ -105,6 +105,7 @@ class TranscriptionService {
             }
 
             const whisperOptions = {
+                signal: options.signal,
                 model: options.model || this.model,
                 language: options.language || this.language,
                 translate: options.translate || false,
@@ -181,6 +182,7 @@ class TranscriptionService {
             }
 
             const whisperOptions = {
+                signal: options.signal,
                 model: options.model || this.model,
                 language: options.language || this.language,
                 translate: options.translate || false,

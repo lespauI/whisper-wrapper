@@ -95,12 +95,17 @@ export class FileUploadController {
      * @param {Object} fileInfo - Additional file information
      */
     async handleFileUpload(filePath, fileInfo = null) {
+        if (this.appState.getFileUploadState().isProcessing) return;
+        let operation;
+        let unsubscribe;
         try {
             // Validate file
             if (!this.validateFile(filePath)) {
                 return;
             }
 
+            operation = this.statusController.beginTranscription();
+            if (!operation) return;
             // Update states
             this.appState.setFileUploadState({
                 currentFile: filePath,
@@ -111,10 +116,10 @@ export class FileUploadController {
             // Update UI
             this.statusController.updateStatus('Processing file...');
             this.statusController.showProgress(true);
-            this.statusController.showTranscriptionLoading(true);
             
             // Set up progress listener
-            window.electronAPI.onTranscriptionProgress((event, progress) => {
+            unsubscribe = window.electronAPI.onTranscriptionProgress((event, progress) => {
+                if (operation.canceled) return;
                 this.statusController.updateTranscriptionProgress(progress);
                 this.appState.setFileUploadState({ progress: progress.percentage || 0 });
             });
@@ -123,6 +128,11 @@ export class FileUploadController {
             const result = await window.electronAPI.transcribeFile(filePath);
             console.log('🎬 Transcription result from IPC:', result);
             
+            if (operation.canceled || result.canceled) {
+                this.appState.setFileUploadState({ currentFile: null, isProcessing: false, progress: 0 });
+                if (!operation.canceled) this.statusController.updateStatus('Transcription stopped');
+                return;
+            }
             if (result.success) {
                 await this.handleTranscriptionSuccess(result);
             } else {
@@ -130,6 +140,10 @@ export class FileUploadController {
             }
             
         } catch (error) {
+            if (operation?.canceled) {
+                this.appState.setFileUploadState({ currentFile: null, isProcessing: false, progress: 0 });
+                return;
+            }
             console.error('Error processing file:', error);
             this.statusController.showError(error.message || 'Failed to process file');
             this.appState.setFileUploadState({
@@ -138,14 +152,11 @@ export class FileUploadController {
                 progress: 0
             });
         } finally {
-            // Always hide loading states and progress
-            this.statusController.showProgress(false);
-            this.statusController.showTranscriptionLoading(false);
-            
-            // Clean up progress listener
-            if (window.electronAPI) {
-                window.electronAPI.removeAllListeners('transcription:progress');
+            if (operation) {
+                this.statusController.showProgress(false);
+                this.statusController.endTranscription(operation);
             }
+            unsubscribe?.();
         }
     }
 

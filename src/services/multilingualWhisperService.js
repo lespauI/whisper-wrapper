@@ -95,12 +95,23 @@ class MultilingualWhisperService {
 
     transcribe(wav, settings) {
         const task = this.queue.then(async () => {
+            const { signal } = settings;
+            const cancel = () => {
+                this.disposeWorkers();
+                this.configuration = undefined;
+            };
             try {
-                return await this.run(wav, settings);
+                if (signal?.aborted) throw new Error('Transcription canceled');
+                signal?.addEventListener('abort', cancel, { once: true });
+                const result = await this.run(wav, settings);
+                if (signal?.aborted) throw new Error('Transcription canceled');
+                return result;
             } catch (error) {
                 this.disposeWorkers();
                 this.configuration = undefined;
                 throw error;
+            } finally {
+                signal?.removeEventListener('abort', cancel);
             }
         });
         this.queue = task.catch(() => undefined);

@@ -784,21 +784,31 @@ export class RecordingController {
             return;
         }
         
+        if (this.recordingTranscription && !this.recordingTranscription.canceled) return;
+        const operation = this.statusController.beginTranscription();
+        if (!operation) return;
+        this.recordingTranscription = operation;
+        let unsubscribe;
         try {
-            this.statusController.showTranscriptionLoading(true);
             this.statusController.updateStatus('Processing recording...');
             
             // Convert blob to array buffer
             const arrayBuffer = await this.recordingBlob.arrayBuffer();
+            if (operation.canceled) return;
             
             // Set up progress listener
-            window.electronAPI.onTranscriptionProgress((event, progress) => {
-                this.statusController.updateTranscriptionProgress(progress);
+            unsubscribe = window.electronAPI.onTranscriptionProgress((event, progress) => {
+                if (!operation.canceled) this.statusController.updateTranscriptionProgress(progress);
             });
 
             // Start transcription
             const result = await window.electronAPI.transcribeAudio(arrayBuffer);
             console.log('🎬 Manual transcription result from IPC:', result);
+            if (operation.canceled) return;
+            if (result.canceled) {
+                this.statusController.updateStatus('Transcription stopped');
+                return;
+            }
             
             if (result.success) {
                 // Update transcription state
@@ -824,14 +834,13 @@ export class RecordingController {
             }
             
         } catch (error) {
+            if (operation.canceled) return;
             console.error('Error transcribing recording:', error);
             this.statusController.showError('Failed to transcribe recording');
-            this.statusController.showTranscriptionLoading(false);
         } finally {
-            // Clean up progress listener
-            if (window.electronAPI) {
-                window.electronAPI.removeAllListeners('transcription:progress');
-            }
+            unsubscribe?.();
+            this.statusController.endTranscription(operation);
+            if (this.recordingTranscription === operation) this.recordingTranscription = null;
         }
     }
 
@@ -1501,7 +1510,9 @@ export class RecordingController {
      * Background worker that processes the transcription queue
      */
     async processTranscriptionQueue() {
-        while (this.ongoingTranscription.processingQueue && this.ongoingTranscription.enabled) {
+        const worker = {};
+        this.transcriptionWorker = worker;
+        while (this.transcriptionWorker === worker && this.ongoingTranscription.processingQueue && this.ongoingTranscription.enabled) {
             if (this.ongoingTranscription.chunkQueue.length === 0) {
                 // No chunks to process, wait a bit
                 await new Promise(resolve => setTimeout(resolve, 500));
@@ -1512,6 +1523,11 @@ export class RecordingController {
             const queueItem = this.ongoingTranscription.chunkQueue.shift();
             console.log(`Processing chunk ${queueItem.chunkNumber} from queue (${this.ongoingTranscription.chunkQueue.length} remaining)`);
             
+            const operation = this.statusController.beginTranscription(false);
+            if (!operation) {
+                this.ongoingTranscription.chunkQueue.unshift(queueItem);
+                break;
+            }
             try {
                 // Convert blob to array buffer for segmentation
                 const arrayBuffer = await queueItem.blob.arrayBuffer();
@@ -1533,9 +1549,17 @@ export class RecordingController {
                 let runningPrompt = this.generateContextPrompt();
 
                 for (let i = 0; i < wavBuffers.length; i++) {
+                    if (operation.canceled || this.transcriptionWorker !== worker || !this.ongoingTranscription.processingQueue) break;
                     try { VADMetrics.onSentSegment(1); } catch {}
                     const subResult = await window.electronAPI.transcribeAudio(wavBuffers[i], runningPrompt || null, { skipStore: true });
-                    if (subResult.success && subResult.text && subResult.text.trim()) {
+                    if (operation.canceled) break;
+                    if (subResult.canceled) {
+                        this.cancelOngoingTranscription();
+                        this.statusController.updateStatus('Transcription stopped');
+                        break;
+                    }
+                    if (!subResult.success) throw new Error(subResult.error || 'Background transcription failed');
+                    if (subResult.text && subResult.text.trim()) {
                         const cleanText = subResult.text.trim();
                         console.log(`✓ Chunk ${queueItem.chunkNumber} seg ${i + 1}/${wavBuffers.length}: "${cleanText}"`);
 
@@ -1556,13 +1580,19 @@ export class RecordingController {
                 }
                 
             } catch (error) {
+                if (operation.canceled) continue;
                 console.error(`Error processing chunk ${queueItem.chunkNumber}:`, error);
                 UIHelpers.setText('#ongoing-transcription-status', 'Error processing chunk - continuing...');
+            } finally {
+                this.statusController.endTranscription(operation);
             }
         }
         
         console.log('Background transcription worker stopped');
-        this.ongoingTranscription.processingQueue = false;
+        if (this.transcriptionWorker === worker) {
+            this.ongoingTranscription.processingQueue = false;
+            this.transcriptionWorker = null;
+        }
     }
 
     /**
@@ -1570,12 +1600,22 @@ export class RecordingController {
      */
     stopTranscriptionWorker() {
         console.log('Stopping background transcription worker');
+        this.transcriptionWorker = null;
         this.ongoingTranscription.processingQueue = false;
     }
 
     /**
      * Stop ongoing transcription
      */
+    cancelOngoingTranscription() {
+        this.ongoingTranscription.enabled = false;
+        this.stopOngoingTranscription();
+        this.ongoingTranscription.chunkQueue = [];
+        const checkbox = UIHelpers.getElementById('ongoing-transcription');
+        if (checkbox) checkbox.checked = false;
+        this.appState.setRecordingState({ ongoingTranscription: false });
+    }
+
     stopOngoingTranscription() {
         console.log('Stopping ongoing transcription');
         
@@ -1752,45 +1792,7 @@ export class RecordingController {
             // Auto-transcribe if enabled
             const recordingState = this.appState.getRecordingState();
             if (recordingState.autoTranscribe) {
-                this.statusController.showTranscriptionLoading(true);
-                this.statusController.updateStatus('Processing recording...');
-                
-                // Convert blob to array buffer
-                const arrayBuffer = await finalAudioBlob.arrayBuffer();
-                
-                // Set up progress listener
-                window.electronAPI.onTranscriptionProgress((event, progress) => {
-                    this.statusController.updateTranscriptionProgress(progress);
-                });
-
-                // Start transcription
-                const result = await window.electronAPI.transcribeAudio(arrayBuffer);
-                console.log('🎬 Auto transcription result from IPC:', result);
-                
-                if (result.success) {
-                    console.log('🎬 Calling showTranscriptionResult with:', {
-                        textLength: result.text?.length,
-                        segmentsCount: result.segments?.length
-                    });
-                    
-                    // Clear loading state before showing result
-                    this.statusController.showTranscriptionLoading(false);
-                    
-                    // Show transcription result using the FileUploadController's working method
-                    if (window.whisperApp && window.whisperApp.controllers.fileUpload) {
-                        await window.whisperApp.controllers.fileUpload.showTranscriptionResult(result.text, result.segments);
-                    }
-                    
-                    this.statusController.updateStatus(`Recording transcribed (Language: ${result.language || 'unknown'})`);
-                    await this.tabController.switchTab(TABS.TRANSCRIPTION);
-                    
-                    // Keep recording available for saving or re-transcribing
-                    // User can come back to recording tab and use the buttons
-                } else {
-                    // Clear loading state on failure
-                    this.statusController.showTranscriptionLoading(false);
-                    this.statusController.showError('Auto-transcription failed');
-                }
+                await this.transcribeRecording();
             } else {
                 this.statusController.updateStatus('Recording completed. Use the buttons below to save, transcribe, or clear the recording.');
             }
@@ -1798,13 +1800,6 @@ export class RecordingController {
         } catch (error) {
             console.error('Error processing recording:', error);
             this.statusController.showError('Failed to process recording');
-        } finally {
-            this.statusController.showTranscriptionLoading(false);
-            
-            // Clean up progress listener
-            if (window.electronAPI) {
-                window.electronAPI.removeAllListeners('transcription:progress');
-            }
         }
     }
 

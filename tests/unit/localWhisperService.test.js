@@ -1576,4 +1576,37 @@ describe('LocalWhisperService', () => {
             expect(fs.unlinkSync).toHaveBeenCalled();
         });
     });
+    describe('cancellation', () => {
+        test('does not start processing when already canceled', async () => {
+            const controller = new AbortController();
+            controller.abort();
+            await expect(service.transcribeFile('/audio.wav', { signal: controller.signal }))
+                .rejects.toThrow('Transcription canceled');
+            expect(spawn).not.toHaveBeenCalled();
+        });
+
+        test('kills audio conversion and cleans temporary files on cancellation', async () => {
+            const { EventEmitter } = require('events');
+            const controller = new AbortController();
+            service.isAvailable = jest.fn().mockReturnValue(true);
+            service.findModelPath = jest.fn().mockReturnValue('/model.bin');
+            fs.existsSync.mockReturnValue(true);
+            spawn.mockImplementation((binary, args, options) => {
+                const child = new EventEmitter();
+                child.stdout = new EventEmitter();
+                child.stderr = new EventEmitter();
+                options.signal.addEventListener('abort', () => {
+                    child.emit('error', new Error('Aborted'));
+                    child.emit('close', null);
+                });
+                return child;
+            });
+            const task = service.transcribeFile('/audio.mp3', { language: 'en', signal: controller.signal });
+            expect(spawn.mock.calls[0][2]).toMatchObject({ signal: controller.signal, killSignal: 'SIGKILL' });
+            controller.abort();
+            await expect(task).rejects.toThrow('Aborted');
+            expect(fs.unlinkSync).toHaveBeenCalledWith(expect.stringContaining('converted_audio_'));
+        });
+    });
+
 });

@@ -122,6 +122,7 @@ class LocalWhisperService {
             useGpu: options.useGpu === undefined ? this.useGpu : options.useGpu,
             flashAttn: options.flashAttn === undefined ? this.flashAttn : options.flashAttn,
             gpuDevice: options.gpuDevice === undefined ? this.gpuDevice : options.gpuDevice,
+            ...(options.resetDecoderContext ? { recovery: true } : {}),
             prompt: this.sanitizePrompt(options.contextPrompt ||
                 (options.useInitialPrompt === false ? '' : options.initialPrompt === undefined ? this.initialPrompt : options.initialPrompt))
         };
@@ -762,6 +763,7 @@ class LocalWhisperService {
             }
         }
 
+        args.push('--max-context', args.includes('--prompt') && !options.resetDecoderContext ? '48' : '0');
         const gpuArgs = this.buildGpuArgs(useGpu, flashAttn, gpuDevice);
         args.push(...gpuArgs);
         if (useGpu) {
@@ -869,14 +871,6 @@ class LocalWhisperService {
                             fs.unlinkSync(jsonOutputFile);
                             console.log('🗑️ Cleaned up temp file');
                             
-                            // Extract text from segments
-                            const text = result.transcription
-                                .map(segment => segment.text)
-                                .join(' ')
-                                .trim();
-
-                            console.log(`📝 Extracted text (${text.length} chars): ${text.substring(0, 100)}...`);
-
                             // Detect language from result
                             const detectedLanguage = this.detectLanguageFromOutput(stderr) || language;
                             console.log(`🌍 Detected language: ${detectedLanguage}`);
@@ -889,7 +883,10 @@ class LocalWhisperService {
                             }
 
                             // Normalize segments to expected format
-                            const segments = this.normalizeSegments(rawSegments);
+                            const normalizedSegments = this.normalizeSegments(rawSegments);
+                            const segments = options.preserveDecoderOutput
+                                ? normalizedSegments : this.removeDecoderLoops(normalizedSegments);
+                            const text = segments.map(segment => segment.text).join(' ').trim();
                             console.log('🎬 Normalized segments:', segments.length, 'segments');
                             if (segments.length > 0) {
                                 console.log('🎬 First normalized segment:', segments[0]);
@@ -1374,6 +1371,32 @@ class LocalWhisperService {
                 };
             }
         });
+    }
+
+    removeDecoderLoops(segments) {
+        const result = [];
+        for (let start = 0; start < segments.length;) {
+            const first = segments[start];
+            let end = start + 1;
+            let hasZeroDuration = first.start === first.end;
+
+            while (end < segments.length && first.text && segments[end].text === first.text &&
+                segments[end].start === segments[end - 1].end && segments[end].end >= segments[end].start) {
+                hasZeroDuration ||= segments[end].start === segments[end].end;
+                end++;
+            }
+
+            if (end - start >= 4 && hasZeroDuration) {
+                console.warn(`Whisper decoder repeated a segment ${end - start} times at ${first.start}s–${segments[end - 1].end}s`);
+                result.push(segments.slice(start, end).find(segment => segment.end > segment.start) || first);
+            } else {
+                for (let index = start; index < end; index++) {
+                    result.push(segments[index]);
+                }
+            }
+            start = end;
+        }
+        return result;
     }
 
     /**

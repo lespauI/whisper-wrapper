@@ -1,3 +1,4 @@
+const { describe, expect, it } = require('@jest/globals');
 const { LocalWhisperService } = require('../../src/services/localWhisperService');
 
 // Mock fs module
@@ -702,6 +703,34 @@ describe('LocalWhisperService', () => {
             const raw = [{ unknownField: 'x', text: 'Fallback text' }];
             const result = service.normalizeSegments(raw);
             expect(result[0].text).toBe('Fallback text');
+        });
+    });
+
+    describe('removeDecoderLoops', () => {
+        const repeatedText = 'И чтобы оно было гранулярным.';
+
+        it('keeps one copy at the original timestamp when a decoder loop stalls', () => {
+            const before = { start: 2226.54, end: 2244.54, text: 'Во-первых…' };
+            const first = { start: 2244.54, end: 2246.54, text: repeatedText };
+            const after = { start: 2248.54, end: 2252.54, text: 'Следующая реплика.' };
+            const segments = [
+                before,
+                first,
+                { start: 2246.54, end: 2247.54, text: repeatedText },
+                { start: 2247.54, end: 2247.54, text: repeatedText },
+                { start: 2247.54, end: 2248.54, text: repeatedText },
+                after
+            ];
+
+            expect(service.removeDecoderLoops(segments)).toEqual([before, first, after]);
+        });
+
+        it('preserves repeated speech with advancing timestamps', () => {
+            const segments = [0, 1, 2, 3].map(start => ({
+                start, end: start + 1, text: repeatedText
+            }));
+
+            expect(service.removeDecoderLoops(segments)).toEqual(segments);
         });
     });
 

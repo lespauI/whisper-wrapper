@@ -249,8 +249,8 @@ class MultilingualWhisperService {
                     language: section.language, translate: !!options.translate,
                     prompt: options.prompt || '', carry_initial_prompt: false,
                     response_format: 'verbose_json', no_language_probabilities: true,
-                    max_context: 0, max_len: 1000000, token_timestamps: false,
-                    best_of: 5, beam_size: 5, temperature: 0, temperature_inc: 0
+                    max_context: options.prompt ? 48 : 0, max_len: 1000000, token_timestamps: false,
+                    best_of: 5, beam_size: 5, temperature: 0, temperature_inc: options.recovery ? 0.2 : 0
                 });
                 if (!Array.isArray(result.segments)) throw new Error('Whisper returned invalid transcription segments');
                 for (const segment of result.segments) {

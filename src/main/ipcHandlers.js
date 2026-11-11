@@ -387,7 +387,7 @@ class IPCHandlers {
                         status: finalResult.status,
                         partial: finalResult.partial,
                         issues: finalResult.issues,
-                        resumeId: finalResult.resumeId
+                        resumeId: finalResult.partial ? finalResult.resumeId : null
                     });
                 } catch (error) {
                     error.preserveError = true;
@@ -404,7 +404,7 @@ class IPCHandlers {
 
                 if (!finalResult.partial && finalResult.resumeId && this.transcriptionService.finalizeTranscription) {
                     try {
-                        await this.transcriptionService.finalizeTranscription(finalResult.resumeId);
+                        await this.finalizeResumeJobIfUnreferenced(finalResult.resumeId, entry?.id);
                     } catch (error) {
                         finalResult.cleanupPending = true;
                         finalResult.cleanupError = error.message;
@@ -528,7 +528,7 @@ class IPCHandlers {
                         status: partial ? 'partial' : 'complete',
                         partial,
                         issues,
-                        resumeId
+                        resumeId: partial ? resumeId : null
                     });
                     historyId = entry?.id;
                 } catch (error) {
@@ -539,7 +539,7 @@ class IPCHandlers {
 
             if (!partial && resumeId && this.transcriptionService.finalizeTranscription) {
                 try {
-                    await this.transcriptionService.finalizeTranscription(resumeId);
+                    await this.finalizeResumeJobIfUnreferenced(resumeId, historyId);
                 } catch (error) {
                     console.error('Failed to remove completed transcription checkpoints:', error);
                 }
@@ -595,6 +595,7 @@ class IPCHandlers {
         const result = await this.transcriptionService.resumeTranscription(resumeId, { signal });
         const partial = result.partial === true || result.status === 'partial';
         const issues = Array.isArray(result.issues) ? result.issues : [];
+        const resultResumeId = partial ? (result.resumeId || resumeId) : null;
         const updatedEntry = await this.transcriptionStoreService.updateResult(entry.id, result.text, {
             language: result.language,
             duration: result.duration,
@@ -604,19 +605,19 @@ class IPCHandlers {
             status: partial ? 'partial' : 'complete',
             partial,
             issues,
-            resumeId: result.resumeId || null
+            resumeId: resultResumeId
         });
         if (!updatedEntry) throw new Error('Partial transcription history entry was not found');
 
         let cleanupPending = false;
         let cleanupError = null;
         const jobsToClean = new Set();
-        if (resumeId !== result.resumeId) jobsToClean.add(resumeId);
+        if (resumeId !== resultResumeId) jobsToClean.add(resumeId);
         if (!partial && result.resumeId) jobsToClean.add(result.resumeId);
         if (this.transcriptionService.finalizeTranscription) {
             for (const jobId of jobsToClean) {
                 try {
-                    await this.transcriptionService.finalizeTranscription(jobId);
+                    await this.finalizeResumeJobIfUnreferenced(jobId, updatedEntry.id);
                 } catch (error) {
                     cleanupPending = true;
                     cleanupError = error.message;
@@ -629,8 +630,16 @@ class IPCHandlers {
                 ? 'Transcription is still partial; review the flagged audio intervals'
                 : 'Transcription resumed and completed successfully'
         });
-        return { ...result, status: partial ? 'partial' : 'complete', partial, issues,
+        return { ...result, status: partial ? 'partial' : 'complete', partial, issues, resumeId: resultResumeId,
             historyId: updatedEntry.id, cleanupPending, cleanupError };
+    }
+
+    async finalizeResumeJobIfUnreferenced(resumeId, historyId) {
+        const stillReferenced = this.transcriptionStoreService.list().some(entry =>
+            entry.id !== historyId && entry.resumeId === resumeId);
+        if (stillReferenced) return false;
+        await this.transcriptionService.finalizeTranscription(resumeId);
+        return true;
     }
 
     async handleGetConfig() {
@@ -1060,7 +1069,7 @@ class IPCHandlers {
             if (!deleted) return { success: false };
             if (saved?.entry?.resumeId && this.transcriptionService.finalizeTranscription) {
                 try {
-                    await this.transcriptionService.finalizeTranscription(saved.entry.resumeId);
+                    await this.finalizeResumeJobIfUnreferenced(saved.entry.resumeId, id);
                 } catch (error) {
                     return { success: true, cleanupPending: true, error: error.message };
                 }

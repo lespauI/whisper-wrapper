@@ -320,6 +320,41 @@ async function ensureManifest(directory, manifest) {
     await atomicWrite(manifestPath, JSON.stringify(manifest));
 }
 
+async function buildResumeIdentity(filePath, options, decoderIdentity, boundaries, retainSourceAudio, signal) {
+    const hash = createHash('sha256');
+    const sourceHash = retainSourceAudio ? createHash('sha256') : null;
+    hash.update(JSON.stringify({ version: algorithmVersion, options, decoderIdentity, boundaries, retainSourceAudio }));
+    const source = signal
+        ? fs.createReadStream(filePath, { signal })
+        : fs.createReadStream(filePath);
+    for await (const bytes of source) {
+        hash.update(bytes);
+        sourceHash?.update(bytes);
+    }
+    return {
+        resumeId: hash.digest('hex'),
+        sourceSha256: sourceHash?.digest('hex') || null
+    };
+}
+
+async function ensureResumableJob(filePath, checkpointRoot, resumeId, sourceSha256, options,
+    decoderIdentity, boundaries, retainSourceAudio) {
+    const directory = path.join(checkpointRoot, resumeId);
+    if (retainSourceAudio) await ensureSourceAudio(filePath, directory, sourceSha256);
+    await ensureManifest(directory, {
+        schemaVersion: checkpointSchemaVersion,
+        algorithmVersion,
+        resumeId,
+        boundaries,
+        model: options.model,
+        decoderIdentity,
+        sourceFile: retainSourceAudio ? sourceFilename : null,
+        sourceSha256,
+        options
+    });
+    return directory;
+}
+
 function issueMarker(start, end, message) {
     const time = seconds => new Date(Math.round(seconds * 1000)).toISOString().slice(11, 23);
     return { start, end, text: `[Требуется проверка аудио ${time(start)}–${time(end)}]`, issue: true, message };
@@ -461,6 +496,14 @@ async function transcribeResumableFile(filePath, options, transcribe, checkpoint
                 await fs.promises.rm(scratch, { recursive: true, force: true });
             }
         }
+        if ((result.partial === true || result.status === 'partial') && retainSourceAudio) {
+            const boundaries = [0, duration];
+            const identity = await buildResumeIdentity(filePath, recognitionOptions, decoderIdentity,
+                boundaries, retainSourceAudio);
+            await ensureResumableJob(filePath, checkpointRoot, identity.resumeId, identity.sourceSha256,
+                recognitionOptions, decoderIdentity, boundaries, retainSourceAudio);
+            result.resumeId = identity.resumeId;
+        }
         return withDurationMetadata(result, duration, startedAt);
     }
 
@@ -470,35 +513,18 @@ async function transcribeResumableFile(filePath, options, transcribe, checkpoint
     }
     boundaries.push(duration);
 
-    const hash = createHash('sha256');
-    const sourceHash = retainSourceAudio ? createHash('sha256') : null;
-    hash.update(JSON.stringify({ version: algorithmVersion, options: recognitionOptions,
-        decoderIdentity, boundaries, retainSourceAudio }));
-    for await (const bytes of fs.createReadStream(filePath, { signal })) {
-        hash.update(bytes);
-        sourceHash?.update(bytes);
-    }
+    const identity = await buildResumeIdentity(filePath, recognitionOptions, decoderIdentity,
+        boundaries, retainSourceAudio, signal);
     checkCanceled(signal);
-    const resumeId = hash.digest('hex');
-    const sourceSha256 = sourceHash?.digest('hex') || null;
+    const { resumeId, sourceSha256 } = identity;
     const directory = path.join(checkpointRoot, resumeId);
 
     if (activeJobs.has(directory)) {
         return withDurationMetadata(await activeJobs.get(directory), duration, startedAt);
     }
     const job = (async () => {
-        if (retainSourceAudio) await ensureSourceAudio(filePath, directory, sourceSha256);
-        await ensureManifest(directory, {
-            schemaVersion: checkpointSchemaVersion,
-            algorithmVersion,
-            resumeId,
-            boundaries,
-            model: options.model,
-            decoderIdentity,
-            sourceFile: retainSourceAudio ? sourceFilename : null,
-            sourceSha256,
-            options: recognitionOptions
-        });
+        await ensureResumableJob(filePath, checkpointRoot, resumeId, sourceSha256,
+            recognitionOptions, decoderIdentity, boundaries, retainSourceAudio);
         return transcribeChunks(filePath, decodeOptions, transcribe, directory, boundaries, resumeId);
     })();
     activeJobs.set(directory, job);

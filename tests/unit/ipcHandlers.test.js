@@ -274,6 +274,26 @@ describe('IPCHandlers', () => {
             expect(mockTranscriptionService.finalizeTranscription).toHaveBeenCalledWith('d'.repeat(64));
         });
 
+        it('keeps checkpoints when another partial history entry shares the completed job id', async () => {
+            const resumeId = '2'.repeat(64);
+            mockTranscriptionService.transcribeFile.mockResolvedValue({
+                success: true,
+                text: 'Complete words',
+                resumeId
+            });
+            mockTranscriptionStoreService.store.mockResolvedValue({ id: 'complete-history-id' });
+            mockTranscriptionStoreService.list.mockReturnValue([
+                { id: 'partial-history-id', resumeId, partial: true }
+            ]);
+            mockTranscriptionService.finalizeTranscription = jest.fn();
+
+            await handlers.handleTranscribeFile(mockEvent, '/path/to/audio.wav');
+
+            expect(mockTranscriptionStoreService.store).toHaveBeenCalledWith('Complete words',
+                expect.objectContaining({ resumeId: null, partial: false }));
+            expect(mockTranscriptionService.finalizeTranscription).not.toHaveBeenCalled();
+        });
+
         it('keeps checkpoints when history persistence fails', async () => {
             const controller = new AbortController();
             mockTranscriptionService.transcribeFile.mockResolvedValue({
@@ -427,6 +447,26 @@ describe('IPCHandlers', () => {
             expect(mockTranscriptionService.finalizeTranscription).toHaveBeenCalledWith(resumeId);
         });
 
+        it('keeps completed recording checkpoints while another partial history entry references them', async () => {
+            const resumeId = '3'.repeat(64);
+            mockTranscriptionService.transcribeBuffer.mockResolvedValue({
+                success: true,
+                text: 'Recorded words',
+                resumeId
+            });
+            mockTranscriptionStoreService.store.mockResolvedValue({ id: 'complete-recording-id' });
+            mockTranscriptionStoreService.list.mockReturnValue([
+                { id: 'partial-recording-id', resumeId, partial: true }
+            ]);
+            mockTranscriptionService.finalizeTranscription = jest.fn();
+
+            await handlers.handleTranscribeAudio(mockEvent, Buffer.from('audio data'));
+
+            expect(mockTranscriptionStoreService.store).toHaveBeenCalledWith('Recorded words',
+                expect.objectContaining({ resumeId: null, partial: false }));
+            expect(mockTranscriptionService.finalizeTranscription).not.toHaveBeenCalled();
+        });
+
         it('returns and stores a partial microphone result after cancellation', async () => {
             const controller = new AbortController();
             const resumeId = '6'.repeat(64);
@@ -481,6 +521,7 @@ describe('IPCHandlers', () => {
                 expect(id).toBe('history-id');
                 expect(text).toBe('All recovered words');
                 expect(metadata.status).toBe('complete');
+                expect(metadata.resumeId).toBeNull();
                 return { id };
             });
             mockTranscriptionService.finalizeTranscription = jest.fn(async () => order.push('cleaned'));
@@ -507,6 +548,28 @@ describe('IPCHandlers', () => {
             expect(result).toMatchObject({ success: true, partial: true, resumeId });
             expect(mockTranscriptionService.finalizeTranscription).not.toHaveBeenCalled();
         });
+
+        it('keeps a completed job while another partial history entry shares its resume id', async () => {
+            const resumeId = '4'.repeat(64);
+            mockTranscriptionStoreService.list.mockReturnValue([
+                { id: 'first-history-id', resumeId, partial: true },
+                { id: 'second-history-id', resumeId, partial: true }
+            ]);
+            mockTranscriptionService.resumeTranscription = jest.fn().mockResolvedValue({
+                success: true, status: 'complete', partial: false, resumeId,
+                text: 'Recovered words', issues: []
+            });
+            mockTranscriptionStoreService.updateResult.mockResolvedValue({ id: 'first-history-id' });
+            mockTranscriptionService.finalizeTranscription = jest.fn();
+
+            const result = await handlers.handleResumeTranscription({ sender: { send: jest.fn() } }, resumeId,
+                new AbortController().signal);
+
+            expect(result).toMatchObject({ success: true, partial: false, resumeId: null });
+            expect(mockTranscriptionStoreService.updateResult).toHaveBeenCalledWith('first-history-id',
+                'Recovered words', expect.objectContaining({ resumeId: null }));
+            expect(mockTranscriptionService.finalizeTranscription).not.toHaveBeenCalled();
+        });
     });
 
     describe('handleTranscriptionsDelete', () => {
@@ -523,6 +586,21 @@ describe('IPCHandlers', () => {
 
             expect(order).toEqual(['deleted', 'cleaned']);
             expect(result).toEqual({ success: true });
+        });
+
+        it('keeps the resumable job when another history entry still references it', async () => {
+            const resumeId = '5'.repeat(64);
+            mockTranscriptionStoreService.get.mockResolvedValue({ entry: { resumeId }, text: '' });
+            mockTranscriptionStoreService.delete.mockResolvedValue(true);
+            mockTranscriptionStoreService.list.mockReturnValue([
+                { id: 'other-history-id', resumeId, partial: true }
+            ]);
+            mockTranscriptionService.finalizeTranscription = jest.fn();
+
+            const result = await handlers.handleTranscriptionsDelete({}, { id: 'deleted-history-id' });
+
+            expect(result).toEqual({ success: true });
+            expect(mockTranscriptionService.finalizeTranscription).not.toHaveBeenCalled();
         });
     });
 

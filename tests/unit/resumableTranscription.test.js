@@ -155,9 +155,9 @@ it('uses the regular transcription for short recordings', async () => {
     expect(result.processingDurationMs).toEqual(expect.any(Number));
 });
 
-it('marks malformed short transcription output as partial', async () => {
+it('saves resumable audio for malformed short transcription output', async () => {
     execFile.mockImplementationOnce((command, args, _settings, callback) => callback(null, {
-        stdout: '{"streams":[{"duration":"30"}]}'
+        stdout: '{"streams":[{"duration":"240"}]}'
     }));
     const transcribe = jestApi.fn().mockResolvedValue({
         success: true,
@@ -170,9 +170,20 @@ it('marks malformed short transcription output as partial', async () => {
     expect(result).toMatchObject({
         status: 'partial',
         partial: true,
-        issues: [{ code: 'invalid_segments', start: 0, end: 30 }],
-        resumeId: null
+        issues: [{ code: 'invalid_segments', start: 0, end: 240 }],
+        resumeId: expect.any(String)
     });
+    const job = await getResumableJob(result.resumeId, checkpoints);
+    expect(await fs.readFile(job.sourcePath)).toEqual(await fs.readFile(source));
+    expect(job.options).toEqual(options);
+
+    execFile.mockImplementationOnce((command, args, _settings, callback) => callback(null, {
+        stdout: '{"streams":[{"duration":"240"}]}'
+    }));
+    const retry = jestApi.fn().mockResolvedValue({ ...chunk('Recovered short audio'), text: 'Recovered short audio' });
+    const resumed = await transcribeResumableFile(job.sourcePath, job.options, retry, checkpoints);
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(resumed).toMatchObject({ partial: false, status: 'complete', text: 'Recovered short audio' });
 });
 
 it('moves a chunk boundary to a nearby pause and offsets the next segments', async () => {

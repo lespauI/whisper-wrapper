@@ -210,7 +210,7 @@ function validCheckpoint(checkpoint, resumeId, start, end) {
     if (checkpoint.partial || checkpoint.issues.length ||
         !checkpoint.languages.every(language => typeof language === 'string')) return false;
     const duration = end - start;
-    return checkpoint.segments.every(segment => Number.isFinite(segment.start) &&
+    return checkpoint.segments.every(segment => segment && Number.isFinite(segment.start) &&
         Number.isFinite(segment.end) && segment.start >= 0 && segment.end >= segment.start &&
         segment.end <= duration + 0.01 && typeof segment.text === 'string');
 }

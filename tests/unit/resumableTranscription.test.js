@@ -76,17 +76,18 @@ it('uses model and decoder fingerprints in the resume identity', async () => {
     expect(retry).toHaveBeenCalledTimes(3);
 });
 
-it('retranscribes only a checkpoint with invalid segments', async () => {
+it('retranscribes a checkpoint whose segment array contains null', async () => {
     const first = jestApi.fn().mockResolvedValueOnce(chunk('first')).mockResolvedValueOnce(chunk('second'))
         .mockRejectedValueOnce(new Error('decoder exited'));
     const partial = await transcribeResumableFile(source, options, first, checkpoints);
     const damaged = path.join(checkpoints, partial.resumeId, '1.json');
     await fs.writeFile(damaged, JSON.stringify({
         schemaVersion: 1,
+        algorithmVersion: 4,
         resumeId: partial.resumeId,
         start: 240,
         end: 480,
-        segments: [{ start: null, end: 1, text: 'bad' }],
+        segments: [null],
         languages: ['ru'],
         partial: false,
         issues: []

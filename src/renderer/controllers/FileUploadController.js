@@ -127,10 +127,11 @@ export class FileUploadController {
             // Start transcription
             const result = await window.electronAPI.transcribeFile(filePath);
             console.log('🎬 Transcription result from IPC:', result);
-            
-            if (operation.canceled || result.canceled) {
+
+            if (!this.isCurrentOperation(operation)) return;
+            if (result.canceled) {
                 this.appState.setFileUploadState({ currentFile: null, isProcessing: false, progress: 0 });
-                if (!operation.canceled) this.statusController.updateStatus('Transcription stopped');
+                this.statusController.updateStatus('Transcription stopped');
                 return;
             }
             if (result.success) {
@@ -140,6 +141,7 @@ export class FileUploadController {
             }
             
         } catch (error) {
+            if (!this.isCurrentOperation(operation)) return;
             if (operation?.canceled) {
                 this.appState.setFileUploadState({ currentFile: null, isProcessing: false, progress: 0 });
                 return;
@@ -153,11 +155,22 @@ export class FileUploadController {
             });
         } finally {
             if (operation) {
-                this.statusController.showProgress(false);
+                const uploadState = this.appState.getFileUploadState();
+                if (!this.isCurrentOperation(operation) && uploadState.currentFile === filePath) {
+                    this.appState.setFileUploadState({ currentFile: null, isProcessing: false, progress: 0 });
+                    this.statusController.showProgress(false);
+                } else if (this.isCurrentOperation(operation)) {
+                    this.statusController.showProgress(false);
+                }
                 this.statusController.endTranscription(operation);
             }
             unsubscribe?.();
         }
+    }
+
+    isCurrentOperation(operation) {
+        if (typeof this.statusController.isCurrentTranscription !== 'function') return true;
+        return this.statusController.isCurrentTranscription(operation);
     }
 
     /**

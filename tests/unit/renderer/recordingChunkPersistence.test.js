@@ -48,4 +48,19 @@ describe('Recording chunk persistence', () => {
         expect(controller.recordingAutoSave.savedChunks).toEqual([savedChunk]);
         expect(window.electronAPI.deleteRecordingChunk).not.toHaveBeenCalled();
     });
+
+    test('persists the final recorder data before assembly and does not expose a broken recording', async () => {
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        controller.audioChunks = [new Blob(['final recorder data'])];
+        window.electronAPI.loadRecordingChunk.mockRejectedValue(new Error('disk read failed'));
+
+        await controller.finishRecording('audio/webm');
+
+        const [bytes] = window.electronAPI.saveRecordingChunk.mock.calls[0];
+        expect(Buffer.from(bytes).toString()).toBe('final recorder data');
+        expect(controller.recordingBlob).toBeUndefined();
+        expect(controller.recordingAutoSave.savedChunks).toHaveLength(1);
+        expect(window.electronAPI.deleteRecordingChunk).not.toHaveBeenCalled();
+        expect(controller.statusController.showError).toHaveBeenCalled();
+    });
 });

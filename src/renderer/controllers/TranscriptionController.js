@@ -277,7 +277,11 @@ export class TranscriptionController {
         if (transcriptionText && transcriptionText.value) {
             try {
                 const filename = `transcription-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
-                const result = await window.electronAPI.saveFile(transcriptionText.value, filename);
+                const metadata = this.getExportMetadata();
+                const content = metadata.partial
+                    ? this.formatAsText(transcriptionText.value, metadata)
+                    : transcriptionText.value;
+                const result = await window.electronAPI.saveFile(content, filename);
                 
                 if (!result.canceled) {
                     this.statusController.updateStatus('Transcription saved successfully');

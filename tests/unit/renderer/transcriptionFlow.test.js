@@ -32,6 +32,7 @@ describe('Transcription result flow', () => {
         statusController = {
             updateStatus: jest.fn(),
             showError: jest.fn(),
+            showWarning: jest.fn(),
             showTranscriptionLoading: jest.fn()
         };
         transcriptionController = Object.create(TranscriptionController.prototype);
@@ -56,10 +57,13 @@ describe('Transcription result flow', () => {
         transcriptionController.seekToTime = jest.fn();
 
         fileUploadController = Object.create(FileUploadController.prototype);
+        const sharedTranscription = {};
         fileUploadController.appState = {
-            setTranscriptionState: jest.fn(),
+            setTranscriptionState: state => Object.assign(sharedTranscription, state),
+            getTranscriptionState: () => sharedTranscription,
             setFileUploadState: jest.fn()
         };
+        transcriptionController.appState = fileUploadController.appState;
         fileUploadController.statusController = statusController;
         fileUploadController.tabController = { switchTab: jest.fn() };
         window.whisperApp = { controllers: { transcription: transcriptionController } };
@@ -95,7 +99,7 @@ describe('Transcription result flow', () => {
         await transcriptionController.exportAs('txt');
 
         expect(window.electronAPI.saveFile).toHaveBeenCalledWith(
-            'Transcript B',
+            expect.stringMatching(/Status: Complete[\s\S]*\n\nTranscript B$/),
             expect.stringMatching(/transcription-.*\.txt/)
         );
     });
@@ -107,5 +111,21 @@ describe('Transcription result flow', () => {
         document.querySelector('.transcription-segment').click();
 
         expect(transcriptionController.seekToTime).toHaveBeenCalledWith(14.25);
+    });
+
+    test('includes the partial warning when saving from the editor', async () => {
+        await fileUploadController.handleTranscriptionSuccess({
+            text: 'Recognized text',
+            segments: [],
+            partial: true,
+            issues: [{ start: 2, end: 4, message: 'Missing audio' }]
+        });
+
+        await transcriptionController.downloadTranscription();
+
+        expect(window.electronAPI.saveFile).toHaveBeenCalledWith(
+            expect.stringMatching(/Status: Partial; review required[\s\S]*Missing audio[\s\S]*Recognized text$/),
+            expect.stringMatching(/transcription-.*\.txt/)
+        );
     });
 });

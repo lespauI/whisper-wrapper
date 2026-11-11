@@ -148,7 +148,7 @@ async function recoverRepeats(result, file, duration, offset, scratch, options, 
         const from = boundaries[index - 1];
         const to = boundaries[index];
         if (options.signal?.aborted) {
-            issues.push({ code: 'canceled', start: offset + from, end: offset + to, message: 'Transcription canceled' });
+            issues.push({ code: 'canceled', start: offset + from, end: offset + duration, message: 'Transcription canceled' });
             break;
         }
         try {
@@ -167,7 +167,7 @@ async function recoverRepeats(result, file, duration, offset, scratch, options, 
             }
         } catch (error) {
             if (isCanceled(error, options.signal)) {
-                issues.push({ code: 'canceled', start: offset + from, end: offset + to, message: 'Transcription canceled' });
+                issues.push({ code: 'canceled', start: offset + from, end: offset + duration, message: 'Transcription canceled' });
                 break;
             }
             console.warn(`Whisper recovery failed at ${offset + from}s: ${error.message}`);
@@ -393,7 +393,7 @@ async function transcribeChunks(filePath, options, transcribe, directory, bounda
 
             if (!chunk) {
                 if (options.signal?.aborted) {
-                    issues.push({ code: 'canceled', start, end, message: 'Transcription canceled' });
+                    issues.push({ code: 'canceled', start, end: duration, message: 'Transcription canceled' });
                     if (!segments.length) throw new Error('Transcription canceled');
                     break;
                 }
@@ -421,7 +421,7 @@ async function transcribeChunks(filePath, options, transcribe, directory, bounda
                     const issue = {
                         code: canceled ? 'canceled' : chunk ? 'checkpoint_write_failed' : 'chunk_transcription_failed',
                         start,
-                        end,
+                        end: canceled ? duration : end,
                         message: canceled ? 'Transcription canceled' : error.message
                     };
                     issues.push(issue);

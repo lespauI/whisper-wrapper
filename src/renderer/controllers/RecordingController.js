@@ -557,6 +557,7 @@ export class RecordingController {
      * Start audio recording
      */
     async startRecording() {
+        if (this._finishingRecording) return;
         try {
             const captureMode = this.captureMode || 'microphone';
 
@@ -610,11 +611,7 @@ export class RecordingController {
                 }
             };
             
-            this.mediaRecorder.onstop = () => {
-                const audioBlob = new Blob(this.audioChunks, { type: mimeType });
-                this.recordingBlob = audioBlob;
-                this.handleRecordingComplete(audioBlob);
-            };
+            this.mediaRecorder.onstop = () => this.finishRecording(mimeType);
             
             this.mediaRecorder.start(100); // Collect data every 100ms
             this.isRecording = true;
@@ -699,10 +696,11 @@ export class RecordingController {
      * Stop recording
      */
     async stopRecording() {
-        if (this.mediaRecorder) {
-            // Save final chunk before stopping
+        if (this.mediaRecorder && !this._finishingRecording) {
+            this._finishingRecording = true;
+            this.recordingBlob = null;
+            this.appState.setRecordingState({ blob: null });
             this.stopAutoSaveTimer();
-            await this.saveCurrentRecordingChunk();
             
             const recorderStream = this.mediaRecorder.stream;
             this.mediaRecorder.stop();
@@ -1826,6 +1824,17 @@ export class RecordingController {
     /**
      * Handle recording completion
      */
+    async finishRecording(mimeType) {
+        try {
+            await this._pendingAutoSave;
+            if (this.recordingAutoSave.sessionId) await this.saveCurrentRecordingChunk();
+            const audioBlob = new Blob(this.audioChunks, { type: mimeType });
+            await this.handleRecordingComplete(audioBlob);
+        } finally {
+            this._finishingRecording = false;
+        }
+    }
+
     async handleRecordingComplete(audioBlob) {
         try {
             // Combine all saved chunks with the final recording
@@ -1844,14 +1853,14 @@ export class RecordingController {
             // Auto-transcribe if enabled
             const recordingState = this.appState.getRecordingState();
             if (recordingState.autoTranscribe) {
-                await this.transcribeRecording();
+                this.transcribeRecording();
             } else {
                 this.statusController.updateStatus('Recording completed. Use the buttons below to save, transcribe, or clear the recording.');
             }
             
         } catch (error) {
             console.error('Error processing recording:', error);
-            this.statusController.showError('Failed to process recording');
+            this.statusController.showError('Failed to assemble recording. Saved audio fragments were retained.');
         }
     }
 

@@ -275,7 +275,10 @@ it('returns a partial result on cancellation during recovery and resumes from sa
 
     const canceled = await transcribeResumableFile(source, { ...options, signal: controller.signal }, transcribe, checkpoints);
     expect(canceled).toMatchObject({ partial: true, status: 'partial', text: expect.stringContaining('saved') });
-    expect(canceled.issues.some(issue => issue.code === 'canceled')).toBe(true);
+    expect(canceled.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'canceled', start: 240, end: 480 }),
+        expect.objectContaining({ code: 'canceled', start: 480, end: 720 })
+    ]));
     expect(transcribe).toHaveBeenCalledTimes(3);
 
     const retry = jestApi.fn().mockResolvedValue(chunk('resumed'));

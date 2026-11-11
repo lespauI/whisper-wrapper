@@ -108,7 +108,10 @@ describe('Transcription result flow', () => {
         const segment = { start: 14.25, end: 17, text: 'Seek target' };
         await fileUploadController.showTranscriptionResult('Seek target', [segment]);
 
-        document.querySelector('.transcription-segment').click();
+        const card = document.querySelector('#transcription-segments > .transcription-segment');
+        expect(card.querySelector('div.segment-timestamp').textContent).toBe('0:14');
+        expect(card.querySelector('div.segment-text').textContent).toBe('Seek target');
+        card.click();
 
         expect(transcriptionController.seekToTime).toHaveBeenCalledWith(14.25);
     });

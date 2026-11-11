@@ -692,11 +692,7 @@ ${text}
         const paragraphs = this.groupSegmentsIntoParagraphs(segments);
         
         paragraphs.forEach((paragraph, paragraphIndex) => {
-            const paragraphDiv = document.createElement('div');
-            paragraphDiv.className = 'transcript-paragraph';
-            paragraphDiv.setAttribute('data-paragraph', paragraphIndex);
-            
-            paragraph.forEach((segment, segmentIndex) => {
+            paragraph.forEach(segment => {
                 const segmentDiv = document.createElement('div');
                 segmentDiv.className = 'transcription-segment';
                 segmentDiv.setAttribute('data-start', segment.start);
@@ -705,20 +701,24 @@ ${text}
                     this.seekToTime(segment.start);
                 });
                 
-                const timestamp = document.createElement('span');
-                timestamp.className = 'transcript-timestamp';
+                const timestamp = document.createElement('div');
+                timestamp.className = 'segment-timestamp';
                 timestamp.textContent = this.formatTimestamp(segment.start);
                 
-                const text = document.createElement('span');
-                text.className = 'transcript-text';
+                const text = document.createElement('div');
+                text.className = 'segment-text';
                 text.textContent = segment.text.trim();
                 
                 segmentDiv.appendChild(timestamp);
                 segmentDiv.appendChild(text);
-                paragraphDiv.appendChild(segmentDiv);
+                container.appendChild(segmentDiv);
             });
-            
-            container.appendChild(paragraphDiv);
+
+            if (paragraphIndex < paragraphs.length - 1) {
+                const paragraphBreak = document.createElement('div');
+                paragraphBreak.className = 'segment-paragraph-break';
+                container.appendChild(paragraphBreak);
+            }
         });
     }
 

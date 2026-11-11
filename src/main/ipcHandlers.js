@@ -36,8 +36,8 @@ class IPCHandlers {
             this.runTranscription(event, signal => this.handleTranscribeFile(event, filePath, signal)));
         ipcMain.handle('transcription:audio', (event, audioData, prompt = null, options = {}) =>
             this.runTranscription(event, signal => this.handleTranscribeAudio(event, audioData, prompt, options, signal)));
-        ipcMain.handle('transcription:resume', (event, resumeId) =>
-            this.runTranscription(event, signal => this.handleResumeTranscription(event, resumeId, signal)));
+        ipcMain.handle('transcription:resume', (event, historyId) =>
+            this.runTranscription(event, signal => this.handleResumeTranscription(event, historyId, signal)));
         ipcMain.handle('transcription:cancel', this.handleCancelTranscription.bind(this));
 
         // Recording handlers
@@ -583,10 +583,14 @@ class IPCHandlers {
         }
     }
 
-    async handleResumeTranscription(event, resumeId, signal) {
+    async handleResumeTranscription(event, historyId, signal) {
+        if (typeof historyId !== 'string' || !historyId) {
+            throw new Error('Invalid partial transcription history id');
+        }
         const entry = this.transcriptionStoreService.list().find(item =>
-            item.resumeId === resumeId && item.partial === true);
+            item.id === historyId && item.partial === true && typeof item.resumeId === 'string' && item.resumeId);
         if (!entry) throw new Error('Partial transcription was not found in history');
+        const resumeId = entry.resumeId;
 
         event.sender.send('transcription:progress', {
             status: 'processing',

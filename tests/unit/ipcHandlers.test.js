@@ -527,7 +527,7 @@ describe('IPCHandlers', () => {
             mockTranscriptionService.finalizeTranscription = jest.fn(async () => order.push('cleaned'));
             const event = { sender: { send: jest.fn() } };
 
-            const result = await handlers.handleResumeTranscription(event, resumeId, new AbortController().signal);
+            const result = await handlers.handleResumeTranscription(event, 'history-id', new AbortController().signal);
 
             expect(order).toEqual(['stored', 'cleaned']);
             expect(result).toMatchObject({ success: true, partial: false, historyId: 'history-id' });
@@ -542,32 +542,41 @@ describe('IPCHandlers', () => {
             mockTranscriptionStoreService.updateResult.mockResolvedValue({ id: 'history-id' });
             mockTranscriptionService.finalizeTranscription = jest.fn();
 
-            const result = await handlers.handleResumeTranscription({ sender: { send: jest.fn() } }, resumeId,
+            const result = await handlers.handleResumeTranscription({ sender: { send: jest.fn() } }, 'history-id',
                 new AbortController().signal);
 
             expect(result).toMatchObject({ success: true, partial: true, resumeId });
             expect(mockTranscriptionService.finalizeTranscription).not.toHaveBeenCalled();
         });
 
-        it('keeps a completed job while another partial history entry shares its resume id', async () => {
+        it('resumes the selected history entry when multiple entries share a resume id', async () => {
             const resumeId = '4'.repeat(64);
-            mockTranscriptionStoreService.list.mockReturnValue([
-                { id: 'first-history-id', resumeId, partial: true },
-                { id: 'second-history-id', resumeId, partial: true }
-            ]);
+            const entries = [
+                { id: 'history-a', resumeId, partial: true },
+                { id: 'history-b', resumeId, partial: true }
+            ];
+            mockTranscriptionStoreService.list.mockReturnValue(entries);
             mockTranscriptionService.resumeTranscription = jest.fn().mockResolvedValue({
                 success: true, status: 'complete', partial: false, resumeId,
                 text: 'Recovered words', issues: []
             });
-            mockTranscriptionStoreService.updateResult.mockResolvedValue({ id: 'first-history-id' });
+            mockTranscriptionStoreService.updateResult.mockImplementation(async (id, text, metadata) => {
+                const entry = entries.find(item => item.id === id);
+                Object.assign(entry, metadata);
+                return entry;
+            });
             mockTranscriptionService.finalizeTranscription = jest.fn();
 
-            const result = await handlers.handleResumeTranscription({ sender: { send: jest.fn() } }, resumeId,
+            const result = await handlers.handleResumeTranscription({ sender: { send: jest.fn() } }, 'history-b',
                 new AbortController().signal);
 
             expect(result).toMatchObject({ success: true, partial: false, resumeId: null });
-            expect(mockTranscriptionStoreService.updateResult).toHaveBeenCalledWith('first-history-id',
+            expect(mockTranscriptionStoreService.updateResult).toHaveBeenCalledWith('history-b',
                 'Recovered words', expect.objectContaining({ resumeId: null }));
+            expect(mockTranscriptionService.resumeTranscription).toHaveBeenCalledWith(resumeId,
+                expect.objectContaining({ signal: expect.anything() }));
+            expect(entries[0]).toMatchObject({ id: 'history-a', partial: true, resumeId });
+            expect(entries[1]).toMatchObject({ id: 'history-b', partial: false, resumeId: null });
             expect(mockTranscriptionService.finalizeTranscription).not.toHaveBeenCalled();
         });
     });

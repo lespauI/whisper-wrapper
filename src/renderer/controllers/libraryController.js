@@ -711,7 +711,7 @@ class LibraryController {
         if (this.resumeBtn) this.resumeBtn.disabled = true;
 
         try {
-            const result = await window.electronAPI.resumeTranscription(entry.resumeId);
+            const result = await window.electronAPI.resumeTranscription(entry.id);
             const isCurrentOperation = !operation ||
                 (typeof statusController?.isCurrentTranscription !== 'function' ||
                     statusController.isCurrentTranscription(operation));

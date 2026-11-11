@@ -317,7 +317,7 @@ describe('LibraryController', () => {
 
             await ctrl.resumeCurrentTranscription();
 
-            expect(global.window.electronAPI.resumeTranscription).toHaveBeenCalledWith(entry.resumeId);
+            expect(global.window.electronAPI.resumeTranscription).toHaveBeenCalledWith(entry.id);
             expect(handleResult).toHaveBeenCalledWith(expect.objectContaining({ text: 'Complete words' }));
             expect(ctrl.showDetail).toHaveBeenCalledWith(entry.id);
             expect(finish).toHaveBeenCalledWith(operation);

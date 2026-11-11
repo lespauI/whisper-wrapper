@@ -38,6 +38,7 @@ jest.mock('os', () => ({
 jest.mock('../../src/services/transcriptionService');
 jest.mock('../../src/services/fileService');
 jest.mock('../../src/services/transcriptionStoreService');
+jest.mock('../../src/services/meetingNotesService');
 jest.mock('../../src/config');
 jest.mock('fs', () => ({
     writeFileSync: jest.fn(),
@@ -45,6 +46,15 @@ jest.mock('fs', () => ({
     existsSync: jest.fn().mockReturnValue(true),
     mkdirSync: jest.fn(),
     statSync: jest.fn().mockReturnValue({ isFile: () => true, size: 1024 }),
+    lstatSync: jest.fn(() => {
+        const error = new Error('File does not exist');
+        error.code = 'ENOENT';
+        throw error;
+    }),
+    openSync: jest.fn().mockReturnValue(7),
+    fstatSync: jest.fn().mockReturnValue({ isFile: () => true, uid: typeof process.getuid === 'function' ? process.getuid() : 0 }),
+    closeSync: jest.fn(),
+    constants: jest.requireActual('fs').constants,
     unlinkSync: jest.fn(),
     promises: {
         writeFile: jest.fn(),

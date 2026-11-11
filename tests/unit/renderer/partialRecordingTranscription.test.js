@@ -25,6 +25,7 @@ describe('partial recording transcription', () => {
         const statusController = {
             beginTranscription: () => operation,
             endTranscription: jestApi.fn(),
+            isCurrentTranscription: () => true,
             showWarning: jestApi.fn(),
             updateStatus: jestApi.fn(),
             updateTranscriptionProgress: jestApi.fn()
@@ -63,6 +64,47 @@ describe('partial recording transcription', () => {
         }));
         expect(statusController.showWarning).toHaveBeenCalledWith(expect.stringContaining('partial'));
         expect(tabController.switchTab).toHaveBeenCalled();
+    });
+
+    it('ignores a partial result after a newer recording transcription starts', async () => {
+        const operation = { canceled: true };
+        const appState = { setTranscriptionState: jestApi.fn() };
+        const statusController = {
+            beginTranscription: () => operation,
+            endTranscription: jestApi.fn(),
+            isCurrentTranscription: () => false,
+            showWarning: jestApi.fn(),
+            updateStatus: jestApi.fn(),
+            updateTranscriptionProgress: jestApi.fn()
+        };
+        const controller = Object.create(RecordingController.prototype);
+        Object.assign(controller, {
+            appState,
+            statusController,
+            tabController: { switchTab: jestApi.fn() },
+            recordingBlob: { arrayBuffer: jestApi.fn().mockResolvedValue(new ArrayBuffer(4)) },
+            recordingTranscription: null
+        });
+        global.window = {
+            electronAPI: {
+                onTranscriptionProgress: jestApi.fn().mockReturnValue(jestApi.fn()),
+                transcribeAudio: jestApi.fn().mockResolvedValue({
+                    success: true,
+                    status: 'partial',
+                    partial: true,
+                    text: 'Stale words',
+                    segments: []
+                })
+            },
+            whisperApp: {
+                controllers: { fileUpload: { showTranscriptionResult: jestApi.fn() } }
+            }
+        };
+
+        await controller.transcribeRecording();
+
+        expect(appState.setTranscriptionState).not.toHaveBeenCalled();
+        expect(statusController.showWarning).not.toHaveBeenCalled();
     });
 
     it('retains partial metadata from a canceled background audio segment', async () => {

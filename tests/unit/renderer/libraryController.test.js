@@ -350,6 +350,38 @@ describe('LibraryController', () => {
             expect(handleResult).not.toHaveBeenCalled();
             expect(showError).not.toHaveBeenCalled();
         });
+
+        it('keeps a partial resume result returned after Stop', async () => {
+            const entry = { id: 'partial-id', partial: true, resumeId: 'c'.repeat(64) };
+            global.window.electronAPI.resumeTranscription = jest.fn().mockResolvedValue({
+                success: true, historyId: entry.id, status: 'partial', partial: true,
+                text: 'Recovered words', segments: []
+            });
+            const operation = { canceled: true };
+            const handleResult = jest.fn();
+            global.window.whisperApp = {
+                controllers: {
+                    status: {
+                        beginTranscription: () => operation,
+                        isCurrentTranscription: () => true,
+                        endTranscription: jest.fn(),
+                        updateStatus: jest.fn()
+                    },
+                    fileUpload: { handleTranscriptionSuccess: handleResult }
+                }
+            };
+            const ctrl = new LibraryController();
+            ctrl.currentEntry = entry;
+            ctrl.search = jest.fn();
+            ctrl.showDetail = jest.fn();
+
+            await ctrl.resumeCurrentTranscription();
+
+            expect(handleResult).toHaveBeenCalledWith(expect.objectContaining({
+                partial: true, text: 'Recovered words'
+            }));
+            expect(ctrl.showDetail).toHaveBeenCalledWith(entry.id);
+        });
     });
 
     describe('renderResults', () => {

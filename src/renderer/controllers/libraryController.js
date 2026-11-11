@@ -712,10 +712,14 @@ class LibraryController {
 
         try {
             const result = await window.electronAPI.resumeTranscription(entry.resumeId);
-            const isCurrentOperation = !operation || (!operation.canceled &&
+            const isCurrentOperation = !operation ||
                 (typeof statusController?.isCurrentTranscription !== 'function' ||
-                    statusController.isCurrentTranscription(operation)));
+                    statusController.isCurrentTranscription(operation));
             if (!isCurrentOperation) return;
+            if (result?.canceled) {
+                statusController?.updateStatus?.('Transcription stopped');
+                return;
+            }
             if (!result?.success) throw new Error(result?.error || 'Failed to resume transcription');
             const fileUpload = window.whisperApp?.controllers?.fileUpload;
             if (fileUpload?.handleTranscriptionSuccess) {
@@ -724,9 +728,9 @@ class LibraryController {
             await this.search();
             await this.showDetail(result.historyId || entry.id);
         } catch (error) {
-            const isCurrentOperation = !operation || (!operation.canceled &&
+            const isCurrentOperation = !operation ||
                 (typeof statusController?.isCurrentTranscription !== 'function' ||
-                    statusController.isCurrentTranscription(operation)));
+                    statusController.isCurrentTranscription(operation));
             if (isCurrentOperation) statusController?.showError?.(error.message);
         } finally {
             if (operation) statusController?.endTranscription?.(operation);

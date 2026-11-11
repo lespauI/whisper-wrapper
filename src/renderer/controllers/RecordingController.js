@@ -808,6 +808,8 @@ export class RecordingController {
             // Start transcription
             const result = await window.electronAPI.transcribeAudio(arrayBuffer);
             console.log('🎬 Manual transcription result from IPC:', result);
+            if (typeof this.statusController.isCurrentTranscription === 'function' &&
+                !this.statusController.isCurrentTranscription(operation)) return;
             if (result.canceled) {
                 this.statusController.updateStatus('Transcription stopped');
                 return;
@@ -848,6 +850,8 @@ export class RecordingController {
             }
             
         } catch (error) {
+            if (typeof this.statusController.isCurrentTranscription === 'function' &&
+                !this.statusController.isCurrentTranscription(operation)) return;
             if (operation.canceled) return;
             console.error('Error transcribing recording:', error);
             this.statusController.showError('Failed to transcribe recording');

@@ -22,7 +22,7 @@ A Node.js desktop application that provides a user-friendly interface for OpenAI
 
 - Node.js (v16 or higher)
 - npm (v8 or higher)
-- FFmpeg (for audio/video processing)
+- FFmpeg and ffprobe on your PATH for audio processing and transcription checkpoints
 
 ### Installation
 
@@ -37,15 +37,12 @@ A Node.js desktop application that provides a user-friendly interface for OpenAI
    npm install
    ```
 
-3. Start the application:
+3. Set up local Whisper with `npm run setup-whisper` on macOS or Linux, or `npm run setup-whisper:windows` on Windows.
+
+4. Start the application:
    ```bash
    npm start
    ```
-
-4. Configure your OpenAI API key:
-   - Click the settings button (⚙️) in the application
-   - Enter your OpenAI API key
-   - Save the settings
 
 ## Usage
 
@@ -65,6 +62,13 @@ A Node.js desktop application that provides a user-friendly interface for OpenAI
 4. Wait for the transcription to complete
 5. View and edit the transcription in the editor
 6. Download the transcription using the "Download" button
+
+### Stopping and Resuming a Transcription
+
+- Use **Stop transcription** to stop a file or recording transcription. When a partial result is available, the app saves it to the Library.
+- Open the partial result in **Library** and select **Resume** when that button is available. The app reuses valid checkpoints from the original job.
+- Review any flagged audio intervals before using the transcript. TXT, Markdown, and JSON exports preserve the partial status and the list of affected intervals.
+- Use **Save Recording** to keep the original audio separately. Recovery of orphaned recording fragments after an unexpected exit is currently limited to diagnostics.
 
 ### System Audio Capture (Loopback)
 

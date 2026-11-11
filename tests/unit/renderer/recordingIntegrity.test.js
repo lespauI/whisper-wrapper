@@ -16,7 +16,7 @@ describe('Recording integrity', () => {
             saveRecordingChunk: jest.fn().mockResolvedValue({ success: true, filePath: '/tmp/chunk' }),
             loadRecordingChunk: jest.fn().mockResolvedValue(Buffer.from('saved')),
             deleteRecordingChunk: jest.fn().mockResolvedValue({ success: true }),
-            saveFile: jest.fn().mockResolvedValue({ canceled: false })
+            saveFile: jest.fn().mockResolvedValue({ canceled: false, filePath: '/tmp/final.webm' })
         } };
     });
 
@@ -51,7 +51,7 @@ describe('Recording integrity', () => {
         expect(controller.audioChunks).toEqual([]);
     });
 
-    test('uses the IPC filePath to load and delete saved chunks', async () => {
+    test('keeps chunks until the combined recording is saved successfully', async () => {
         controller.audioChunks = [new Blob(['saved'])];
         await controller.saveCurrentRecordingChunk();
 
@@ -60,8 +60,36 @@ describe('Recording integrity', () => {
         const combined = await controller.combineRecordingChunks(new Blob(['tail']));
 
         expect(window.electronAPI.loadRecordingChunk).toHaveBeenCalledWith('/tmp/chunk');
-        expect(window.electronAPI.deleteRecordingChunk).toHaveBeenCalledWith('/tmp/chunk');
+        expect(window.electronAPI.deleteRecordingChunk).not.toHaveBeenCalled();
+        expect(controller.recordingAutoSave.savedChunks).toHaveLength(1);
         expect(await combined.text()).toBe('savedtail');
+
+        controller.recordingBlob = combined;
+        await controller.saveRecording();
+
+        expect(window.electronAPI.saveFile).toHaveBeenCalledWith(expect.any(ArrayBuffer), expect.stringMatching(/\.webm$/));
+        expect(window.electronAPI.deleteRecordingChunk).toHaveBeenCalledWith('/tmp/chunk');
+        expect(controller.recordingAutoSave.savedChunks).toEqual([]);
+    });
+
+    test.each([
+        ['canceled', () => ({ canceled: true })],
+        ['failed', () => { throw new Error('disk full'); }],
+        ['incomplete', () => ({ canceled: false })]
+    ])('keeps chunks when final recording save is %s', async (outcome, makeSaveResult) => {
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        const savedChunk = { filename: 'chunk.webm', filePath: '/tmp/chunk' };
+        controller.recordingAutoSave.savedChunks = [savedChunk];
+        controller.recordingBlob = new Blob(['combined'], { type: 'audio/webm' });
+        window.electronAPI.saveFile.mockImplementation(async () => makeSaveResult());
+
+        await controller.saveRecording();
+
+        expect(controller.recordingAutoSave.savedChunks).toEqual([savedChunk]);
+        expect(window.electronAPI.deleteRecordingChunk).not.toHaveBeenCalled();
+        if (outcome !== 'canceled') {
+            expect(controller.statusController.showError).toHaveBeenCalledWith('Failed to save recording');
+        }
     });
 
     test('keeps saved chunks when assembly cannot load one', async () => {

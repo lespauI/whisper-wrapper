@@ -766,9 +766,16 @@ export class RecordingController {
             // Save file using Electron API
             const result = await window.electronAPI.saveFile(arrayBuffer, filename);
             
-            if (!result.canceled) {
-                this.statusController.updateStatus('Recording saved successfully');
+            if (result?.canceled) {
+                return;
             }
+
+            if (result?.canceled !== false || typeof result.filePath !== 'string' || result.filePath.trim().length === 0) {
+                throw new Error('Recording was not saved to a file');
+            }
+
+            await this.cleanupAutoSaveFiles();
+            this.statusController.updateStatus('Recording saved successfully');
         } catch (error) {
             console.error('Error saving recording:', error);
             this.statusController.showError('Failed to save recording');
@@ -2218,10 +2225,7 @@ export class RecordingController {
      * Combine recording chunks with final audio
      */
     async combineRecordingChunks(finalAudioBlob) {
-        const recordingState = this.appState.getRecordingState();
-        if (!recordingState.enableAutoSave || this.recordingAutoSave.savedChunks.length === 0) {
-            // Clean up any orphaned chunks
-            await this.cleanupAutoSaveFiles();
+        if (this.recordingAutoSave.savedChunks.length === 0) {
             return finalAudioBlob;
         }
 
@@ -2244,9 +2248,6 @@ export class RecordingController {
             
             // Combine all blobs
             const combinedBlob = new Blob(chunkBlobs, { type: this.getMimeType() });
-            
-            // Clean up temporary files
-            await this.cleanupAutoSaveFiles();
             
             return combinedBlob;
         } catch (error) {

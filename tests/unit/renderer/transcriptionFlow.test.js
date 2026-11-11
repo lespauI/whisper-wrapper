@@ -53,6 +53,7 @@ describe('Transcription result flow', () => {
         transcriptionController.scheduleAutoSave = jest.fn();
         transcriptionController.saveTranscriptionToHistory = jest.fn();
         transcriptionController.hideAudioPlayer = jest.fn();
+        transcriptionController.seekToTime = jest.fn();
 
         fileUploadController = Object.create(FileUploadController.prototype);
         fileUploadController.appState = {
@@ -97,5 +98,14 @@ describe('Transcription result flow', () => {
             'Transcript B',
             expect.stringMatching(/transcription-.*\.txt/)
         );
+    });
+
+    test('clicking a segment in the shared renderer seeks to its start time', async () => {
+        const segment = { start: 14.25, end: 17, text: 'Seek target' };
+        await fileUploadController.showTranscriptionResult('Seek target', [segment]);
+
+        document.querySelector('.transcription-segment').click();
+
+        expect(transcriptionController.seekToTime).toHaveBeenCalledWith(14.25);
     });
 });

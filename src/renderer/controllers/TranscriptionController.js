@@ -652,6 +652,9 @@ ${text}
                 segmentDiv.className = 'transcription-segment';
                 segmentDiv.setAttribute('data-start', segment.start);
                 segmentDiv.setAttribute('data-end', segment.end);
+                segmentDiv.addEventListener('click', () => {
+                    this.seekToTime(segment.start);
+                });
                 
                 const timestamp = document.createElement('span');
                 timestamp.className = 'transcript-timestamp';

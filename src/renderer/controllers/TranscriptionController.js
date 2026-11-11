@@ -311,19 +311,19 @@ export class TranscriptionController {
             
             switch (format) {
                 case 'txt':
-                    content = transcriptionText.value;
+                    content = this.formatAsText(transcriptionText.value, this.getExportMetadata());
                     extension = 'txt';
                     mimeType = 'text/plain';
                     break;
                     
                 case 'md':
-                    content = this.formatAsMarkdown(transcriptionText.value);
+                    content = this.formatAsMarkdown(transcriptionText.value, this.getExportMetadata());
                     extension = 'md';
                     mimeType = 'text/markdown';
                     break;
                     
                 case 'json':
-                    content = this.formatAsJSON(transcriptionText.value);
+                    content = this.formatAsJSON(transcriptionText.value, this.getExportMetadata());
                     extension = 'json';
                     mimeType = 'application/json';
                     break;
@@ -357,17 +357,45 @@ export class TranscriptionController {
         }
     }
 
+    getExportMetadata() {
+        const state = this.appState?.getTranscriptionState?.() || this.transcriptionState || {};
+        return {
+            status: state.status || (state.partial ? 'partial' : 'complete'),
+            partial: state.partial === true,
+            issues: Array.isArray(state.issues) ? state.issues : [],
+            resumeId: state.resumeId || null
+        };
+    }
+
+    formatAsText(text, metadata) {
+        const status = metadata.partial ? 'Partial; review required' : 'Complete';
+        const issues = metadata.issues.length
+            ? metadata.issues.map(issue => `- ${this.formatIssue(issue)}`).join('\n')
+            : '- None';
+        return `Status: ${status}\nResume ID: ${metadata.resumeId || 'Not resumable'}\nIssues:\n${issues}\n\n${text}`;
+    }
+
     /**
      * Format text as Markdown
      */
-    formatAsMarkdown(text) {
+    formatAsMarkdown(text, metadata = this.getExportMetadata()) {
         const timestamp = new Date().toISOString();
         const wordCount = this.getWordCount(text);
+        const issues = metadata.issues.length
+            ? metadata.issues.map(issue => `- ${this.formatIssue(issue)}`).join('\n')
+            : '- None';
         
         return `# Transcription
 
 **Generated:** ${timestamp}  
 **Word Count:** ${wordCount}
+
+**Status:** ${metadata.partial ? 'Partial; review required' : 'Complete'}
+**Resume ID:** ${metadata.resumeId || 'Not resumable'}
+
+## Issues
+
+${issues}
 
 ---
 
@@ -381,18 +409,29 @@ ${text}
     /**
      * Format text as JSON
      */
-    formatAsJSON(text) {
+    formatAsJSON(text, metadata = this.getExportMetadata()) {
         const data = {
             transcription: text,
             metadata: {
                 timestamp: new Date().toISOString(),
                 wordCount: this.getWordCount(text),
                 characterCount: this.getCharacterCount(text),
-                generatedBy: 'Whisper Wrapper'
+                generatedBy: 'Whisper Wrapper',
+                status: metadata.status,
+                partial: metadata.partial,
+                issues: metadata.issues,
+                resumeId: metadata.resumeId
             }
         };
         
         return JSON.stringify(data, null, 2);
+    }
+
+    formatIssue(issue) {
+        const interval = Number.isFinite(issue.start) && Number.isFinite(issue.end)
+            ? `${this.formatTimestamp(issue.start)}–${this.formatTimestamp(issue.end)}`
+            : 'Unknown interval';
+        return `${interval}: ${issue.message || issue.code || 'Review required'}`;
     }
 
     /**

@@ -3,7 +3,7 @@ const fs = require('fs').promises;
 const os = require('os');
 const path = require('path');
 const { execFile } = require('child_process');
-const { transcribeResumableFile } = require('../../src/services/resumableTranscription');
+const { finalizeResumableFile, transcribeResumableFile } = require('../../src/services/resumableTranscription');
 
 jest.mock('child_process', () => ({ execFile: jest.fn() }));
 
@@ -32,7 +32,10 @@ afterEach(async () => {
 it('resumes after a late failure with a new temporary copy and keeps absolute timestamps', async () => {
     const first = jestApi.fn().mockResolvedValueOnce(chunk('first')).mockResolvedValueOnce(chunk('second'))
         .mockRejectedValueOnce(new Error('decoder exited'));
-    await expect(transcribeResumableFile(source, options, first, checkpoints)).rejects.toThrow('decoder exited');
+    const partial = await transcribeResumableFile(source, options, first, checkpoints);
+    expect(partial).toMatchObject({ partial: true, status: 'partial', resumeId: expect.any(String) });
+    expect(await fs.readdir(path.join(checkpoints, partial.resumeId))).toContain('0.json');
+    expect(await fs.readdir(path.join(checkpoints, partial.resumeId))).toContain('1.json');
     const copy = path.join(directory, 'second.mp4');
     await fs.copyFile(source, copy);
 
@@ -41,19 +44,91 @@ it('resumes after a late failure with a new temporary copy and keeps absolute ti
 
     expect(retry).toHaveBeenCalledTimes(1);
     expect(result.text).toBe('first second third');
+    expect(result.partial).toBe(false);
     expect(result.segments.map(({ id, start, end }) => [id, start, end]))
         .toEqual([[0, 0, 1], [1, 240, 241], [2, 480, 481]]);
+    expect(await fs.readdir(path.join(checkpoints, result.resumeId))).toContain('manifest.json');
+    await finalizeResumableFile(result.resumeId, checkpoints);
     expect(await fs.readdir(checkpoints)).toEqual([]);
 });
 
 it('does not reuse chunks after recognition settings change', async () => {
-    const first = jestApi.fn().mockResolvedValueOnce(chunk('old')).mockRejectedValueOnce(new Error('decoder exited'));
-    await expect(transcribeResumableFile(source, options, first, checkpoints)).rejects.toThrow('decoder exited');
+    const first = jestApi.fn().mockResolvedValueOnce(chunk('old')).mockRejectedValueOnce(new Error('decoder exited'))
+        .mockResolvedValue(chunk('old'));
+    const partial = await transcribeResumableFile(source, options, first, checkpoints);
+    expect(partial.partial).toBe(true);
 
     const retry = jestApi.fn().mockResolvedValue(chunk('new'));
     const result = await transcribeResumableFile(source, { ...options, model: 'tiny' }, retry, checkpoints);
     expect(retry).toHaveBeenCalledTimes(3);
     expect(result.text).toBe('new new new');
+});
+
+it('uses model and decoder fingerprints in the resume identity', async () => {
+    const first = jestApi.fn().mockResolvedValueOnce(chunk('old')).mockRejectedValueOnce(new Error('decoder exited'));
+    const modelA = { model: { path: '/models/large.bin', size: 100, mtimeMs: 1 }, decoder: { path: '/bin/whisper', size: 20, mtimeMs: 1 } };
+    const modelB = { model: { ...modelA.model, mtimeMs: 2 }, decoder: modelA.decoder };
+    const partial = await transcribeResumableFile(source, options, first, checkpoints, modelA);
+
+    const retry = jestApi.fn().mockResolvedValue(chunk('new'));
+    const result = await transcribeResumableFile(source, options, retry, checkpoints, modelB);
+    expect(result.resumeId).not.toBe(partial.resumeId);
+    expect(retry).toHaveBeenCalledTimes(3);
+});
+
+it('retranscribes only a checkpoint with invalid segments', async () => {
+    const first = jestApi.fn().mockResolvedValueOnce(chunk('first')).mockResolvedValueOnce(chunk('second'))
+        .mockRejectedValueOnce(new Error('decoder exited'));
+    const partial = await transcribeResumableFile(source, options, first, checkpoints);
+    const damaged = path.join(checkpoints, partial.resumeId, '1.json');
+    await fs.writeFile(damaged, JSON.stringify({
+        schemaVersion: 1,
+        resumeId: partial.resumeId,
+        start: 240,
+        end: 480,
+        segments: [{ start: null, end: 1, text: 'bad' }],
+        languages: ['ru'],
+        partial: false,
+        issues: []
+    }));
+
+    const retry = jestApi.fn().mockResolvedValue(chunk('recalculated'));
+    const result = await transcribeResumableFile(source, options, retry, checkpoints);
+    expect(retry).toHaveBeenCalledTimes(2);
+    expect(result.text).toBe('first recalculated recalculated');
+});
+
+it('retranscribes a syntactically corrupted checkpoint without losing its neighbors', async () => {
+    const first = jestApi.fn().mockResolvedValueOnce(chunk('first')).mockResolvedValueOnce(chunk('second'))
+        .mockRejectedValueOnce(new Error('decoder exited'));
+    const partial = await transcribeResumableFile(source, options, first, checkpoints);
+    await fs.writeFile(path.join(checkpoints, partial.resumeId, '1.json'), '{');
+
+    const retry = jestApi.fn().mockResolvedValue(chunk('recalculated'));
+    const result = await transcribeResumableFile(source, options, retry, checkpoints);
+
+    expect(retry).toHaveBeenCalledTimes(2);
+    expect(result.text).toBe('first recalculated recalculated');
+});
+
+it('returns decoded text and a partial issue when a checkpoint write fails', async () => {
+    const rename = fs.rename;
+    let renameCalls = 0;
+    const renameSpy = jestApi.spyOn(fs, 'rename').mockImplementation(async (...args) => {
+        renameCalls++;
+        if (renameCalls === 2) throw new Error('checkpoint disk failure');
+        return rename(...args);
+    });
+    try {
+        const transcribe = jestApi.fn().mockResolvedValue(chunk('saved text'));
+        const result = await transcribeResumableFile(source, options, transcribe, checkpoints);
+
+        expect(result).toMatchObject({ partial: true, status: 'partial' });
+        expect(result.text).toBe('saved text saved text saved text');
+        expect(result.issues[0]).toMatchObject({ code: 'checkpoint_write_failed', start: 0, end: 240 });
+    } finally {
+        renameSpy.mockRestore();
+    }
 });
 
 it('uses the regular transcription for short recordings', async () => {
@@ -63,6 +138,26 @@ it('uses the regular transcription for short recordings', async () => {
     const transcribe = jestApi.fn().mockResolvedValue(chunk('short'));
     await transcribeResumableFile(source, options, transcribe, checkpoints);
     expect(transcribe).toHaveBeenCalledWith(source, { ...options, preserveDecoderOutput: true });
+});
+
+it('marks malformed short transcription output as partial', async () => {
+    execFile.mockImplementationOnce((command, args, _settings, callback) => callback(null, {
+        stdout: '{"streams":[{"duration":"30"}]}'
+    }));
+    const transcribe = jestApi.fn().mockResolvedValue({
+        success: true,
+        text: 'Unverified text',
+        segments: [{ start: null, end: 1, text: 'Unverified text' }]
+    });
+
+    const result = await transcribeResumableFile(source, options, transcribe, checkpoints);
+
+    expect(result).toMatchObject({
+        status: 'partial',
+        partial: true,
+        issues: [{ code: 'invalid_segments', start: 0, end: 30 }],
+        resumeId: null
+    });
 });
 
 it('moves a chunk boundary to a nearby pause and offsets the next segments', async () => {
@@ -129,11 +224,17 @@ it('keeps ordinary repetitions with advancing timestamps', async () => {
     })) };
     const transcribe = jestApi.fn().mockResolvedValue(raw);
 
-    expect(await transcribeResumableFile(source, options, transcribe, checkpoints)).toBe(raw);
+    expect(await transcribeResumableFile(source, options, transcribe, checkpoints)).toMatchObject({
+        ...raw,
+        status: 'complete',
+        partial: false,
+        issues: [],
+        resumeId: null
+    });
     expect(transcribe).toHaveBeenCalledTimes(1);
 });
 
-it('stops on cancellation during recovery and resumes from the last saved chunk', async () => {
+it('returns a partial result on cancellation during recovery and resumes from saved chunks', async () => {
     const controller = new AbortController();
     const phrase = 'что мы занимаемся тем что хотят';
     const repeated = chunk(`${phrase} ${phrase} ${phrase}`);
@@ -143,8 +244,9 @@ it('stops on cancellation during recovery and resumes from the last saved chunk'
             throw new Error('decoder canceled');
         });
 
-    await expect(transcribeResumableFile(source, { ...options, signal: controller.signal }, transcribe, checkpoints))
-        .rejects.toThrow('Transcription canceled');
+    const canceled = await transcribeResumableFile(source, { ...options, signal: controller.signal }, transcribe, checkpoints);
+    expect(canceled).toMatchObject({ partial: true, status: 'partial', text: expect.stringContaining('saved') });
+    expect(canceled.issues.some(issue => issue.code === 'canceled')).toBe(true);
     expect(transcribe).toHaveBeenCalledTimes(3);
 
     const retry = jestApi.fn().mockResolvedValue(chunk('resumed'));

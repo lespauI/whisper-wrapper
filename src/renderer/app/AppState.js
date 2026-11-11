@@ -56,6 +56,10 @@ export class AppState {
             history: [],
             historyIndex: -1,
             segments: [], // Store original segments with timestamps
+            status: 'complete',
+            partial: false,
+            issues: [],
+            resumeId: null,
             viewMode: TRANSCRIPTION_VIEW_MODES.TIMESTAMPED
         };
 
@@ -339,6 +343,10 @@ export class AppState {
             history: [],
             historyIndex: -1,
             segments: [],
+            status: 'complete',
+            partial: false,
+            issues: [],
+            resumeId: null,
             viewMode: TRANSCRIPTION_VIEW_MODES.TIMESTAMPED
         };
         this.notifyStateChange('transcription', this.transcription);

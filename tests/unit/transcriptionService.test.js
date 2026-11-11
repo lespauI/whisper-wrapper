@@ -1,8 +1,10 @@
 const TranscriptionService = require('../../src/services/transcriptionService');
 
 jest.mock('../../src/services/resumableTranscription', () => ({
-    transcribeResumableFile: (filePath, options, transcribe) => transcribe(filePath, options)
+    finalizeResumableFile: jest.fn().mockResolvedValue(undefined),
+    transcribeResumableFile: jest.fn((filePath, options, transcribe) => transcribe(filePath, options))
 }));
+const { finalizeResumableFile, transcribeResumableFile } = require('../../src/services/resumableTranscription');
 
 // Mock LocalWhisperService
 jest.mock('../../src/services/localWhisperService', () => {
@@ -18,7 +20,8 @@ jest.mock('../../src/services/localWhisperService', () => {
             setThreads: jest.fn(),
             setInitialPrompt: jest.fn(),
             getInitialPrompt: jest.fn(),
-            clearInitialPrompt: jest.fn()
+            clearInitialPrompt: jest.fn(),
+            getDecoderIdentity: jest.fn().mockReturnValue({ model: { size: 10 }, decoder: { size: 20 } })
         }))
     };
 });
@@ -138,6 +141,10 @@ describe('TranscriptionService', () => {
 
             expect(result).toEqual({
                 success: true,
+                status: 'complete',
+                partial: false,
+                issues: [],
+                resumeId: null,
                 text: 'Hello world',
                 markdown: expect.any(String),
                 plainText: expect.any(String),
@@ -198,6 +205,41 @@ describe('TranscriptionService', () => {
                 initialPrompt: customPrompt,
                 useInitialPrompt: true
             });
+        });
+
+        it('preserves partial metadata and fingerprints the model and decoder', async () => {
+            const issues = [{ code: 'decoder_recovery_failed', start: 2, end: 4 }];
+            mockLocalWhisper.isAvailable.mockReturnValue(true);
+            mockLocalWhisper.transcribeFile.mockResolvedValue({
+                text: 'Recoverable words', language: 'ru', segments: [], model: 'base', duration: 400
+            });
+            transcribeResumableFile.mockImplementationOnce(async () => ({
+                success: true,
+                status: 'partial',
+                partial: true,
+                issues,
+                resumeId: 'f'.repeat(64),
+                text: 'Recoverable words',
+                language: 'ru',
+                segments: [],
+                model: 'base',
+                duration: 400
+            }));
+
+            const result = await service.transcribeFile('/path/to/file.wav');
+
+            expect(transcribeResumableFile.mock.calls[0][4]).toEqual({ model: { size: 10 }, decoder: { size: 20 } });
+            expect(result).toMatchObject({
+                status: 'partial',
+                partial: true,
+                issues,
+                resumeId: 'f'.repeat(64)
+            });
+        });
+
+        it('finalizes checkpoints through the resumable service', async () => {
+            await service.finalizeTranscription('a'.repeat(64));
+            expect(finalizeResumableFile).toHaveBeenCalledWith('a'.repeat(64), service.checkpointRoot);
         });
     });
 

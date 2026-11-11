@@ -205,6 +205,88 @@ describe('IPCHandlers', () => {
             expect(result).toEqual(expect.objectContaining(mockResult));
         });
 
+        it('persists partial results before returning their resume contract', async () => {
+            const controller = new AbortController();
+            const issues = [{ code: 'decoder_recovery_failed', start: 12, end: 20 }];
+            mockTranscriptionService.transcribeFile.mockImplementation(async (_filePath, options) => {
+                options.signal.addEventListener('abort', () => {}, { once: true });
+                controller.abort();
+                return {
+                    success: true,
+                    status: 'partial',
+                    partial: true,
+                    issues,
+                    resumeId: 'c'.repeat(64),
+                    text: 'Saved words',
+                    language: 'en',
+                    segments: [{ start: 0, end: 1, text: 'Saved words' }]
+                };
+            });
+            mockTranscriptionStoreService.store.mockResolvedValue({ id: 'history-id' });
+            mockTranscriptionService.finalizeTranscription = jest.fn();
+
+            const result = await handlers.handleTranscribeFile(mockEvent, '/path/to/audio.wav', controller.signal);
+
+            expect(result).toMatchObject({
+                success: true,
+                status: 'partial',
+                partial: true,
+                issues,
+                resumeId: 'c'.repeat(64),
+                historyId: 'history-id'
+            });
+            expect(mockTranscriptionStoreService.store).toHaveBeenCalledWith('Saved words', expect.objectContaining({
+                partial: true,
+                issues,
+                resumeId: 'c'.repeat(64)
+            }));
+            expect(mockTranscriptionService.finalizeTranscription).not.toHaveBeenCalled();
+        });
+
+        it('removes checkpoints only after the completed result is stored', async () => {
+            const order = [];
+            mockEvent.sender.send.mockImplementation((_channel, progress) => {
+                if (progress.status === 'completed') order.push('notified');
+            });
+            mockTranscriptionService.transcribeFile.mockResolvedValue({
+                success: true,
+                text: 'Complete words',
+                language: 'en',
+                resumeId: 'd'.repeat(64)
+            });
+            mockTranscriptionStoreService.store.mockImplementation(async () => {
+                order.push('stored');
+                return { id: 'history-id' };
+            });
+            mockTranscriptionService.finalizeTranscription = jest.fn(async () => order.push('finalized'));
+
+            const result = await handlers.handleTranscribeFile(mockEvent, '/path/to/audio.wav');
+
+            expect(order).toEqual(['stored', 'finalized', 'notified']);
+            expect(result.historyId).toBe('history-id');
+            expect(mockTranscriptionService.finalizeTranscription).toHaveBeenCalledWith('d'.repeat(64));
+        });
+
+        it('keeps checkpoints when history persistence fails', async () => {
+            const controller = new AbortController();
+            mockTranscriptionService.transcribeFile.mockResolvedValue({
+                success: true,
+                text: 'Complete words',
+                resumeId: 'e'.repeat(64)
+            });
+            mockTranscriptionStoreService.store.mockImplementation(async () => {
+                controller.abort();
+                throw new Error('disk full');
+            });
+            mockTranscriptionService.finalizeTranscription = jest.fn();
+
+            await expect(handlers.runTranscription(mockEvent, signal =>
+                handlers.handleTranscribeFile(mockEvent, '/path/to/audio.wav', signal)))
+                .rejects.toThrow('Transcription failed: disk full');
+            expect(mockTranscriptionService.finalizeTranscription).not.toHaveBeenCalled();
+            expect(mockEvent.sender.send.mock.calls.some(([, progress]) => progress.status === 'completed')).toBe(false);
+        });
+
         it('should throw error when whisper not available', async () => {
             mockTranscriptionService.isAvailable.mockReturnValue(false);
 

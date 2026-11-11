@@ -42,9 +42,23 @@ class TranscriptionStoreService {
     }
   }
 
-  _saveIndex() {
-    fs.writeFileSync(this._indexPath(), JSON.stringify(this.index, null, 2), 'utf8');
-  }
+    _saveIndex() {
+        const indexPath = this._indexPath();
+        const temporaryPath = `${indexPath}.${uuidv4()}.tmp`;
+        try {
+            fs.writeFileSync(temporaryPath, JSON.stringify(this.index, null, 2), {
+                encoding: 'utf8', mode: 0o600, flag: 'wx'
+            });
+            fs.renameSync(temporaryPath, indexPath);
+        } catch (error) {
+            try {
+                if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);
+            } catch (cleanupError) {
+                if (cleanupError.code !== 'ENOENT') error.cleanupError = cleanupError;
+            }
+            throw error;
+        }
+    }
 
   /**
    * Store a new transcription.
@@ -52,59 +66,75 @@ class TranscriptionStoreService {
    * @param {Object} metadata - Optional metadata: sourceFile, language, duration, model, title.
    * @returns {Promise<Object>} The created index entry.
    */
-  async store(text, metadata = {}) {
-    this._ensureDir();
-    const id = uuidv4();
-    const txtPath = path.join(this.transcriptionsDir, `${id}.txt`);
-    fs.writeFileSync(txtPath, text, 'utf8');
+    async store(text, metadata = {}) {
+        this._ensureDir();
+        const id = uuidv4();
+        const txtPath = path.join(this.transcriptionsDir, `${id}.txt`);
+        fs.writeFileSync(txtPath, text, 'utf8');
 
-    let summary = '';
-    let labels = [];
-    let metaTitle = '';
-    let metaStatus = 'success';
-    let metaError = '';
-    try {
-      const meta = await ollamaService.generateTranscriptionMeta(text);
-      summary = meta.summary || '';
-      labels = meta.labels || [];
-      metaTitle = meta.title || '';
-      if (meta.metaFailed) {
-        metaStatus = 'failed';
-        metaError = meta.metaError || 'Unknown error';
-      } else if (meta.metaDisabled) {
-        metaStatus = 'disabled';
-      }
-    } catch (err) {
-      console.error('generateTranscriptionMeta threw unexpectedly:', err.message);
-      metaStatus = 'failed';
-      metaError = err.message;
+        const partial = metadata.partial === true || metadata.status === 'partial';
+        const entry = {
+            id,
+            date: new Date().toISOString(),
+            title: metadata.title || `Transcription ${new Date().toLocaleDateString()}`,
+            summary: '',
+            labels: [],
+            sourceFile: metadata.sourceFile || '',
+            audioFilePath: metadata.audioFilePath || '',
+            language: metadata.language || '',
+            duration: metadata.duration || null,
+            model: metadata.model || '',
+            status: partial ? 'partial' : 'complete',
+            partial,
+            issues: Array.isArray(metadata.issues) ? metadata.issues : [],
+            resumeId: typeof metadata.resumeId === 'string' ? metadata.resumeId : null,
+            wordCount: text.trim().split(/\s+/).filter(Boolean).length,
+            filePath: path.join('data', 'transcriptions', `${id}.txt`),
+            metaStatus: 'pending',
+            metaError: ''
+        };
+
+        this.index.push(entry);
+        try {
+            this._saveIndex();
+        } catch (error) {
+            this.index.pop();
+            try {
+                if (fs.existsSync(txtPath)) fs.unlinkSync(txtPath);
+            } catch (cleanupError) {
+                if (cleanupError.code !== 'ENOENT') error.cleanupError = cleanupError;
+            }
+            throw error;
+        }
+
+        const minimalEntry = { ...entry, issues: [...entry.issues] };
+        try {
+            const meta = await ollamaService.generateTranscriptionMeta(text);
+            entry.summary = meta.summary || '';
+            entry.labels = meta.labels || [];
+            entry.title = meta.title || entry.title;
+            if (meta.metaFailed) {
+                entry.metaStatus = 'failed';
+                entry.metaError = meta.metaError || 'Unknown error';
+            } else if (meta.metaDisabled) {
+                entry.metaStatus = 'disabled';
+            } else {
+                entry.metaStatus = 'success';
+            }
+        } catch (err) {
+            console.error('generateTranscriptionMeta threw unexpectedly:', err.message);
+            entry.metaStatus = 'failed';
+            entry.metaError = err.message;
+        }
+
+        try {
+            this._saveIndex();
+        } catch (error) {
+            Object.assign(entry, minimalEntry);
+            throw error;
+        }
+        return entry;
     }
-
-    const title =
-      metaTitle ||
-      `Transcription ${new Date().toLocaleDateString()}`;
-
-    const entry = {
-      id,
-      date: new Date().toISOString(),
-      title,
-      summary,
-      labels,
-      sourceFile: metadata.sourceFile || '',
-      audioFilePath: metadata.audioFilePath || '',
-      language: metadata.language || '',
-      duration: metadata.duration || null,
-      model: metadata.model || '',
-      wordCount: text.trim().split(/\s+/).filter(Boolean).length,
-      filePath: path.join('data', 'transcriptions', `${id}.txt`),
-      metaStatus,
-      metaError
-    };
-
-    this.index.push(entry);
-    this._saveIndex();
-    return entry;
-  }
 
   /**
    * List transcriptions, optionally filtered.

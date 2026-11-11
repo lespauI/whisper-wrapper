@@ -165,6 +165,7 @@ export class FileUploadController {
      * @param {Object} result - Transcription result
      */
     async handleTranscriptionSuccess(result) {
+        const partial = result.partial === true || result.status === 'partial';
         // Update transcription state
         this.appState.setTranscriptionState({
             originalText: result.text,
@@ -173,7 +174,11 @@ export class FileUploadController {
             isDirty: false,
             lastSaved: new Date(),
             history: [result.text],
-            historyIndex: 0
+            historyIndex: 0,
+            status: partial ? 'partial' : 'complete',
+            partial,
+            issues: Array.isArray(result.issues) ? result.issues : [],
+            resumeId: result.resumeId || null
         });
 
         // Update file upload state
@@ -187,7 +192,12 @@ export class FileUploadController {
         await this.showTranscriptionResult(result.text, result.segments, result.audioFilePath || null);
         
         // Update status and switch to transcription tab
-        this.statusController.updateStatus(`Transcription completed (Language: ${result.language || 'unknown'})`);
+        if (partial) {
+            const issueCount = Array.isArray(result.issues) ? result.issues.length : 0;
+            this.statusController.showWarning(`Partial transcription saved. Review ${issueCount} audio interval${issueCount === 1 ? '' : 's'} before use.`);
+        } else {
+            this.statusController.updateStatus(`Transcription completed (Language: ${result.language || 'unknown'})`);
+        }
         await this.tabController.switchTab(TABS.TRANSCRIPTION);
     }
 

@@ -263,7 +263,7 @@ class IPCHandlers {
                 if (operation.controller.signal.aborted) return { success: false, canceled: true };
                 return await task(operation.controller.signal);
             } catch (error) {
-                if (operation.controller.signal.aborted) return { success: false, canceled: true };
+                if (operation.controller.signal.aborted && !error.preserveError) return { success: false, canceled: true };
                 throw error;
             } finally {
                 pending.delete(operation);
@@ -350,7 +350,6 @@ class IPCHandlers {
                 console.log('🎤 IPC: Transcription options:', transcriptionOptions);
                 
                 const result = await this.transcriptionService.transcribeFile(tempFilePath, transcriptionOptions);
-                if (signal?.aborted) throw new Error('Transcription canceled');
                 console.log('🎤 IPC: Transcription result:', {
                     success: result.success,
                     textLength: result.text?.length || 0,
@@ -358,21 +357,12 @@ class IPCHandlers {
                     duration: result.duration
                 });
 
-                // Clean up temp file
-                console.log('🗑️ IPC: Cleaning up temp file...');
-                await this.fileService.cleanup(tempFilePath);
-                console.log('✅ IPC: Temp file cleaned up');
-                if (signal?.aborted) return { success: false, canceled: true };
-
-                // Send completion update
-                console.log('📡 IPC: Sending progress update - completed');
-                event.sender.send('transcription:progress', { 
-                    status: 'completed', 
-                    message: 'Transcription completed successfully' 
-                });
-
                 const finalResult = {
                     success: true,
+                    status: result.partial === true || result.status === 'partial' ? 'partial' : 'complete',
+                    partial: result.partial === true || result.status === 'partial',
+                    issues: Array.isArray(result.issues) ? result.issues : [],
+                    resumeId: result.resumeId || null,
                     text: result.text,
                     language: result.language,
                     duration: result.duration,
@@ -380,26 +370,63 @@ class IPCHandlers {
                     audioFilePath: filePath
                 };
 
-                this.transcriptionStoreService.store(result.text, {
-                    sourceFile: path.basename(filePath),
-                    audioFilePath: filePath,
-                    language: result.language,
-                    duration: result.duration,
-                    model: currentConfig.model || ''
-                }).catch(err => console.error('Failed to auto-store transcription:', err));
+                let entry;
+                try {
+                    entry = await this.transcriptionStoreService.store(result.text, {
+                        sourceFile: path.basename(filePath),
+                        audioFilePath: filePath,
+                        language: result.language,
+                        duration: result.duration,
+                        model: currentConfig.model || '',
+                        status: finalResult.status,
+                        partial: finalResult.partial,
+                        issues: finalResult.issues,
+                        resumeId: finalResult.resumeId
+                    });
+                } catch (error) {
+                    error.preserveError = true;
+                    throw error;
+                }
+                if (entry?.id) finalResult.historyId = entry.id;
+
+                try {
+                    await this.fileService.cleanup(tempFilePath);
+                } catch (error) {
+                    finalResult.cleanupPending = true;
+                    finalResult.cleanupError = error.message;
+                }
+
+                if (!finalResult.partial && finalResult.resumeId && this.transcriptionService.finalizeTranscription) {
+                    try {
+                        await this.transcriptionService.finalizeTranscription(finalResult.resumeId);
+                    } catch (error) {
+                        finalResult.cleanupPending = true;
+                        finalResult.cleanupError = error.message;
+                    }
+                }
+
+                event.sender.send('transcription:progress', {
+                    status: finalResult.partial ? 'partial' : 'completed',
+                    message: finalResult.partial
+                        ? 'Transcription completed with audio requiring review'
+                        : 'Transcription completed successfully'
+                });
 
                 console.log('🎉 IPC: handleTranscribeFile completed successfully!');
                 return finalResult;
 
             } catch (transcriptionError) {
                 console.log('❌ IPC: Transcription error occurred:', transcriptionError.message);
-                // Clean up temp file on error
-                await this.fileService.cleanup(tempFilePath);
+                try {
+                    await this.fileService.cleanup(tempFilePath);
+                } catch (cleanupError) {
+                    transcriptionError.cleanupError = cleanupError;
+                }
                 throw transcriptionError;
             }
 
         } catch (error) {
-            if (signal?.aborted) return { success: false, canceled: true };
+            if (signal?.aborted && !error.preserveError) return { success: false, canceled: true };
             console.error('❌ IPC: Error transcribing file:', error);
             console.error('❌ IPC: Error stack:', error.stack);
             
@@ -410,7 +437,10 @@ class IPCHandlers {
                 message: error.message 
             });
 
-            throw new Error(`Transcription failed: ${error.message}`);
+            const wrappedError = new Error(`Transcription failed: ${error.message}`);
+            wrappedError.preserveError = error.preserveError;
+            wrappedError.cleanupError = error.cleanupError;
+            throw wrappedError;
         }
     }
 
@@ -475,24 +505,43 @@ class IPCHandlers {
                 transcriptionOptions
             );
 
-            if (signal?.aborted) return { success: false, canceled: true };
-            // Send completion update
-            event.sender.send('transcription:progress', { 
-                status: 'completed', 
-                message: 'Transcription completed successfully' 
-            });
-
             const skipStore = !!(options && typeof options === 'object' && options.skipStore === true);
+            const partial = result.partial === true || result.status === 'partial';
+            const issues = Array.isArray(result.issues) ? result.issues : [];
+            const resumeId = result.resumeId || null;
+            let historyId;
             if (!skipStore) {
-                this.transcriptionStoreService.store(result.text, {
-                    language: result.language,
-                    duration: result.duration,
-                    model: currentConfig.model || ''
-                }).catch(err => console.error('Failed to auto-store transcription:', err));
+                try {
+                    const entry = await this.transcriptionStoreService.store(result.text, {
+                        language: result.language,
+                        duration: result.duration,
+                        model: currentConfig.model || '',
+                        status: partial ? 'partial' : 'complete',
+                        partial,
+                        issues,
+                        resumeId
+                    });
+                    historyId = entry?.id;
+                } catch (error) {
+                    error.preserveError = true;
+                    throw error;
+                }
             }
+
+            event.sender.send('transcription:progress', {
+                status: partial ? 'partial' : 'completed',
+                message: partial
+                    ? 'Transcription completed with audio requiring review'
+                    : 'Transcription completed successfully'
+            });
 
             return {
                 success: true,
+                status: partial ? 'partial' : 'complete',
+                partial,
+                issues,
+                resumeId,
+                historyId,
                 text: result.text,
                 language: result.language,
                 duration: result.duration,
@@ -500,7 +549,7 @@ class IPCHandlers {
             };
 
         } catch (error) {
-            if (signal?.aborted) return { success: false, canceled: true };
+            if (signal?.aborted && !error.preserveError) return { success: false, canceled: true };
             console.error('Error transcribing audio:', error);
             
             // Send error update
@@ -509,7 +558,9 @@ class IPCHandlers {
                 message: error.message 
             });
 
-            throw new Error(`Audio transcription failed: ${error.message}`);
+            const wrappedError = new Error(`Audio transcription failed: ${error.message}`);
+            wrappedError.preserveError = error.preserveError;
+            throw wrappedError;
         }
     }
 

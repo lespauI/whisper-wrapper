@@ -1074,6 +1074,32 @@ class LocalWhisperService {
         return null;
     }
 
+    getDecoderIdentity(modelName, language) {
+        const identify = filePath => {
+            if (!filePath) return null;
+            const resolvedPath = path.resolve(filePath);
+            try {
+                const stats = fs.statSync(resolvedPath);
+                return {
+                    path: resolvedPath,
+                    size: stats.size,
+                    mtimeMs: stats.mtimeMs,
+                    ctimeMs: stats.ctimeMs
+                };
+            } catch (error) {
+                if (error.code !== 'ENOENT') throw error;
+                return { path: resolvedPath, missing: true };
+            }
+        };
+        const decoderPath = language === 'auto' && !modelName.endsWith('.en')
+            ? this.whisperServerPath
+            : this.whisperPath;
+        return {
+            model: identify(this.findModelPath(modelName)),
+            decoder: identify(decoderPath)
+        };
+    }
+
     /**
      * Extract text from whisper.cpp stdout (fallback)
      */

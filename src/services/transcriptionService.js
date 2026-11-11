@@ -5,7 +5,7 @@
 const { LocalWhisperService } = require('./localWhisperService');
 const TranscriptionFormatter = require('./transcriptionFormatter');
 const path = require('path');
-const { transcribeResumableFile } = require('./resumableTranscription');
+const { finalizeResumableFile, transcribeResumableFile } = require('./resumableTranscription');
 
 class TranscriptionService {
     constructor() {
@@ -15,6 +15,7 @@ class TranscriptionService {
         this.model = 'base'; // Default local model
         this.language = 'auto'; // Auto-detect by default
         this.initialPrompt = ''; // Default empty initial prompt
+        this.checkpointRoot = path.join(process.cwd(), 'data', 'transcription-checkpoints');
         
         console.log('🎯 TranscriptionService: Configuration:');
         console.log(`   - Default model: ${this.model}`);
@@ -131,9 +132,11 @@ class TranscriptionService {
             } else {
                 console.log(`🔤 TranscriptionService: Initial prompt is DISABLED`);
             }
+            const decoderIdentity = this.localWhisper.getDecoderIdentity?.(whisperOptions.model, whisperOptions.language) || null;
             const result = await transcribeResumableFile(filePath, whisperOptions,
                 this.localWhisper.transcribeFile.bind(this.localWhisper),
-                path.join(process.cwd(), 'data', 'transcription-checkpoints'));
+                this.checkpointRoot, decoderIdentity);
+            if (result.success === false) throw new Error(result.error || 'Decoder did not return a transcription');
             
             console.log('🎯 TranscriptionService: Received result from LocalWhisperService:', {
                 success: result.success,
@@ -149,6 +152,10 @@ class TranscriptionService {
             
             const finalResult = {
                 success: true,
+                status: result.partial === true || result.status === 'partial' ? 'partial' : 'complete',
+                partial: result.partial === true || result.status === 'partial',
+                issues: Array.isArray(result.issues) ? result.issues : [],
+                resumeId: result.resumeId || null,
                 text: result.text,
                 markdown: formattedResult.markdown,
                 plainText: formattedResult.plainText,
@@ -171,6 +178,10 @@ class TranscriptionService {
             console.error('❌ Error stack:', error.stack);
             throw new Error(`Transcription failed: ${error.message}`);
         }
+    }
+
+    async finalizeTranscription(resumeId) {
+        return finalizeResumableFile(resumeId, this.checkpointRoot);
     }
 
     /**

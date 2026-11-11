@@ -127,10 +127,11 @@ export class FileUploadController {
             // Start transcription
             const result = await window.electronAPI.transcribeFile(filePath);
             console.log('🎬 Transcription result from IPC:', result);
-            
-            if (operation.canceled || result.canceled) {
+
+            if (!this.isCurrentOperation(operation)) return;
+            if (result.canceled) {
                 this.appState.setFileUploadState({ currentFile: null, isProcessing: false, progress: 0 });
-                if (!operation.canceled) this.statusController.updateStatus('Transcription stopped');
+                this.statusController.updateStatus('Transcription stopped');
                 return;
             }
             if (result.success) {
@@ -140,6 +141,7 @@ export class FileUploadController {
             }
             
         } catch (error) {
+            if (!this.isCurrentOperation(operation)) return;
             if (operation?.canceled) {
                 this.appState.setFileUploadState({ currentFile: null, isProcessing: false, progress: 0 });
                 return;
@@ -153,11 +155,22 @@ export class FileUploadController {
             });
         } finally {
             if (operation) {
-                this.statusController.showProgress(false);
+                const uploadState = this.appState.getFileUploadState();
+                if (!this.isCurrentOperation(operation) && uploadState.currentFile === filePath) {
+                    this.appState.setFileUploadState({ currentFile: null, isProcessing: false, progress: 0 });
+                    this.statusController.showProgress(false);
+                } else if (this.isCurrentOperation(operation)) {
+                    this.statusController.showProgress(false);
+                }
                 this.statusController.endTranscription(operation);
             }
             unsubscribe?.();
         }
+    }
+
+    isCurrentOperation(operation) {
+        if (typeof this.statusController.isCurrentTranscription !== 'function') return true;
+        return this.statusController.isCurrentTranscription(operation);
     }
 
     /**
@@ -165,6 +178,7 @@ export class FileUploadController {
      * @param {Object} result - Transcription result
      */
     async handleTranscriptionSuccess(result) {
+        const partial = result.partial === true || result.status === 'partial';
         // Update transcription state
         this.appState.setTranscriptionState({
             originalText: result.text,
@@ -173,7 +187,13 @@ export class FileUploadController {
             isDirty: false,
             lastSaved: new Date(),
             history: [result.text],
-            historyIndex: 0
+            historyIndex: 0,
+            status: partial ? 'partial' : 'complete',
+            partial,
+            issues: Array.isArray(result.issues) ? result.issues : [],
+            resumeId: result.resumeId || null,
+            audioDurationSeconds: result.audioDurationSeconds ?? null,
+            processingDurationMs: result.processingDurationMs ?? null
         });
 
         // Update file upload state
@@ -187,7 +207,12 @@ export class FileUploadController {
         await this.showTranscriptionResult(result.text, result.segments, result.audioFilePath || null);
         
         // Update status and switch to transcription tab
-        this.statusController.updateStatus(`Transcription completed (Language: ${result.language || 'unknown'})`);
+        if (partial) {
+            const issueCount = Array.isArray(result.issues) ? result.issues.length : 0;
+            this.statusController.showWarning(`Partial transcription saved. Review ${issueCount} audio interval${issueCount === 1 ? '' : 's'} before use.`);
+        } else {
+            this.statusController.updateStatus(`Transcription completed (Language: ${result.language || 'unknown'})`);
+        }
         await this.tabController.switchTab(TABS.TRANSCRIPTION);
     }
 
@@ -204,59 +229,12 @@ export class FileUploadController {
             segments: segments 
         });
         
-        const transcriptionText = UIHelpers.getElementById('transcription-text');
-        const transcriptionSegments = UIHelpers.getElementById('transcription-segments');
-        const emptyState = UIHelpers.getElementById('transcription-empty');
-        const loadingState = UIHelpers.getElementById('transcription-loading');
-        const editor = UIHelpers.getElementById('transcription-editor');
-        
-        if (!transcriptionText || !editor) {
-            console.error('Required transcription elements not found');
-            return;
+        const transcriptionController = window.whisperApp?.controllers?.transcription;
+        if (!transcriptionController) {
+            throw new Error('Transcription controller is not available');
         }
 
-        console.log('🎬 DOM elements found:', {
-            transcriptionText: !!transcriptionText,
-            transcriptionSegments: !!transcriptionSegments,
-            emptyState: !!emptyState,
-            loadingState: !!loadingState,
-            editor: !!editor
-        });
-        
-        // Hide loading and empty states, show editor
-        UIHelpers.hide(emptyState);
-        UIHelpers.hide(loadingState);
-        UIHelpers.show(editor);
-        console.log('🎬 Hidden loading and empty states, shown editor');
-        
-        // Set up both views
-        UIHelpers.setValue(transcriptionText, text);
-        console.log('🎬 Set transcription text value:', text?.substring(0, 50) + '...');
-        
-        if (segments && segments.length > 0) {
-            console.log('🎬 Has segments, rendering timestamped view');
-            await this.renderTimestampedSegments(segments);
-            
-            // Show appropriate view based on current mode
-            const transcriptionState = this.appState.getTranscriptionState();
-            if (transcriptionState.viewMode === 'timestamped') {
-                console.log('🎬 Showing timestamped view after rendering segments');
-                this.showTimestampedView();
-            } else {
-                console.log('🎬 Showing plain text view after rendering segments');
-                this.showPlainTextView();
-            }
-        } else {
-            // If no segments, always default to plain text view
-            console.log('🎬 No segments, defaulting to plain text view');
-            this.appState.setTranscriptionState({ viewMode: 'plain' });
-            this.showPlainTextView();
-        }
-
-        // Update toggle button state
-        if (window.app && window.app.updateToggleButton) {
-            window.app.updateToggleButton();
-        }
+        transcriptionController.showTranscriptionResult(text, segments);
 
         // Load audio player if a file path is available
         if (audioFilePath && window.whisperApp && window.whisperApp.controllers.transcription) {

@@ -6,6 +6,7 @@ const { ipcMain, dialog, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const FileService = require('../services/fileService');
 const TranscriptionService = require('../services/transcriptionService');
 const RecordingService = require('../services/recordingService');
@@ -13,10 +14,16 @@ const TranscriptionStoreService = require('../services/transcriptionStoreService
 const MeetingNotesService = require('../services/meetingNotesService');
 const config = require('../config');
 
+const MAX_RECORDING_CHUNK_BYTES = 100 * 1024 * 1024;
+const RECORDING_SESSION_ID = /^recording_\d{10,16}_[a-z0-9]{1,16}$/;
+const RECORDING_CHUNK_FILENAME = /^(recording_\d{10,16}_[a-z0-9]{1,16})_chunk_(\d{3,8})\.(webm|wav|m4a)$/;
+const SAFE_OBJECT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
 class IPCHandlers {
     constructor(mainWindow = null) {
         this.mainWindow = mainWindow;
         this.activeTranscriptions = new Map();
+        this.recordingSessions = new Map();
         this.fileService = new FileService();
         this.transcriptionService = new TranscriptionService();
         this.recordingService = new RecordingService();
@@ -36,6 +43,8 @@ class IPCHandlers {
             this.runTranscription(event, signal => this.handleTranscribeFile(event, filePath, signal)));
         ipcMain.handle('transcription:audio', (event, audioData, prompt = null, options = {}) =>
             this.runTranscription(event, signal => this.handleTranscribeAudio(event, audioData, prompt, options, signal)));
+        ipcMain.handle('transcription:resume', (event, historyId) =>
+            this.runTranscription(event, signal => this.handleResumeTranscription(event, historyId, signal)));
         ipcMain.handle('transcription:cancel', this.handleCancelTranscription.bind(this));
 
         // Recording handlers
@@ -67,6 +76,7 @@ class IPCHandlers {
         ipcMain.handle('recording:loadChunk', this.handleLoadRecordingChunk.bind(this));
         ipcMain.handle('recording:deleteChunk', this.handleDeleteRecordingChunk.bind(this));
         ipcMain.handle('recording:findChunks', this.handleFindRecordingChunks.bind(this));
+        ipcMain.handle('recording:startChunkSession', this.handleStartRecordingChunkSession.bind(this));
 
         // Model download handlers
         ipcMain.handle('model:download', this.handleDownloadModel.bind(this));
@@ -101,6 +111,165 @@ class IPCHandlers {
 
         // Audio file reading for playback
         ipcMain.handle('audio:readFile', this.handleAudioReadFile.bind(this));
+    }
+
+    _assertTrustedRenderer(event) {
+        if (!event || !event.sender) return;
+
+        const webContents = this.mainWindow && this.mainWindow.webContents;
+        if (!webContents || event.sender !== webContents || event.senderFrame !== webContents.mainFrame ||
+            (typeof webContents.isDestroyed === 'function' && webContents.isDestroyed())) {
+            throw new Error('Access denied: untrusted renderer');
+        }
+    }
+
+    _writeFileNoFollow(filePath, content) {
+        try {
+            const existing = fs.lstatSync(filePath);
+            if (existing.isSymbolicLink() || !existing.isFile() || (typeof process.getuid === 'function' && existing.uid !== process.getuid())) {
+                throw new Error('Refusing to write to an unowned or non-regular file');
+            }
+        } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+        }
+
+        const noFollow = fs.constants.O_NOFOLLOW || 0;
+        const descriptor = fs.openSync(
+            filePath,
+            fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | noFollow,
+            0o600
+        );
+        try {
+            const opened = fs.fstatSync(descriptor);
+            if (!opened.isFile() || (typeof process.getuid === 'function' && opened.uid !== process.getuid())) {
+                throw new Error('Refusing to write to an unowned or non-regular file');
+            }
+            fs.writeFileSync(descriptor, content);
+        } finally {
+            fs.closeSync(descriptor);
+        }
+    }
+
+    _readFileNoFollow(filePath, maxBytes) {
+        const noFollow = fs.constants.O_NOFOLLOW || 0;
+        const descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | noFollow);
+        try {
+            const opened = fs.fstatSync(descriptor);
+            if (!opened.isFile() || (typeof process.getuid === 'function' && opened.uid !== process.getuid())) {
+                throw new Error('Refusing to read an unowned or non-regular file');
+            }
+            if (opened.size > maxBytes) throw new Error('Recording chunk is too large');
+            return fs.readFileSync(descriptor);
+        } finally {
+            fs.closeSync(descriptor);
+        }
+    }
+
+    _getRecordingsDirectory(create = false) {
+        const { app } = require('electron');
+        const tempDir = fs.realpathSync(app.getPath('temp'));
+        const recordingsDir = path.join(tempDir, 'whisper-wrapper-recordings');
+        if (create && !fs.existsSync(recordingsDir)) {
+            fs.mkdirSync(recordingsDir, { recursive: true, mode: 0o700 });
+        }
+
+        let stats;
+        try {
+            stats = fs.lstatSync(recordingsDir);
+        } catch (error) {
+            if (error.code === 'ENOENT' && !create) return null;
+            throw error;
+        }
+        if (stats.isSymbolicLink() || !stats.isDirectory() || (typeof process.getuid === 'function' && stats.uid !== process.getuid())) {
+            throw new Error('Recording storage directory is not trusted');
+        }
+        if (fs.realpathSync(recordingsDir) !== recordingsDir) {
+            throw new Error('Recording storage directory resolves outside its allowed location');
+        }
+        fs.chmodSync(recordingsDir, 0o700);
+        return recordingsDir;
+    }
+
+    _resolveRecordingChunkPath(filePath) {
+        if (typeof filePath !== 'string' || filePath.length > 4096) {
+            throw new Error('Invalid recording chunk path');
+        }
+        const recordingsDir = this._getRecordingsDirectory();
+        if (!recordingsDir) return null;
+        const resolved = path.resolve(filePath);
+        const filename = path.basename(resolved);
+        if (path.dirname(resolved) !== recordingsDir || !RECORDING_CHUNK_FILENAME.test(filename)) {
+            throw new Error('Recording chunk path is outside the allowed storage');
+        }
+        return path.join(recordingsDir, filename);
+    }
+
+    _assertRecordingChunkFile(filePath) {
+        const stats = fs.lstatSync(filePath);
+        if (stats.isSymbolicLink() || !stats.isFile() || (typeof process.getuid === 'function' && stats.uid !== process.getuid())) {
+            throw new Error('Recording chunk is not an owned regular file');
+        }
+        if (fs.realpathSync(filePath) !== filePath) {
+            throw new Error('Recording chunk resolves outside the allowed storage');
+        }
+        return stats;
+    }
+
+    _validateNotesId(id) {
+        return typeof id === 'string' && SAFE_OBJECT_ID.test(id);
+    }
+
+    _getRecordingSessionOwner(event) {
+        if (!event || !event.sender) throw new Error('Recording session owner is missing');
+        return event.sender.id === undefined ? event.sender : event.sender.id;
+    }
+
+    _requireRecordingSession(event, sessionId) {
+        this._assertTrustedRenderer(event);
+        if (typeof sessionId !== 'string' || !RECORDING_SESSION_ID.test(sessionId)) {
+            throw new Error('Invalid recording session id');
+        }
+        const session = this.recordingSessions.get(sessionId);
+        if (!session || session.owner !== this._getRecordingSessionOwner(event)) {
+            throw new Error('Recording session is not authorized for this renderer');
+        }
+        return session;
+    }
+
+    _requireRecordingChunk(event, filePath) {
+        const chunkPath = this._resolveRecordingChunkPath(filePath);
+        if (!chunkPath) throw new Error('Recording chunk file not found');
+        const filename = path.basename(chunkPath);
+        const match = filename.match(RECORDING_CHUNK_FILENAME);
+        const session = this._requireRecordingSession(event, match[1]);
+        if (!session.filenames.has(filename)) {
+            throw new Error('Recording chunk is not authorized for this session');
+        }
+        return { chunkPath, filename, session };
+    }
+
+    async handleStartRecordingChunkSession(event) {
+        try {
+            this._assertTrustedRenderer(event);
+            const owner = this._getRecordingSessionOwner(event);
+            let sessionId;
+            do {
+                sessionId = `recording_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
+            } while (this.recordingSessions.has(sessionId));
+            this.recordingSessions.set(sessionId, { owner, filenames: new Set() });
+            return { success: true, sessionId };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    async _getOwnedTranscription(event, transcriptionId) {
+        this._assertTrustedRenderer(event);
+        if (!this._validateNotesId(transcriptionId)) return null;
+        const result = await this.transcriptionStoreService.get(transcriptionId);
+        if (!result || !result.entry || result.entry.id !== transcriptionId || typeof result.text !== 'string') return null;
+        if (Buffer.byteLength(result.text, 'utf8') > 10 * 1024 * 1024) return null;
+        return result;
     }
 
     async handleOpenFile() {
@@ -189,6 +358,24 @@ class IPCHandlers {
 
     async handleSaveFile(event, content, defaultFilename = 'transcription.txt') {
         try {
+            this._assertTrustedRenderer(event);
+            if (typeof defaultFilename !== 'string' || defaultFilename.length > 255 ||
+                defaultFilename.includes('/') || defaultFilename.includes('\\') ||
+                Array.from(defaultFilename).some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) {
+                throw new Error('Invalid default filename');
+            }
+
+            let fileContent;
+            if (content instanceof ArrayBuffer) {
+                fileContent = Buffer.from(content);
+            } else if (Buffer.isBuffer(content)) {
+                fileContent = content;
+            } else if (typeof content === 'string') {
+                fileContent = content;
+            } else {
+                throw new Error('Invalid file content format');
+            }
+
             // Determine file type and filters based on filename
             const isAudioFile = defaultFilename.match(/\.(wav|webm|mp3|m4a)$/i);
             
@@ -230,15 +417,10 @@ class IPCHandlers {
             if (result.canceled) {
                 return { canceled: true };
             }
-
-            // Handle different content types
-            if (content instanceof ArrayBuffer) {
-                fs.writeFileSync(result.filePath, Buffer.from(content));
-            } else if (Buffer.isBuffer(content)) {
-                fs.writeFileSync(result.filePath, content);
-            } else {
-                fs.writeFileSync(result.filePath, content, 'utf8');
+            if (typeof result.filePath !== 'string' || result.filePath.length > 4096) {
+                throw new Error('Invalid destination file path');
             }
+            this._writeFileNoFollow(result.filePath, fileContent);
 
             return {
                 canceled: false,
@@ -263,7 +445,7 @@ class IPCHandlers {
                 if (operation.controller.signal.aborted) return { success: false, canceled: true };
                 return await task(operation.controller.signal);
             } catch (error) {
-                if (operation.controller.signal.aborted) return { success: false, canceled: true };
+                if (operation.controller.signal.aborted && !error.preserveError) return { success: false, canceled: true };
                 throw error;
             } finally {
                 pending.delete(operation);
@@ -350,7 +532,6 @@ class IPCHandlers {
                 console.log('🎤 IPC: Transcription options:', transcriptionOptions);
                 
                 const result = await this.transcriptionService.transcribeFile(tempFilePath, transcriptionOptions);
-                if (signal?.aborted) throw new Error('Transcription canceled');
                 console.log('🎤 IPC: Transcription result:', {
                     success: result.success,
                     textLength: result.text?.length || 0,
@@ -358,48 +539,80 @@ class IPCHandlers {
                     duration: result.duration
                 });
 
-                // Clean up temp file
-                console.log('🗑️ IPC: Cleaning up temp file...');
-                await this.fileService.cleanup(tempFilePath);
-                console.log('✅ IPC: Temp file cleaned up');
-                if (signal?.aborted) return { success: false, canceled: true };
-
-                // Send completion update
-                console.log('📡 IPC: Sending progress update - completed');
-                event.sender.send('transcription:progress', { 
-                    status: 'completed', 
-                    message: 'Transcription completed successfully' 
-                });
-
                 const finalResult = {
                     success: true,
+                    status: result.partial === true || result.status === 'partial' ? 'partial' : 'complete',
+                    partial: result.partial === true || result.status === 'partial',
+                    issues: Array.isArray(result.issues) ? result.issues : [],
+                    resumeId: result.resumeId || null,
                     text: result.text,
                     language: result.language,
                     duration: result.duration,
+                    audioDurationSeconds: result.audioDurationSeconds,
+                    processingDurationMs: result.processingDurationMs,
                     segments: result.segments || [],
                     audioFilePath: filePath
                 };
 
-                this.transcriptionStoreService.store(result.text, {
-                    sourceFile: path.basename(filePath),
-                    audioFilePath: filePath,
-                    language: result.language,
-                    duration: result.duration,
-                    model: currentConfig.model || ''
-                }).catch(err => console.error('Failed to auto-store transcription:', err));
+                let entry;
+                try {
+                    entry = await this.transcriptionStoreService.store(result.text, {
+                        sourceFile: path.basename(filePath),
+                        audioFilePath: filePath,
+                        language: result.language,
+                        duration: result.duration,
+                        audioDurationSeconds: result.audioDurationSeconds,
+                        processingDurationMs: result.processingDurationMs,
+                        model: currentConfig.model || '',
+                        status: finalResult.status,
+                        partial: finalResult.partial,
+                        issues: finalResult.issues,
+                        resumeId: finalResult.partial ? finalResult.resumeId : null
+                    });
+                } catch (error) {
+                    error.preserveError = true;
+                    throw error;
+                }
+                if (entry?.id) finalResult.historyId = entry.id;
+
+                try {
+                    await this.fileService.cleanup(tempFilePath);
+                } catch (error) {
+                    finalResult.cleanupPending = true;
+                    finalResult.cleanupError = error.message;
+                }
+
+                if (!finalResult.partial && finalResult.resumeId && this.transcriptionService.finalizeTranscription) {
+                    try {
+                        await this.finalizeResumeJobIfUnreferenced(finalResult.resumeId, entry?.id);
+                    } catch (error) {
+                        finalResult.cleanupPending = true;
+                        finalResult.cleanupError = error.message;
+                    }
+                }
+
+                event.sender.send('transcription:progress', {
+                    status: finalResult.partial ? 'partial' : 'completed',
+                    message: finalResult.partial
+                        ? 'Transcription completed with audio requiring review'
+                        : 'Transcription completed successfully'
+                });
 
                 console.log('🎉 IPC: handleTranscribeFile completed successfully!');
                 return finalResult;
 
             } catch (transcriptionError) {
                 console.log('❌ IPC: Transcription error occurred:', transcriptionError.message);
-                // Clean up temp file on error
-                await this.fileService.cleanup(tempFilePath);
+                try {
+                    await this.fileService.cleanup(tempFilePath);
+                } catch (cleanupError) {
+                    transcriptionError.cleanupError = cleanupError;
+                }
                 throw transcriptionError;
             }
 
         } catch (error) {
-            if (signal?.aborted) return { success: false, canceled: true };
+            if (signal?.aborted && !error.preserveError) return { success: false, canceled: true };
             console.error('❌ IPC: Error transcribing file:', error);
             console.error('❌ IPC: Error stack:', error.stack);
             
@@ -410,7 +623,10 @@ class IPCHandlers {
                 message: error.message 
             });
 
-            throw new Error(`Transcription failed: ${error.message}`);
+            const wrappedError = new Error(`Transcription failed: ${error.message}`);
+            wrappedError.preserveError = error.preserveError;
+            wrappedError.cleanupError = error.cleanupError;
+            throw wrappedError;
         }
     }
 
@@ -451,6 +667,7 @@ class IPCHandlers {
             // Prepare transcription options
             const transcriptionOptions = {
                 signal,
+                persistSourceAudio: !(options && typeof options === 'object' && options.skipStore === true),
                 threads: currentConfig.threads || 4,
                 translate: currentConfig.translate || false,
                 useGpu: currentConfig.useGpu !== undefined ? currentConfig.useGpu : true,
@@ -470,37 +687,68 @@ class IPCHandlers {
             }
             
             // Transcribe the audio buffer
+            const skipStore = !!(options && typeof options === 'object' && options.skipStore === true);
             const result = await this.transcriptionService.transcribeBuffer(
                 audioBuffer,
                 transcriptionOptions
             );
 
-            if (signal?.aborted) return { success: false, canceled: true };
-            // Send completion update
-            event.sender.send('transcription:progress', { 
-                status: 'completed', 
-                message: 'Transcription completed successfully' 
-            });
-
-            const skipStore = !!(options && typeof options === 'object' && options.skipStore === true);
+            const partial = result.partial === true || result.status === 'partial';
+            const issues = Array.isArray(result.issues) ? result.issues : [];
+            const resumeId = result.resumeId || null;
+            let historyId;
             if (!skipStore) {
-                this.transcriptionStoreService.store(result.text, {
-                    language: result.language,
-                    duration: result.duration,
-                    model: currentConfig.model || ''
-                }).catch(err => console.error('Failed to auto-store transcription:', err));
+                try {
+                    const entry = await this.transcriptionStoreService.store(result.text, {
+                        language: result.language,
+                        duration: result.duration,
+                        audioDurationSeconds: result.audioDurationSeconds,
+                        processingDurationMs: result.processingDurationMs,
+                        model: currentConfig.model || '',
+                        status: partial ? 'partial' : 'complete',
+                        partial,
+                        issues,
+                        resumeId: partial ? resumeId : null
+                    });
+                    historyId = entry?.id;
+                } catch (error) {
+                    error.preserveError = true;
+                    throw error;
+                }
             }
+
+            if (!partial && resumeId && this.transcriptionService.finalizeTranscription) {
+                try {
+                    await this.finalizeResumeJobIfUnreferenced(resumeId, historyId);
+                } catch (error) {
+                    console.error('Failed to remove completed transcription checkpoints:', error);
+                }
+            }
+
+            event.sender.send('transcription:progress', {
+                status: partial ? 'partial' : 'completed',
+                message: partial
+                    ? 'Transcription completed with audio requiring review'
+                    : 'Transcription completed successfully'
+            });
 
             return {
                 success: true,
+                status: partial ? 'partial' : 'complete',
+                partial,
+                issues,
+                resumeId,
+                historyId,
                 text: result.text,
                 language: result.language,
                 duration: result.duration,
+                audioDurationSeconds: result.audioDurationSeconds,
+                processingDurationMs: result.processingDurationMs,
                 segments: result.segments || []
             };
 
         } catch (error) {
-            if (signal?.aborted) return { success: false, canceled: true };
+            if (signal?.aborted && !error.preserveError) return { success: false, canceled: true };
             console.error('Error transcribing audio:', error);
             
             // Send error update
@@ -509,8 +757,73 @@ class IPCHandlers {
                 message: error.message 
             });
 
-            throw new Error(`Audio transcription failed: ${error.message}`);
+            const wrappedError = new Error(`Audio transcription failed: ${error.message}`);
+            wrappedError.preserveError = error.preserveError;
+            throw wrappedError;
         }
+    }
+
+    async handleResumeTranscription(event, historyId, signal) {
+        if (typeof historyId !== 'string' || !historyId) {
+            throw new Error('Invalid partial transcription history id');
+        }
+        const entry = this.transcriptionStoreService.list().find(item =>
+            item.id === historyId && item.partial === true && typeof item.resumeId === 'string' && item.resumeId);
+        if (!entry) throw new Error('Partial transcription was not found in history');
+        const resumeId = entry.resumeId;
+
+        event.sender.send('transcription:progress', {
+            status: 'processing',
+            message: 'Resuming transcription from saved audio...'
+        });
+        const result = await this.transcriptionService.resumeTranscription(resumeId, { signal });
+        const partial = result.partial === true || result.status === 'partial';
+        const issues = Array.isArray(result.issues) ? result.issues : [];
+        const resultResumeId = partial ? (result.resumeId || resumeId) : null;
+        const updatedEntry = await this.transcriptionStoreService.updateResult(entry.id, result.text, {
+            language: result.language,
+            duration: result.duration,
+            audioDurationSeconds: result.audioDurationSeconds,
+            processingDurationMs: result.processingDurationMs,
+            model: result.model,
+            status: partial ? 'partial' : 'complete',
+            partial,
+            issues,
+            resumeId: resultResumeId
+        });
+        if (!updatedEntry) throw new Error('Partial transcription history entry was not found');
+
+        let cleanupPending = false;
+        let cleanupError = null;
+        const jobsToClean = new Set();
+        if (resumeId !== resultResumeId) jobsToClean.add(resumeId);
+        if (!partial && result.resumeId) jobsToClean.add(result.resumeId);
+        if (this.transcriptionService.finalizeTranscription) {
+            for (const jobId of jobsToClean) {
+                try {
+                    await this.finalizeResumeJobIfUnreferenced(jobId, updatedEntry.id);
+                } catch (error) {
+                    cleanupPending = true;
+                    cleanupError = error.message;
+                }
+            }
+        }
+        event.sender.send('transcription:progress', {
+            status: partial ? 'partial' : 'completed',
+            message: partial
+                ? 'Transcription is still partial; review the flagged audio intervals'
+                : 'Transcription resumed and completed successfully'
+        });
+        return { ...result, status: partial ? 'partial' : 'complete', partial, issues, resumeId: resultResumeId,
+            historyId: updatedEntry.id, cleanupPending, cleanupError };
+    }
+
+    async finalizeResumeJobIfUnreferenced(resumeId, historyId) {
+        const stillReferenced = this.transcriptionStoreService.list().some(entry =>
+            entry.id !== historyId && entry.resumeId === resumeId);
+        if (stillReferenced) return false;
+        await this.transcriptionService.finalizeTranscription(resumeId);
+        return true;
     }
 
     async handleGetConfig() {
@@ -791,17 +1104,14 @@ class IPCHandlers {
 
     async handleSaveRecordingChunk(event, audioData, filename) {
         try {
-            const { app } = require('electron');
-            const tempDir = app.getPath('temp');
-            const chunkPath = path.join(tempDir, 'whisper-wrapper-recordings', filename);
-            
-            // Ensure directory exists
-            const dir = path.dirname(chunkPath);
-            if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir, { recursive: true });
+            this._assertTrustedRenderer(event);
+            if (typeof filename !== 'string') {
+                throw new Error('Invalid recording chunk filename');
             }
+            const filenameMatch = filename.match(RECORDING_CHUNK_FILENAME);
+            if (!filenameMatch) throw new Error('Invalid recording chunk filename');
+            const session = this._requireRecordingSession(event, filenameMatch[1]);
 
-            // Convert ArrayBuffer to Buffer if needed
             let buffer;
             if (audioData instanceof ArrayBuffer) {
                 buffer = Buffer.from(audioData);
@@ -810,10 +1120,18 @@ class IPCHandlers {
             } else {
                 throw new Error('Invalid audio data format');
             }
+            if (buffer.length > MAX_RECORDING_CHUNK_BYTES) {
+                throw new Error('Recording chunk is too large');
+            }
 
-            // Write file
-            fs.writeFileSync(chunkPath, buffer);
-            const stats = fs.statSync(chunkPath);
+            const recordingsDir = this._getRecordingsDirectory(true);
+            const chunkPath = path.join(recordingsDir, filename);
+            if (fs.existsSync(chunkPath) && !session.filenames.has(filename)) {
+                throw new Error('Recording chunk already exists outside this session');
+            }
+            this._writeFileNoFollow(chunkPath, buffer);
+            const stats = this._assertRecordingChunkFile(chunkPath);
+            session.filenames.add(filename);
             
             console.log(`Saved recording chunk: ${filename} (${stats.size} bytes)`);
             
@@ -831,12 +1149,13 @@ class IPCHandlers {
 
     async handleLoadRecordingChunk(event, filePath) {
         try {
-            if (!fs.existsSync(filePath)) {
+            const { chunkPath, filename } = this._requireRecordingChunk(event, filePath);
+            if (!fs.existsSync(chunkPath)) {
                 throw new Error('Recording chunk file not found');
             }
-
-            const buffer = fs.readFileSync(filePath);
-            console.log(`Loaded recording chunk: ${path.basename(filePath)} (${buffer.length} bytes)`);
+            this._assertRecordingChunkFile(chunkPath);
+            const buffer = this._readFileNoFollow(chunkPath, MAX_RECORDING_CHUNK_BYTES);
+            console.log(`Loaded recording chunk: ${filename} (${buffer.length} bytes)`);
             
             return buffer;
         } catch (error) {
@@ -847,9 +1166,15 @@ class IPCHandlers {
 
     async handleDeleteRecordingChunk(event, filePath) {
         try {
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-                console.log(`Deleted recording chunk: ${path.basename(filePath)}`);
+            const { chunkPath, filename, session } = this._requireRecordingChunk(event, filePath);
+            if (fs.existsSync(chunkPath)) {
+                this._assertRecordingChunkFile(chunkPath);
+                fs.unlinkSync(chunkPath);
+                session.filenames.delete(filename);
+                if (session.filenames.size === 0) {
+                    this.recordingSessions.delete(filename.match(RECORDING_CHUNK_FILENAME)[1]);
+                }
+                console.log(`Deleted recording chunk: ${filename}`);
             }
             
             return { success: true };
@@ -861,19 +1186,45 @@ class IPCHandlers {
 
     async handleFindRecordingChunks(event, sessionId) {
         try {
-            const { app } = require('electron');
-            const tempDir = app.getPath('temp');
-            const recordingsDir = path.join(tempDir, 'whisper-wrapper-recordings');
-            
-            if (!fs.existsSync(recordingsDir)) {
+            this._assertTrustedRenderer(event);
+            const owner = this._getRecordingSessionOwner(event);
+            const isRecoveryScan = sessionId === 'recording_';
+            if (typeof sessionId !== 'string' || sessionId.length > 64 ||
+                (!isRecoveryScan && !RECORDING_SESSION_ID.test(sessionId))) {
+                throw new Error('Invalid recording session id');
+            }
+            if (!isRecoveryScan) this._requireRecordingSession(event, sessionId);
+            const recordingsDir = this._getRecordingsDirectory();
+            if (!recordingsDir) {
                 return [];
             }
 
-            const files = fs.readdirSync(recordingsDir);
-            const sessionChunks = files
-                .filter(file => file.startsWith(sessionId) && file.includes('_chunk_'))
-                .sort() // Sort to maintain chunk order
-                .map(file => path.join(recordingsDir, file));
+            const sessionChunks = [];
+            for (const filename of fs.readdirSync(recordingsDir).sort()) {
+                const filenameMatch = filename.match(RECORDING_CHUNK_FILENAME);
+                if (!filenameMatch || (!isRecoveryScan && filenameMatch[1] !== sessionId)) continue;
+
+                let session = this.recordingSessions.get(filenameMatch[1]);
+                if (session && session.owner !== owner) continue;
+                if (!session && !isRecoveryScan) continue;
+
+                const filePath = path.join(recordingsDir, filename);
+                try {
+                    const lstat = fs.lstatSync(filePath);
+                    if (lstat.isSymbolicLink() || !lstat.isFile() ||
+                        (typeof process.getuid === 'function' && lstat.uid !== process.getuid())) continue;
+                    const stats = this._assertRecordingChunkFile(filePath);
+                    if (stats.size > MAX_RECORDING_CHUNK_BYTES) continue;
+                    if (!session) {
+                        session = { owner, filenames: new Set() };
+                        this.recordingSessions.set(filenameMatch[1], session);
+                    }
+                    session.filenames.add(filename);
+                    sessionChunks.push(filePath);
+                } catch (error) {
+                    if (error.code !== 'ENOENT' && error.message !== 'Recording chunk is not an owned regular file') throw error;
+                }
+            }
             
             console.log(`Found ${sessionChunks.length} chunks for session ${sessionId}`);
             return sessionChunks;
@@ -935,8 +1286,17 @@ class IPCHandlers {
 
     async handleTranscriptionsDelete(event, { id } = {}) {
         try {
+            const saved = await this.transcriptionStoreService.get(id);
             const deleted = await this.transcriptionStoreService.delete(id);
-            return { success: deleted };
+            if (!deleted) return { success: false };
+            if (saved?.entry?.resumeId && this.transcriptionService.finalizeTranscription) {
+                try {
+                    await this.finalizeResumeJobIfUnreferenced(saved.entry.resumeId, id);
+                } catch (error) {
+                    return { success: true, cleanupPending: true, error: error.message };
+                }
+            }
+            return { success: true };
         } catch (error) {
             console.error('Error deleting transcription:', error);
             return { success: false, error: error.message };
@@ -1016,8 +1376,9 @@ class IPCHandlers {
 
     // Meeting Notes Handlers
 
-    async handleMeetingNotesGetConfig() {
+    async handleMeetingNotesGetConfig(event) {
         try {
+            this._assertTrustedRenderer(event);
             return {
                 success: true,
                 config: {
@@ -1032,9 +1393,23 @@ class IPCHandlers {
         }
     }
 
-    async handleMeetingNotesSaveConfig(event, { settings } = {}) {
+    async handleMeetingNotesSaveConfig(event, request = {}) {
         try {
-            if (!settings) return { success: false, error: 'No settings provided' };
+            this._assertTrustedRenderer(event);
+            const { settings } = request && typeof request === 'object' && !Array.isArray(request) ? request : {};
+            if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return { success: false, error: 'Invalid settings' };
+            if (settings.defaultProvider !== undefined && !['ollama', 'claude', 'codex'].includes(settings.defaultProvider)) {
+                return { success: false, error: 'Invalid default provider' };
+            }
+            for (const key of ['claudeModel', 'codexModel']) {
+                if (settings[key] !== undefined && (typeof settings[key] !== 'string' || settings[key].length > 256)) {
+                    return { success: false, error: `Invalid ${key}` };
+                }
+            }
+            if (settings.cliTimeoutSeconds !== undefined &&
+                (!Number.isInteger(settings.cliTimeoutSeconds) || settings.cliTimeoutSeconds < 10 || settings.cliTimeoutSeconds > 3600)) {
+                return { success: false, error: 'Invalid CLI timeout' };
+            }
             const allowedKeys = ['defaultProvider', 'claudeModel', 'codexModel', 'cliTimeoutSeconds'];
             for (const key of allowedKeys) {
                 if (settings[key] !== undefined) {
@@ -1047,24 +1422,59 @@ class IPCHandlers {
         }
     }
 
-    async handleMeetingNotesGenerate(event, { transcriptionId, options } = {}) {
-        if (!transcriptionId) return { success: false, error: 'Missing transcriptionId' };
+    async handleMeetingNotesGenerate(event, request = {}) {
         try {
-            // Get transcript text
-            const result = await this.transcriptionStoreService.get(transcriptionId);
-            if (!result || !result.text) {
+            const { transcriptionId, options } = request && typeof request === 'object' && !Array.isArray(request) ? request : {};
+            const result = await this._getOwnedTranscription(event, transcriptionId);
+            if (!result) {
                 return { success: false, error: 'Transcript not found' };
             }
 
-            const genOptions = { ...(options || {}) };
+            if (options !== undefined && (!options || typeof options !== 'object' || Array.isArray(options))) {
+                return { success: false, error: 'Invalid options' };
+            }
+            const requestedOptions = options || {};
+            const genOptions = {};
+            if (requestedOptions.provider !== undefined) {
+                if (!['ollama', 'claude', 'codex'].includes(requestedOptions.provider)) {
+                    return { success: false, error: 'Invalid provider' };
+                }
+                genOptions.provider = requestedOptions.provider;
+            }
+            if (requestedOptions.model !== undefined) {
+                if (typeof requestedOptions.model !== 'string' || requestedOptions.model.length > 256) {
+                    return { success: false, error: 'Invalid model' };
+                }
+                genOptions.model = requestedOptions.model;
+            }
+            if (requestedOptions.templateId !== undefined) {
+                if (!this._validateNotesId(requestedOptions.templateId)) {
+                    return { success: false, error: 'Invalid template id' };
+                }
+                genOptions.templateId = requestedOptions.templateId;
+            }
+            if (requestedOptions.prePrompt !== undefined) {
+                if (typeof requestedOptions.prePrompt !== 'string' || Buffer.byteLength(requestedOptions.prePrompt, 'utf8') > 20000) {
+                    return { success: false, error: 'Invalid prompt context' };
+                }
+                genOptions.prePrompt = requestedOptions.prePrompt;
+            }
 
-            // Resolve context transcript IDs into text
-            if (genOptions.contextTranscriptIds && genOptions.contextTranscriptIds.length > 0) {
+            if (requestedOptions.contextTranscriptIds !== undefined) {
+                if (!Array.isArray(requestedOptions.contextTranscriptIds) || requestedOptions.contextTranscriptIds.length > 20 ||
+                    requestedOptions.contextTranscriptIds.some(id => !this._validateNotesId(id))) {
+                    return { success: false, error: 'Invalid context transcript ids' };
+                }
                 const contextTranscripts = [];
-                for (const ctxId of genOptions.contextTranscriptIds) {
+                let contextBytes = 0;
+                for (const ctxId of requestedOptions.contextTranscriptIds) {
                     if (ctxId === transcriptionId) continue; // skip self
-                    const ctxResult = await this.transcriptionStoreService.get(ctxId);
-                    if (ctxResult && ctxResult.text) {
+                    const ctxResult = await this._getOwnedTranscription(event, ctxId);
+                    if (ctxResult) {
+                        contextBytes += Buffer.byteLength(ctxResult.text, 'utf8');
+                        if (contextBytes > 25 * 1024 * 1024) {
+                            return { success: false, error: 'Context transcripts are too large' };
+                        }
                         contextTranscripts.push({
                             id: ctxId,
                             title: ctxResult.entry ? ctxResult.entry.title : ctxId,
@@ -1073,7 +1483,6 @@ class IPCHandlers {
                     }
                 }
                 genOptions.contextTranscripts = contextTranscripts;
-                delete genOptions.contextTranscriptIds;
             }
 
             const notesData = await this.meetingNotesService.generate(result.text, transcriptionId, genOptions);
@@ -1084,8 +1493,11 @@ class IPCHandlers {
         }
     }
 
-    async handleMeetingNotesGet(event, { transcriptionId } = {}) {
+    async handleMeetingNotesGet(event, request = {}) {
         try {
+            const { transcriptionId } = request && typeof request === 'object' && !Array.isArray(request) ? request : {};
+            const result = await this._getOwnedTranscription(event, transcriptionId);
+            if (!result) return { success: false, error: 'Transcript not found' };
             const notes = this.meetingNotesService.getNotes(transcriptionId);
             return { success: true, notes };
         } catch (error) {
@@ -1094,8 +1506,11 @@ class IPCHandlers {
         }
     }
 
-    async handleMeetingNotesDelete(event, { transcriptionId } = {}) {
+    async handleMeetingNotesDelete(event, request = {}) {
         try {
+            const { transcriptionId } = request && typeof request === 'object' && !Array.isArray(request) ? request : {};
+            const result = await this._getOwnedTranscription(event, transcriptionId);
+            if (!result) return { success: false, error: 'Transcript not found' };
             const deleted = this.meetingNotesService.deleteNotes(transcriptionId);
             return { success: deleted };
         } catch (error) {
@@ -1104,16 +1519,20 @@ class IPCHandlers {
         }
     }
 
-    async handleMeetingNotesHasNotes(event, { transcriptionId } = {}) {
+    async handleMeetingNotesHasNotes(event, request = {}) {
         try {
+            const { transcriptionId } = request && typeof request === 'object' && !Array.isArray(request) ? request : {};
+            const result = await this._getOwnedTranscription(event, transcriptionId);
+            if (!result) return { hasNotes: false };
             return { hasNotes: this.meetingNotesService.hasNotes(transcriptionId) };
         } catch (error) {
             return { hasNotes: false };
         }
     }
 
-    async handleMeetingNotesGetTemplates() {
+    async handleMeetingNotesGetTemplates(event) {
         try {
+            this._assertTrustedRenderer(event);
             const templates = this.meetingNotesService.loadTemplates();
             return { success: true, templates };
         } catch (error) {
@@ -1122,8 +1541,13 @@ class IPCHandlers {
         }
     }
 
-    async handleMeetingNotesCreateTemplate(event, { template } = {}) {
+    async handleMeetingNotesCreateTemplate(event, request = {}) {
         try {
+            this._assertTrustedRenderer(event);
+            const { template } = request && typeof request === 'object' && !Array.isArray(request) ? request : {};
+            if (!template || typeof template !== 'object' || Array.isArray(template)) {
+                return { success: false, error: 'Invalid template' };
+            }
             const created = this.meetingNotesService.createTemplate(template || {});
             return { success: true, template: created };
         } catch (error) {
@@ -1132,8 +1556,13 @@ class IPCHandlers {
         }
     }
 
-    async handleMeetingNotesUpdateTemplate(event, { id, changes } = {}) {
+    async handleMeetingNotesUpdateTemplate(event, request = {}) {
         try {
+            this._assertTrustedRenderer(event);
+            const { id, changes } = request && typeof request === 'object' && !Array.isArray(request) ? request : {};
+            if (!this._validateNotesId(id) || !changes || typeof changes !== 'object' || Array.isArray(changes)) {
+                return { success: false, error: 'Invalid template update' };
+            }
             const updated = this.meetingNotesService.updateTemplate(id, changes || {});
             if (!updated) return { success: false, error: 'Template not found' };
             return { success: true, template: updated };
@@ -1143,8 +1572,11 @@ class IPCHandlers {
         }
     }
 
-    async handleMeetingNotesDeleteTemplate(event, { id } = {}) {
+    async handleMeetingNotesDeleteTemplate(event, request = {}) {
         try {
+            this._assertTrustedRenderer(event);
+            const { id } = request && typeof request === 'object' && !Array.isArray(request) ? request : {};
+            if (!this._validateNotesId(id)) return { success: false, error: 'Invalid template id' };
             const deleted = this.meetingNotesService.deleteTemplate(id);
             return { success: deleted };
         } catch (error) {

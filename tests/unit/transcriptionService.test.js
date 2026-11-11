@@ -1,8 +1,12 @@
 const TranscriptionService = require('../../src/services/transcriptionService');
+const fs = require('fs');
 
 jest.mock('../../src/services/resumableTranscription', () => ({
-    transcribeResumableFile: (filePath, options, transcribe) => transcribe(filePath, options)
+    finalizeResumableFile: jest.fn().mockResolvedValue(undefined),
+    getResumableJob: jest.fn(),
+    transcribeResumableFile: jest.fn((filePath, options, transcribe) => transcribe(filePath, options))
 }));
+const { finalizeResumableFile, getResumableJob, transcribeResumableFile } = require('../../src/services/resumableTranscription');
 
 // Mock LocalWhisperService
 jest.mock('../../src/services/localWhisperService', () => {
@@ -18,7 +22,8 @@ jest.mock('../../src/services/localWhisperService', () => {
             setThreads: jest.fn(),
             setInitialPrompt: jest.fn(),
             getInitialPrompt: jest.fn(),
-            clearInitialPrompt: jest.fn()
+            clearInitialPrompt: jest.fn(),
+            getDecoderIdentity: jest.fn().mockReturnValue({ model: { size: 10 }, decoder: { size: 20 } })
         }))
     };
 });
@@ -138,6 +143,10 @@ describe('TranscriptionService', () => {
 
             expect(result).toEqual({
                 success: true,
+                status: 'complete',
+                partial: false,
+                issues: [],
+                resumeId: null,
                 text: 'Hello world',
                 markdown: expect.any(String),
                 plainText: expect.any(String),
@@ -145,6 +154,8 @@ describe('TranscriptionService', () => {
                 segments: [],
                 model: 'base',
                 duration: 10.5,
+                audioDurationSeconds: null,
+                processingDurationMs: null,
                 metadata: expect.any(Object),
                 srt: expect.any(String),
                 vtt: expect.any(String)
@@ -198,6 +209,82 @@ describe('TranscriptionService', () => {
                 initialPrompt: customPrompt,
                 useInitialPrompt: true
             });
+        });
+
+        it('preserves partial metadata and fingerprints the model and decoder', async () => {
+            const issues = [{ code: 'decoder_recovery_failed', start: 2, end: 4 }];
+            mockLocalWhisper.isAvailable.mockReturnValue(true);
+            mockLocalWhisper.transcribeFile.mockResolvedValue({
+                text: 'Recoverable words', language: 'ru', segments: [], model: 'base', duration: 400
+            });
+            transcribeResumableFile.mockImplementationOnce(async () => ({
+                success: true,
+                status: 'partial',
+                partial: true,
+                issues,
+                resumeId: 'f'.repeat(64),
+                text: 'Recoverable words',
+                language: 'ru',
+                segments: [],
+                model: 'base',
+                duration: 400
+            }));
+
+            const result = await service.transcribeFile('/path/to/file.wav');
+
+            expect(transcribeResumableFile.mock.calls[0][4]).toEqual({ model: { size: 10 }, decoder: { size: 20 } });
+            expect(result).toMatchObject({
+                status: 'partial',
+                partial: true,
+                issues,
+                resumeId: 'f'.repeat(64)
+            });
+        });
+
+        it('finalizes checkpoints through the resumable service', async () => {
+            await service.finalizeTranscription('a'.repeat(64));
+            expect(finalizeResumableFile).toHaveBeenCalledWith('a'.repeat(64), service.checkpointRoot);
+        });
+
+        it('resumes a saved job with its original options and the new cancellation signal', async () => {
+            const signal = new AbortController().signal;
+            const options = { model: 'small', language: 'ru', threads: 2, useInitialPrompt: false };
+            getResumableJob.mockResolvedValue({ sourcePath: '/checkpoint/source.audio', options });
+            const transcribeFile = jest.spyOn(service, 'transcribeFile').mockResolvedValue({ success: true });
+
+            await service.resumeTranscription('a'.repeat(64), { signal });
+
+            expect(getResumableJob).toHaveBeenCalledWith('a'.repeat(64), service.checkpointRoot);
+            expect(transcribeFile).toHaveBeenCalledWith('/checkpoint/source.audio', { ...options, signal });
+        });
+    });
+
+    describe('transcribeBuffer', () => {
+        it('routes a complete recording through the file pipeline and removes its temporary source', async () => {
+            const audioBuffer = Buffer.from('recorded audio');
+            const transcriptionResult = {
+                success: true,
+                text: 'Recorded words',
+                segments: [],
+                partial: true,
+                issues: ['review audio'],
+                resumeId: 'recording-resume-id'
+            };
+            let tempFilePath;
+            const transcribeFile = jest.spyOn(service, 'transcribeFile').mockImplementation(async (filePath, options) => {
+                tempFilePath = filePath;
+                expect(fs.readFileSync(filePath)).toEqual(audioBuffer);
+                expect(options.contextPrompt).toBe('meeting vocabulary');
+                return transcriptionResult;
+            });
+
+            const result = await service.transcribeBuffer(audioBuffer, { contextPrompt: 'meeting vocabulary' });
+
+            expect(transcribeFile).toHaveBeenCalledWith(expect.stringMatching(/\.webm$/), {
+                contextPrompt: 'meeting vocabulary'
+            });
+            expect(result).toBe(transcriptionResult);
+            expect(fs.existsSync(tempFilePath)).toBe(false);
         });
     });
 

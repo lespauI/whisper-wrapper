@@ -4,8 +4,11 @@
 
 const { LocalWhisperService } = require('./localWhisperService');
 const TranscriptionFormatter = require('./transcriptionFormatter');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const { transcribeResumableFile } = require('./resumableTranscription');
+const { randomBytes } = require('crypto');
+const { finalizeResumableFile, getResumableJob, transcribeResumableFile } = require('./resumableTranscription');
 
 class TranscriptionService {
     constructor() {
@@ -15,6 +18,7 @@ class TranscriptionService {
         this.model = 'base'; // Default local model
         this.language = 'auto'; // Auto-detect by default
         this.initialPrompt = ''; // Default empty initial prompt
+        this.checkpointRoot = path.join(process.cwd(), 'data', 'transcription-checkpoints');
         
         console.log('🎯 TranscriptionService: Configuration:');
         console.log(`   - Default model: ${this.model}`);
@@ -96,9 +100,10 @@ class TranscriptionService {
      * @returns {Promise<Object>} - Transcription result
      */
     async transcribeFile(filePath, options = {}) {
+        const persistSourceAudio = options.persistSourceAudio !== false;
         console.log('🎯 TranscriptionService: Starting file transcription...');
         console.log(`📁 File path: ${filePath}`);
-        console.log(`⚙️ Options:`, options);
+        console.log('⚙️ Options:', options);
         
         try {
             if (!this.isAvailable()) {
@@ -115,7 +120,8 @@ class TranscriptionService {
                 useInitialPrompt: options.useInitialPrompt !== undefined ? options.useInitialPrompt : true,
                 useGpu: options.useGpu !== undefined ? options.useGpu : this.localWhisper.useGpu,
                 flashAttn: options.flashAttn !== undefined ? options.flashAttn : this.localWhisper.flashAttn,
-                gpuDevice: options.gpuDevice !== undefined ? options.gpuDevice : this.localWhisper.gpuDevice
+                gpuDevice: options.gpuDevice !== undefined ? options.gpuDevice : this.localWhisper.gpuDevice,
+                contextPrompt: options.contextPrompt
             };
             
             // Only add initialPrompt if useInitialPrompt is true
@@ -129,11 +135,13 @@ class TranscriptionService {
             if (whisperOptions.initialPrompt && whisperOptions.useInitialPrompt) {
                 console.log(`🔤 TranscriptionService: Using initial prompt (${whisperOptions.initialPrompt.length} chars)`);
             } else {
-                console.log(`🔤 TranscriptionService: Initial prompt is DISABLED`);
+                console.log('🔤 TranscriptionService: Initial prompt is DISABLED');
             }
+            const decoderIdentity = this.localWhisper.getDecoderIdentity?.(whisperOptions.model, whisperOptions.language) || null;
             const result = await transcribeResumableFile(filePath, whisperOptions,
                 this.localWhisper.transcribeFile.bind(this.localWhisper),
-                path.join(process.cwd(), 'data', 'transcription-checkpoints'));
+                this.checkpointRoot, decoderIdentity, persistSourceAudio);
+            if (result.success === false) throw new Error(result.error || 'Decoder did not return a transcription');
             
             console.log('🎯 TranscriptionService: Received result from LocalWhisperService:', {
                 success: result.success,
@@ -149,6 +157,10 @@ class TranscriptionService {
             
             const finalResult = {
                 success: true,
+                status: result.partial === true || result.status === 'partial' ? 'partial' : 'complete',
+                partial: result.partial === true || result.status === 'partial',
+                issues: Array.isArray(result.issues) ? result.issues : [],
+                resumeId: result.resumeId || null,
                 text: result.text,
                 markdown: formattedResult.markdown,
                 plainText: formattedResult.plainText,
@@ -156,6 +168,8 @@ class TranscriptionService {
                 segments: result.segments,
                 model: result.model,
                 duration: result.duration,
+                audioDurationSeconds: result.audioDurationSeconds ?? result.audioDuration ?? null,
+                processingDurationMs: result.processingDurationMs ?? null,
                 metadata: formattedResult.metadata,
                 // Additional formats
                 srt: this.formatter.generateSRT(result.segments),
@@ -173,6 +187,15 @@ class TranscriptionService {
         }
     }
 
+    async finalizeTranscription(resumeId) {
+        return finalizeResumableFile(resumeId, this.checkpointRoot);
+    }
+
+    async resumeTranscription(resumeId, options = {}) {
+        const job = await getResumableJob(resumeId, this.checkpointRoot);
+        return this.transcribeFile(job.sourcePath, { ...job.options, signal: options.signal });
+    }
+
     /**
      * Transcribe audio buffer
      * @param {Buffer} audioBuffer - Audio data buffer
@@ -180,55 +203,19 @@ class TranscriptionService {
      * @returns {Promise<Object>} - Transcription result
      */
     async transcribeBuffer(audioBuffer, options = {}) {
+        let tempDirectory;
         try {
-            if (!this.isAvailable()) {
-                throw new Error('Local Whisper is not available. Please run the setup script first.');
-            }
-
-            const whisperOptions = {
-                signal: options.signal,
-                model: options.model || this.model,
-                language: options.language || this.language,
-                translate: options.translate || false,
-                threads: options.threads || 4,
-                useInitialPrompt: options.useInitialPrompt !== undefined ? options.useInitialPrompt : true,
-                useGpu: options.useGpu !== undefined ? options.useGpu : this.localWhisper.useGpu,
-                flashAttn: options.flashAttn !== undefined ? options.flashAttn : this.localWhisper.flashAttn,
-                gpuDevice: options.gpuDevice !== undefined ? options.gpuDevice : this.localWhisper.gpuDevice
-            };
-            
-            // Only add initialPrompt if useInitialPrompt is true
-            if (whisperOptions.useInitialPrompt) {
-                whisperOptions.initialPrompt = options.initialPrompt || this.initialPrompt;
-            }
-            
-            // Add context prompt for chunk processing (takes precedence over initial prompt)
-            if (options.contextPrompt) {
-                whisperOptions.contextPrompt = options.contextPrompt;
-                console.log(`📝 TranscriptionService: Using context prompt (${options.contextPrompt.length} chars): "${options.contextPrompt.substring(0, 100)}..."`);
-            }
-            
-            // Log initial prompt status
-            if (whisperOptions.initialPrompt && whisperOptions.useInitialPrompt && !options.contextPrompt) {
-                console.log(`🔤 TranscriptionService: Using initial prompt (${whisperOptions.initialPrompt.length} chars)`);
-            } else if (!options.contextPrompt) {
-                console.log(`🔤 TranscriptionService: Initial prompt is DISABLED`);
-            }
-
-            const result = await this.localWhisper.transcribeBuffer(audioBuffer, whisperOptions);
-            
-            return {
-                success: true,
-                text: result.text,
-                language: result.language,
-                segments: result.segments,
-                model: result.model,
-                duration: result.duration
-            };
+            const buffer = Buffer.isBuffer(audioBuffer) ? audioBuffer : Buffer.from(audioBuffer);
+            tempDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'whisper-recording-'));
+            const tempFilePath = path.join(tempDirectory, `${randomBytes(8).toString('hex')}.webm`);
+            await fs.promises.writeFile(tempFilePath, buffer, { mode: 0o600 });
+            return await this.transcribeFile(tempFilePath, options);
 
         } catch (error) {
             console.error('Local transcription error:', error);
             throw new Error(`Transcription failed: ${error.message}`);
+        } finally {
+            if (tempDirectory) await fs.promises.rm(tempDirectory, { recursive: true, force: true });
         }
     }
 

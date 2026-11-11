@@ -293,6 +293,97 @@ describe('LibraryController', () => {
         });
     });
 
+    describe('resume partial transcription', () => {
+        it('shows the resume action and reloads the result from its saved job', async () => {
+            const entry = { id: 'partial-id', title: 'Partial', partial: true, resumeId: 'a'.repeat(64) };
+            global.window.electronAPI.transcriptions.get.mockResolvedValue({ entry, text: 'Partial words' });
+            global.window.electronAPI.resumeTranscription = jest.fn().mockResolvedValue({
+                success: true, historyId: entry.id, partial: false, text: 'Complete words', segments: []
+            });
+            const operation = { canceled: false };
+            const finish = jest.fn();
+            const handleResult = jest.fn();
+            global.window.whisperApp = {
+                controllers: {
+                    status: { beginTranscription: () => operation, endTranscription: finish },
+                    fileUpload: { handleTranscriptionSuccess: handleResult }
+                }
+            };
+            const ctrl = new LibraryController();
+            await ctrl.showDetail(entry.id);
+            expect(document.getElementById('library-resume-btn').classList.contains('hidden')).toBe(false);
+            ctrl.search = jest.fn();
+            ctrl.showDetail = jest.fn();
+
+            await ctrl.resumeCurrentTranscription();
+
+            expect(global.window.electronAPI.resumeTranscription).toHaveBeenCalledWith(entry.id);
+            expect(handleResult).toHaveBeenCalledWith(expect.objectContaining({ text: 'Complete words' }));
+            expect(ctrl.showDetail).toHaveBeenCalledWith(entry.id);
+            expect(finish).toHaveBeenCalledWith(operation);
+        });
+
+        it('ignores a resume result after another foreground transcription starts', async () => {
+            const entry = { id: 'partial-id', partial: true, resumeId: 'b'.repeat(64) };
+            global.window.electronAPI.resumeTranscription = jest.fn().mockResolvedValue({
+                success: true, historyId: entry.id, text: 'Stale words', segments: []
+            });
+            const operation = { canceled: false };
+            const handleResult = jest.fn();
+            const showError = jest.fn();
+            global.window.whisperApp = {
+                controllers: {
+                    status: {
+                        beginTranscription: () => operation,
+                        isCurrentTranscription: () => false,
+                        endTranscription: jest.fn(),
+                        showError
+                    },
+                    fileUpload: { handleTranscriptionSuccess: handleResult }
+                }
+            };
+            const ctrl = new LibraryController();
+            ctrl.currentEntry = entry;
+
+            await ctrl.resumeCurrentTranscription();
+
+            expect(handleResult).not.toHaveBeenCalled();
+            expect(showError).not.toHaveBeenCalled();
+        });
+
+        it('keeps a partial resume result returned after Stop', async () => {
+            const entry = { id: 'partial-id', partial: true, resumeId: 'c'.repeat(64) };
+            global.window.electronAPI.resumeTranscription = jest.fn().mockResolvedValue({
+                success: true, historyId: entry.id, status: 'partial', partial: true,
+                text: 'Recovered words', segments: []
+            });
+            const operation = { canceled: true };
+            const handleResult = jest.fn();
+            global.window.whisperApp = {
+                controllers: {
+                    status: {
+                        beginTranscription: () => operation,
+                        isCurrentTranscription: () => true,
+                        endTranscription: jest.fn(),
+                        updateStatus: jest.fn()
+                    },
+                    fileUpload: { handleTranscriptionSuccess: handleResult }
+                }
+            };
+            const ctrl = new LibraryController();
+            ctrl.currentEntry = entry;
+            ctrl.search = jest.fn();
+            ctrl.showDetail = jest.fn();
+
+            await ctrl.resumeCurrentTranscription();
+
+            expect(handleResult).toHaveBeenCalledWith(expect.objectContaining({
+                partial: true, text: 'Recovered words'
+            }));
+            expect(ctrl.showDetail).toHaveBeenCalledWith(entry.id);
+        });
+    });
+
     describe('renderResults', () => {
         it('renders transcription entries in the results list', () => {
             const ctrl = new LibraryController();

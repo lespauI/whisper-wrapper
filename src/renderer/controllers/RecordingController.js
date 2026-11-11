@@ -88,6 +88,10 @@ export class RecordingController {
             currentChunkRecorder: null,
             transcriptionText: '', // Keep for backwards compatibility
             chunks: [], // Array of individual chunk texts
+            status: 'complete',
+            partial: false,
+            issues: [],
+            resumeIds: [],
             chunkCount: 0,
             chunkQueue: [], // Queue of chunks waiting for transcription
             processingQueue: false, // Background transcription worker status
@@ -553,6 +557,7 @@ export class RecordingController {
      * Start audio recording
      */
     async startRecording() {
+        if (this._finishingRecording) return;
         try {
             const captureMode = this.captureMode || 'microphone';
 
@@ -599,6 +604,7 @@ export class RecordingController {
             const mimeType = this.getMimeType();
             this.mediaRecorder = new MediaRecorder(stream, { mimeType });
             this.audioChunks = [];
+            this.recordingBlob = null;
             
             this.mediaRecorder.ondataavailable = (event) => {
                 if (event.data.size > 0) {
@@ -606,11 +612,7 @@ export class RecordingController {
                 }
             };
             
-            this.mediaRecorder.onstop = () => {
-                const audioBlob = new Blob(this.audioChunks, { type: mimeType });
-                this.recordingBlob = audioBlob;
-                this.handleRecordingComplete(audioBlob);
-            };
+            this.mediaRecorder.onstop = () => this.finishRecording(mimeType);
             
             this.mediaRecorder.start(100); // Collect data every 100ms
             this.isRecording = true;
@@ -695,10 +697,11 @@ export class RecordingController {
      * Stop recording
      */
     async stopRecording() {
-        if (this.mediaRecorder) {
-            // Save final chunk before stopping
+        if (this.mediaRecorder && !this._finishingRecording) {
+            this._finishingRecording = true;
+            this.recordingBlob = null;
+            this.appState.setRecordingState({ blob: null });
             this.stopAutoSaveTimer();
-            await this.saveCurrentRecordingChunk();
             
             const recorderStream = this.mediaRecorder.stream;
             this.mediaRecorder.stop();
@@ -753,22 +756,35 @@ export class RecordingController {
             this.statusController.showError('No recording to save');
             return;
         }
+
+        const recordingBlob = this.recordingBlob;
+        const autoSaveSnapshot = {
+            sessionId: this.recordingAutoSave.sessionId,
+            savedChunks: this.recordingAutoSave.savedChunks.slice()
+        };
         
         try {
             // Convert blob to array buffer
-            const arrayBuffer = await this.recordingBlob.arrayBuffer();
+            const arrayBuffer = await recordingBlob.arrayBuffer();
             
             // Create filename with timestamp
             const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-            const extension = this.getRecordingExtension(this.recordingBlob.type);
+            const extension = this.getRecordingExtension(recordingBlob.type);
             const filename = `recording-${timestamp}.${extension}`;
             
             // Save file using Electron API
             const result = await window.electronAPI.saveFile(arrayBuffer, filename);
             
-            if (!result.canceled) {
-                this.statusController.updateStatus('Recording saved successfully');
+            if (result?.canceled) {
+                return;
             }
+
+            if (result?.canceled !== false || typeof result.filePath !== 'string' || result.filePath.trim().length === 0) {
+                throw new Error('Recording was not saved to a file');
+            }
+
+            await this.cleanupAutoSaveFiles(autoSaveSnapshot);
+            this.statusController.updateStatus('Recording saved successfully');
         } catch (error) {
             console.error('Error saving recording:', error);
             this.statusController.showError('Failed to save recording');
@@ -804,13 +820,15 @@ export class RecordingController {
             // Start transcription
             const result = await window.electronAPI.transcribeAudio(arrayBuffer);
             console.log('🎬 Manual transcription result from IPC:', result);
-            if (operation.canceled) return;
+            if (typeof this.statusController.isCurrentTranscription === 'function' &&
+                !this.statusController.isCurrentTranscription(operation)) return;
             if (result.canceled) {
                 this.statusController.updateStatus('Transcription stopped');
                 return;
             }
             
             if (result.success) {
+                const partial = result.partial === true || result.status === 'partial';
                 // Update transcription state
                 this.appState.setTranscriptionState({
                     originalText: result.text,
@@ -819,7 +837,13 @@ export class RecordingController {
                     isDirty: false,
                     lastSaved: new Date(),
                     history: [result.text],
-                    historyIndex: 0
+                    historyIndex: 0,
+                    status: result.status || (partial ? 'partial' : 'complete'),
+                    partial,
+                    issues: Array.isArray(result.issues) ? result.issues : [],
+                    resumeId: result.resumeId || null,
+                    audioDurationSeconds: result.audioDurationSeconds ?? null,
+                    processingDurationMs: result.processingDurationMs ?? null
                 });
 
                 // Show transcription result using FileUploadController's working method
@@ -827,13 +851,19 @@ export class RecordingController {
                     await window.whisperApp.controllers.fileUpload.showTranscriptionResult(result.text, result.segments);
                 }
                 
-                this.statusController.updateStatus(`Recording transcribed (Language: ${result.language || 'unknown'})`);
+                if (partial) {
+                    this.statusController.showWarning('Recording transcription is partial. Review the flagged audio intervals before use.');
+                } else {
+                    this.statusController.updateStatus(`Recording transcribed (Language: ${result.language || 'unknown'})`);
+                }
                 await this.tabController.switchTab(TABS.TRANSCRIPTION);
             } else {
                 throw new Error('Transcription failed');
             }
             
         } catch (error) {
+            if (typeof this.statusController.isCurrentTranscription === 'function' &&
+                !this.statusController.isCurrentTranscription(operation)) return;
             if (operation.canceled) return;
             console.error('Error transcribing recording:', error);
             this.statusController.showError('Failed to transcribe recording');
@@ -901,6 +931,10 @@ export class RecordingController {
         // Reset state
         this.ongoingTranscription.transcriptionText = '';
         this.ongoingTranscription.chunks = [];
+        this.ongoingTranscription.status = 'complete';
+        this.ongoingTranscription.partial = false;
+        this.ongoingTranscription.issues = [];
+        this.ongoingTranscription.resumeIds = [];
         this.ongoingTranscription.chunkCount = 0;
         this.ongoingTranscription.chunkQueue = [];
         this.ongoingTranscription.pendingStop = false;
@@ -1456,6 +1490,10 @@ export class RecordingController {
             minSilenceMs: Math.max(120, v.minSilenceMs || 350),
             leadInMs: Math.max(0, v.leadInMs || 200),
             hangoverMs: Math.max(0, v.hangoverMs || 250),
+            adaptive: v.adaptive !== false,
+            calibrate: v.fn?.calibrate,
+            detect: v.fn?.detect,
+            mode: v.mode,
         };
     }
 
@@ -1470,7 +1508,9 @@ export class RecordingController {
             return { wavBuffers: [], segments: [], sampleRate: 0 };
         }
         const opts = this._getSegmentationOpts();
-        const { segments } = segmentPCM(mono, sampleRate, opts);
+        const segments = this._vad.enabled
+            ? segmentPCM(mono, sampleRate, opts).segments
+            : [{ startMs: 0, endMs: (mono.length / sampleRate) * 1000 }];
         if (!segments || segments.length === 0) {
             return { wavBuffers: [], segments: [], sampleRate };
         }
@@ -1552,13 +1592,24 @@ export class RecordingController {
                     if (operation.canceled || this.transcriptionWorker !== worker || !this.ongoingTranscription.processingQueue) break;
                     try { VADMetrics.onSentSegment(1); } catch {}
                     const subResult = await window.electronAPI.transcribeAudio(wavBuffers[i], runningPrompt || null, { skipStore: true });
-                    if (operation.canceled) break;
                     if (subResult.canceled) {
                         this.cancelOngoingTranscription();
                         this.statusController.updateStatus('Transcription stopped');
                         break;
                     }
                     if (!subResult.success) throw new Error(subResult.error || 'Background transcription failed');
+                    const partial = subResult.partial === true || subResult.status === 'partial';
+                    if (operation.canceled && !partial) break;
+                    if (partial) {
+                        this.ongoingTranscription.status = 'partial';
+                        this.ongoingTranscription.partial = true;
+                        this.ongoingTranscription.issues.push(...(Array.isArray(subResult.issues) ? subResult.issues : [])
+                            .map(issue => ({ ...issue, chunkNumber: queueItem.chunkNumber, segmentNumber: i + 1 })));
+                        if (subResult.resumeId && !this.ongoingTranscription.resumeIds.includes(subResult.resumeId)) {
+                            this.ongoingTranscription.resumeIds.push(subResult.resumeId);
+                        }
+                        UIHelpers.setText('#ongoing-transcription-status', 'Partial transcription — review the flagged audio intervals');
+                    }
                     if (subResult.text && subResult.text.trim()) {
                         const cleanText = subResult.text.trim();
                         console.log(`✓ Chunk ${queueItem.chunkNumber} seg ${i + 1}/${wavBuffers.length}: "${cleanText}"`);
@@ -1774,6 +1825,17 @@ export class RecordingController {
     /**
      * Handle recording completion
      */
+    async finishRecording(mimeType) {
+        try {
+            await this._pendingAutoSave;
+            if (this.recordingAutoSave.sessionId) await this.saveCurrentRecordingChunk();
+            const audioBlob = new Blob(this.audioChunks, { type: mimeType });
+            await this.handleRecordingComplete(audioBlob);
+        } finally {
+            this._finishingRecording = false;
+        }
+    }
+
     async handleRecordingComplete(audioBlob) {
         try {
             // Combine all saved chunks with the final recording
@@ -1792,14 +1854,14 @@ export class RecordingController {
             // Auto-transcribe if enabled
             const recordingState = this.appState.getRecordingState();
             if (recordingState.autoTranscribe) {
-                await this.transcribeRecording();
+                this.transcribeRecording();
             } else {
                 this.statusController.updateStatus('Recording completed. Use the buttons below to save, transcribe, or clear the recording.');
             }
             
         } catch (error) {
             console.error('Error processing recording:', error);
-            this.statusController.showError('Failed to process recording');
+            this.statusController.showError('Failed to assemble recording. Saved audio fragments were retained.');
         }
     }
 
@@ -2102,6 +2164,9 @@ export class RecordingController {
      * Initialize auto-save session
      */
     async initializeAutoSaveSession() {
+        this.recordingAutoSave.sessionId = null;
+        this.recordingAutoSave.chunkIndex = 0;
+        this.recordingAutoSave.savedChunks = [];
         const recordingState = this.appState.getRecordingState();
         if (!recordingState.enableAutoSave) {
             console.log('Auto-save disabled');
@@ -2110,9 +2175,11 @@ export class RecordingController {
 
         try {
             const paths = await window.electronAPI.getAppPaths();
-            this.recordingAutoSave.sessionId = `recording_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            this.recordingAutoSave.chunkIndex = 0;
-            this.recordingAutoSave.savedChunks = [];
+            const session = await window.electronAPI.startRecordingChunkSession();
+            if (!session || !session.success || typeof session.sessionId !== 'string') {
+                throw new Error((session && session.error) || 'Failed to create recording auto-save session');
+            }
+            this.recordingAutoSave.sessionId = session.sessionId;
             
             // Store temp directory path
             this.recordingAutoSave.tempDirectory = paths.temp;
@@ -2187,11 +2254,11 @@ export class RecordingController {
             // Save chunk using Electron API
             const result = await window.electronAPI.saveRecordingChunk(arrayBuffer, chunkFilename);
             
-            if (result.success) {
+            if (result.success && typeof result.filePath === 'string' && result.filePath.length > 0) {
                 // Track saved chunk
                 this.recordingAutoSave.savedChunks.push({
                     filename: chunkFilename,
-                    path: result.path,
+                    filePath: result.filePath,
                     size: arrayBuffer.byteLength,
                     timestamp: Date.now(),
                     chunkIndex: this.recordingAutoSave.chunkIndex,
@@ -2218,10 +2285,7 @@ export class RecordingController {
      * Combine recording chunks with final audio
      */
     async combineRecordingChunks(finalAudioBlob) {
-        const recordingState = this.appState.getRecordingState();
-        if (!recordingState.enableAutoSave || this.recordingAutoSave.savedChunks.length === 0) {
-            // Clean up any orphaned chunks
-            await this.cleanupAutoSaveFiles();
+        if (this.recordingAutoSave.savedChunks.length === 0) {
             return finalAudioBlob;
         }
 
@@ -2232,14 +2296,11 @@ export class RecordingController {
             
             // Load all saved chunks
             for (const chunkInfo of this.recordingAutoSave.savedChunks) {
-                try {
-                    const chunkData = await window.electronAPI.loadRecordingChunk(chunkInfo.path);
-                    if (chunkData) {
-                        chunkBlobs.push(new Blob([chunkData], { type: this.getMimeType() }));
-                    }
-                } catch (error) {
-                    console.error(`Failed to load chunk ${chunkInfo.filename}:`, error);
+                const chunkData = await window.electronAPI.loadRecordingChunk(chunkInfo.filePath);
+                if (!chunkData) {
+                    throw new Error(`Failed to load chunk ${chunkInfo.filename}: no data returned`);
                 }
+                chunkBlobs.push(new Blob([chunkData], { type: this.getMimeType() }));
             }
             
             // Add final recording blob
@@ -2248,47 +2309,52 @@ export class RecordingController {
             // Combine all blobs
             const combinedBlob = new Blob(chunkBlobs, { type: this.getMimeType() });
             
-            // Clean up temporary files
-            await this.cleanupAutoSaveFiles();
-            
             return combinedBlob;
         } catch (error) {
             console.error('Error combining recording chunks:', error);
-            return finalAudioBlob;
+            throw error;
         }
     }
 
     /**
      * Clean up auto-save files
      */
-    async cleanupAutoSaveFiles() {
-        if (this.recordingAutoSave.savedChunks.length === 0) {
+    async cleanupAutoSaveFiles(snapshot = {
+        sessionId: this.recordingAutoSave.sessionId,
+        savedChunks: this.recordingAutoSave.savedChunks.slice()
+    }) {
+        if (snapshot.savedChunks.length === 0) {
             return;
         }
 
-        console.log(`Cleaning up ${this.recordingAutoSave.savedChunks.length} auto-save files`);
+        console.log(`Cleaning up ${snapshot.savedChunks.length} auto-save files`);
         
         const failedChunks = [];
-        for (const chunkInfo of this.recordingAutoSave.savedChunks) {
+        for (const chunkInfo of snapshot.savedChunks) {
             try {
-                await window.electronAPI.deleteRecordingChunk(chunkInfo.path);
+                await window.electronAPI.deleteRecordingChunk(chunkInfo.filePath);
             } catch (error) {
                 console.error(`Failed to delete chunk ${chunkInfo.filename}:`, error);
                 failedChunks.push(chunkInfo);
             }
         }
 
-        const deletedCount = this.recordingAutoSave.savedChunks.length - failedChunks.length;
+        const deletedCount = snapshot.savedChunks.length - failedChunks.length;
         console.log(`Deleted ${deletedCount} chunks, ${failedChunks.length} failed`);
 
         if (failedChunks.length > 0) {
             console.warn('Some auto-save files could not be deleted:', failedChunks);
-            this.recordingAutoSave.savedChunks = failedChunks;
-        } else {
-            // Reset auto-save state
-            this.recordingAutoSave.savedChunks = [];
-            this.recordingAutoSave.chunkIndex = 0;
-            this.recordingAutoSave.sessionId = null;
+        }
+
+        if (this.recordingAutoSave.sessionId === snapshot.sessionId) {
+            const failedChunkSet = new Set(failedChunks);
+            const deletedChunkSet = new Set(snapshot.savedChunks.filter(chunk => !failedChunkSet.has(chunk)));
+            this.recordingAutoSave.savedChunks = this.recordingAutoSave.savedChunks.filter(chunk => !deletedChunkSet.has(chunk));
+
+            if (this.recordingAutoSave.savedChunks.length === 0) {
+                this.recordingAutoSave.chunkIndex = 0;
+                this.recordingAutoSave.sessionId = null;
+            }
         }
     }
 

@@ -222,6 +222,25 @@ describe('MeetingNotesService', () => {
       const loaded = JSON.parse(fs.readFileSync(filePath, 'utf8'));
       expect(loaded.notes).toBe('Saved notes');
     });
+
+    it('rejects unsafe ids and oversized notes before writing', () => {
+      expect(() => service.saveNotes('../protected', { notes: 'must not write' })).toThrow('Invalid transcription id');
+      expect(() => service.saveNotes('large-note', { notes: 'x'.repeat(5 * 1024 * 1024) })).toThrow('too large');
+      expect(fs.existsSync(path.join(mockTestDataDir, 'protected.json'))).toBe(false);
+    });
+
+    it('does not follow a note symlink when reading, writing, or deleting', () => {
+      const protectedFile = path.join(mockTestDataDir, 'protected.json');
+      const noteLink = path.join(testNotesDir, 'linked-note.json');
+      fs.writeFileSync(protectedFile, 'keep');
+      fs.symlinkSync(protectedFile, noteLink);
+
+      expect(() => service.getNotes('linked-note')).toThrow('not an owned regular file');
+      expect(() => service.saveNotes('linked-note', { notes: 'overwrite' })).toThrow('not an owned regular file');
+      expect(() => service.deleteNotes('linked-note')).toThrow('not an owned regular file');
+      expect(fs.readFileSync(protectedFile, 'utf8')).toBe('keep');
+      expect(fs.lstatSync(noteLink).isSymbolicLink()).toBe(true);
+    });
   });
 
   describe('deleteNotes()', () => {

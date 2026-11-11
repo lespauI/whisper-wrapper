@@ -10,6 +10,7 @@ export class StatusController {
     constructor(appState) {
         this.appState = appState;
         this.transcriptionOperations = new Set();
+        this.transcriptionGeneration = 0;
         this.init();
     }
 
@@ -29,10 +30,15 @@ export class StatusController {
 
     beginTranscription(loading = true) {
         if (this.stoppingTranscription) return null;
-        const operation = { canceled: false, loading };
+        const generation = loading ? ++this.transcriptionGeneration : this.transcriptionGeneration;
+        const operation = { canceled: false, loading, generation };
         this.transcriptionOperations.add(operation);
         this.refreshTranscriptionState();
         return operation;
+    }
+
+    isCurrentTranscription(operation) {
+        return !!operation && operation.generation === this.transcriptionGeneration;
     }
 
     endTranscription(operation) {

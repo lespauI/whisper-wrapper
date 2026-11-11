@@ -13,8 +13,10 @@ describe('Recording integrity', () => {
         controller.audioChunks = [new Blob(['before'])];
         global.MediaRecorder = { isTypeSupported: type => type === 'audio/webm;codecs=opus' };
         global.window = { electronAPI: {
-            saveRecordingChunk: jest.fn().mockResolvedValue({ success: true, path: '/tmp/chunk' }),
-            saveFile: jest.fn().mockResolvedValue({ canceled: false })
+            saveRecordingChunk: jest.fn().mockResolvedValue({ success: true, filePath: '/tmp/chunk' }),
+            loadRecordingChunk: jest.fn().mockResolvedValue(Buffer.from('saved')),
+            deleteRecordingChunk: jest.fn().mockResolvedValue({ success: true }),
+            saveFile: jest.fn().mockResolvedValue({ canceled: false, filePath: '/tmp/final.webm' })
         } };
     });
 
@@ -39,14 +41,98 @@ describe('Recording integrity', () => {
         const arriving = new Blob(['during']);
         controller.audioChunks.push(arriving);
         const second = controller.saveCurrentRecordingChunk();
-        finishSave({ success: true, path: '/tmp/chunk' });
+        finishSave({ success: true, filePath: '/tmp/chunk' });
         await Promise.all([first, second]);
         expect(window.electronAPI.saveRecordingChunk).toHaveBeenCalledTimes(1);
         expect(controller.audioChunks).toEqual([arriving]);
         expect(controller.recordingAutoSave.savedChunks[0].originalChunksCount).toBe(1);
-        window.electronAPI.saveRecordingChunk.mockResolvedValue({ success: true, path: '/tmp/next' });
+        window.electronAPI.saveRecordingChunk.mockResolvedValue({ success: true, filePath: '/tmp/next' });
         await controller.saveCurrentRecordingChunk();
         expect(controller.audioChunks).toEqual([]);
+    });
+
+    test('keeps chunks until the combined recording is saved successfully', async () => {
+        controller.audioChunks = [new Blob(['saved'])];
+        await controller.saveCurrentRecordingChunk();
+
+        expect(controller.recordingAutoSave.savedChunks[0].filePath).toBe('/tmp/chunk');
+
+        const combined = await controller.combineRecordingChunks(new Blob(['tail']));
+
+        expect(window.electronAPI.loadRecordingChunk).toHaveBeenCalledWith('/tmp/chunk');
+        expect(window.electronAPI.deleteRecordingChunk).not.toHaveBeenCalled();
+        expect(controller.recordingAutoSave.savedChunks).toHaveLength(1);
+        expect(await combined.text()).toBe('savedtail');
+
+        controller.recordingBlob = combined;
+        await controller.saveRecording();
+
+        expect(window.electronAPI.saveFile).toHaveBeenCalledWith(expect.any(ArrayBuffer), expect.stringMatching(/\.webm$/));
+        expect(window.electronAPI.deleteRecordingChunk).toHaveBeenCalledWith('/tmp/chunk');
+        expect(controller.recordingAutoSave.savedChunks).toEqual([]);
+    });
+
+    test.each([
+        ['canceled', () => ({ canceled: true })],
+        ['failed', () => { throw new Error('disk full'); }],
+        ['incomplete', () => ({ canceled: false })]
+    ])('keeps chunks when final recording save is %s', async (outcome, makeSaveResult) => {
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        const savedChunk = { filename: 'chunk.webm', filePath: '/tmp/chunk' };
+        controller.recordingAutoSave.savedChunks = [savedChunk];
+        controller.recordingBlob = new Blob(['combined'], { type: 'audio/webm' });
+        window.electronAPI.saveFile.mockImplementation(async () => makeSaveResult());
+
+        await controller.saveRecording();
+
+        expect(controller.recordingAutoSave.savedChunks).toEqual([savedChunk]);
+        expect(window.electronAPI.deleteRecordingChunk).not.toHaveBeenCalled();
+        if (outcome !== 'canceled') {
+            expect(controller.statusController.showError).toHaveBeenCalledWith('Failed to save recording');
+        }
+    });
+
+    test('does not clear a newer recording session when an older save completes', async () => {
+        const oldChunk = { filename: 'old.webm', filePath: '/tmp/old-chunk' };
+        const newChunk = { filename: 'new.webm', filePath: '/tmp/new-chunk' };
+        controller.recordingBlob = new Blob(['old audio'], { type: 'audio/webm' });
+        controller.recordingAutoSave.sessionId = 'old-session';
+        controller.recordingAutoSave.savedChunks = [oldChunk];
+
+        let finishSave;
+        window.electronAPI.saveFile.mockImplementation(() => new Promise(resolve => { finishSave = resolve; }));
+        const pendingSave = controller.saveRecording();
+        while (!finishSave) await Promise.resolve();
+
+        controller.recordingBlob = new Blob(['new audio'], { type: 'audio/mp4' });
+        controller.recordingAutoSave.sessionId = 'new-session';
+        controller.recordingAutoSave.chunkIndex = 1;
+        controller.recordingAutoSave.savedChunks = [newChunk];
+        finishSave({ canceled: false, filePath: '/tmp/old-final.webm' });
+        await pendingSave;
+
+        const [savedData, filename] = window.electronAPI.saveFile.mock.calls[0];
+        expect(Buffer.from(savedData).toString()).toBe('old audio');
+        expect(filename).toMatch(/\.webm$/);
+        expect(window.electronAPI.deleteRecordingChunk).toHaveBeenCalledWith('/tmp/old-chunk');
+        expect(window.electronAPI.deleteRecordingChunk).not.toHaveBeenCalledWith('/tmp/new-chunk');
+        expect(controller.recordingAutoSave).toMatchObject({
+            sessionId: 'new-session',
+            chunkIndex: 1,
+            savedChunks: [newChunk]
+        });
+    });
+
+    test('keeps saved chunks when assembly cannot load one', async () => {
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        const savedChunk = { filename: 'chunk.webm', filePath: '/tmp/chunk' };
+        controller.recordingAutoSave.savedChunks = [savedChunk];
+        window.electronAPI.loadRecordingChunk.mockRejectedValue(new Error('disk read failed'));
+
+        await expect(controller.combineRecordingChunks(new Blob(['tail']))).rejects.toThrow('disk read failed');
+
+        expect(controller.recordingAutoSave.savedChunks).toEqual([savedChunk]);
+        expect(window.electronAPI.deleteRecordingChunk).not.toHaveBeenCalled();
     });
 
     test('retains audio for retry when saving fails', async () => {
@@ -60,6 +146,18 @@ describe('Recording integrity', () => {
 
     test('uses Opus in WebM when WAV is unavailable', () => {
         expect(controller.getMimeType()).toBe('audio/webm;codecs=opus');
+    });
+
+    test('preserves the full chunk when VAD is disabled', async () => {
+        const pcm = new Float32Array(16000);
+        pcm.fill(0.25);
+        controller._vad = { enabled: false };
+        controller._decodeToMonoPCM = jest.fn().mockResolvedValue({ mono: pcm, sampleRate: 16000 });
+
+        const result = await controller._segmentChunkToWavs(new ArrayBuffer(1));
+
+        expect(result.segments).toEqual([{ startMs: 0, endMs: 1000 }]);
+        expect(result.wavBuffers).toHaveLength(1);
     });
 
     test.each([['audio/webm;codecs=opus', 'webm'], ['audio/mp4', 'm4a'], ['audio/wav', 'wav']])(

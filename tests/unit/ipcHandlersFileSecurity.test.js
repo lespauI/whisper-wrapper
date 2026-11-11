@@ -45,12 +45,20 @@ describe('IPC file and meeting notes protections', () => {
         handlers = new IPCHandlers({ webContents });
     });
 
+    async function startSession() {
+        const result = await handlers.handleStartRecordingChunkSession(event);
+        expect(result.success).toBe(true);
+        expect(result.sessionId).toMatch(/^recording_\d{10,16}_[a-f0-9]{16}$/);
+        return result.sessionId;
+    }
+
     afterAll(() => {
         fs.rmSync(mockTempDir, { recursive: true, force: true });
     });
 
     test('preserves normal recording chunk save, load, and delete', async () => {
-        const filename = 'recording_1794414300000_abc123xyz_chunk_000.webm';
+        const sessionId = await startSession();
+        const filename = `${sessionId}_chunk_000.webm`;
         const audio = Buffer.from('recorded audio');
         const saved = await handlers.handleSaveRecordingChunk(event, audio, filename);
 
@@ -75,6 +83,37 @@ describe('IPC file and meeting notes protections', () => {
         expect(fs.readFileSync(protectedFile, 'utf8')).toBe('keep');
     });
 
+    test('requires a main-issued session and denies chunks from another session', async () => {
+        const activeSessionId = await startSession();
+        const unregisteredPath = path.join(
+            fs.realpathSync(mockTempDir),
+            'whisper-wrapper-recordings',
+            'recording_1794414300000_abc123xyz_chunk_000.webm'
+        );
+        fs.mkdirSync(path.dirname(unregisteredPath), { recursive: true });
+        fs.writeFileSync(unregisteredPath, 'synthetic orphan');
+
+        await expect(handlers.handleSaveRecordingChunk(
+            event,
+            Buffer.from('audio'),
+            'recording_1794414300000_abc123xyz_chunk_001.webm'
+        )).rejects.toThrow('not authorized');
+        await expect(handlers.handleLoadRecordingChunk(event, unregisteredPath)).rejects.toThrow('not authorized');
+        expect(activeSessionId).not.toBe('recording_1794414300000_abc123xyz');
+    });
+
+    test('claims valid orphan chunks through the recovery scan', async () => {
+        const orphanSessionId = 'recording_1794414300000_abc123xyz';
+        const filename = `${orphanSessionId}_chunk_004.webm`;
+        const recordingsDir = path.join(fs.realpathSync(mockTempDir), 'whisper-wrapper-recordings');
+        fs.mkdirSync(recordingsDir);
+        const orphanPath = path.join(recordingsDir, filename);
+        fs.writeFileSync(orphanPath, 'recovered audio');
+
+        await expect(handlers.handleFindRecordingChunks(event, 'recording_')).resolves.toEqual([orphanPath]);
+        await expect(handlers.handleLoadRecordingChunk(event, orphanPath)).resolves.toEqual(Buffer.from('recovered audio'));
+    });
+
     test('rejects chunk operations from another renderer', async () => {
         const untrustedEvent = { sender: {}, senderFrame: {} };
         await expect(handlers.handleSaveRecordingChunk(
@@ -86,11 +125,13 @@ describe('IPC file and meeting notes protections', () => {
     });
 
     test('rejects a chunk symlink without changing its target', async () => {
-        const filename = 'recording_1794414300000_abc123xyz_chunk_000.webm';
-        await handlers.handleSaveRecordingChunk(event, Buffer.from('audio'), filename);
+        const sessionId = await startSession();
+        const filename = `${sessionId}_chunk_000.webm`;
+        const saved = await handlers.handleSaveRecordingChunk(event, Buffer.from('audio'), filename);
         const protectedFile = path.join(mockTempDir, 'protected.txt');
         fs.writeFileSync(protectedFile, 'keep');
-        const linkPath = path.join(fs.realpathSync(mockTempDir), 'whisper-wrapper-recordings', 'recording_1794414300000_abc123xyz_chunk_001.webm');
+        fs.unlinkSync(saved.filePath);
+        const linkPath = saved.filePath;
         fs.symlinkSync(protectedFile, linkPath);
 
         await expect(handlers.handleLoadRecordingChunk(event, linkPath)).rejects.toThrow('not an owned regular file');
@@ -100,10 +141,12 @@ describe('IPC file and meeting notes protections', () => {
     });
 
     test('rejects oversized chunks before reading them into memory', async () => {
+        const sessionId = await startSession();
         const recordingsDir = path.join(fs.realpathSync(mockTempDir), 'whisper-wrapper-recordings');
         fs.mkdirSync(recordingsDir);
-        const filePath = path.join(recordingsDir, 'recording_1794414300000_abc123xyz_chunk_000.webm');
-        fs.writeFileSync(filePath, 'x');
+        const filename = `${sessionId}_chunk_000.webm`;
+        const saved = await handlers.handleSaveRecordingChunk(event, Buffer.from('x'), filename);
+        const filePath = saved.filePath;
         fs.truncateSync(filePath, 100 * 1024 * 1024 + 1);
 
         await expect(handlers.handleLoadRecordingChunk(event, filePath)).rejects.toThrow('too large');
@@ -127,6 +170,19 @@ describe('IPC file and meeting notes protections', () => {
         await expect(handlers.handleSaveFile(event, 'overwrite', 'linked.txt'))
             .rejects.toThrow('unowned or non-regular file');
         expect(fs.readFileSync(protectedFile, 'utf8')).toBe('keep');
+    });
+
+    test('allows user-selected recording exports larger than 300 MiB', async () => {
+        const destination = path.join(mockTempDir, 'large-recording.wav');
+        const largeRecording = Buffer.allocUnsafe(300 * 1024 * 1024 + 1);
+        jest.spyOn(handlers, '_writeFileNoFollow').mockImplementation(() => {});
+        mockDialog.showSaveDialog.mockResolvedValue({ canceled: false, filePath: destination });
+
+        await expect(handlers.handleSaveFile(event, largeRecording, 'large-recording.wav'))
+            .resolves.toEqual({ canceled: false, filePath: destination });
+        expect(mockDialog.showSaveDialog).toHaveBeenCalledTimes(1);
+        expect(handlers._writeFileNoFollow.mock.calls[0][0]).toBe(destination);
+        expect(handlers._writeFileNoFollow.mock.calls[0][1]).toBe(largeRecording);
     });
 
     test('only reads or deletes notes for an existing transcription owner', async () => {

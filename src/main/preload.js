@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     loadRecordingChunk: (filePath) => ipcRenderer.invoke('recording:loadChunk', filePath),
     deleteRecordingChunk: (filePath) => ipcRenderer.invoke('recording:deleteChunk', filePath),
     findRecordingChunks: (sessionId) => ipcRenderer.invoke('recording:findChunks', sessionId),
+    startRecordingChunkSession: () => ipcRenderer.invoke('recording:startChunkSession'),
     // VAD metrics (QA/devtools)
     getVADMetrics: () => ipcRenderer.invoke('recording:vadMetrics:get'),
     updateVADMetrics: (metrics) => ipcRenderer.invoke('recording:vadMetrics:set', metrics),

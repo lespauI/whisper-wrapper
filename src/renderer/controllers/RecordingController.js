@@ -2110,7 +2110,11 @@ export class RecordingController {
 
         try {
             const paths = await window.electronAPI.getAppPaths();
-            this.recordingAutoSave.sessionId = `recording_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const session = await window.electronAPI.startRecordingChunkSession();
+            if (!session || !session.success || typeof session.sessionId !== 'string') {
+                throw new Error((session && session.error) || 'Failed to create recording auto-save session');
+            }
+            this.recordingAutoSave.sessionId = session.sessionId;
             this.recordingAutoSave.chunkIndex = 0;
             this.recordingAutoSave.savedChunks = [];
             
@@ -2187,11 +2191,11 @@ export class RecordingController {
             // Save chunk using Electron API
             const result = await window.electronAPI.saveRecordingChunk(arrayBuffer, chunkFilename);
             
-            if (result.success) {
+            if (result.success && typeof result.filePath === 'string' && result.filePath.length > 0) {
                 // Track saved chunk
                 this.recordingAutoSave.savedChunks.push({
                     filename: chunkFilename,
-                    path: result.path,
+                    filePath: result.filePath,
                     size: arrayBuffer.byteLength,
                     timestamp: Date.now(),
                     chunkIndex: this.recordingAutoSave.chunkIndex,
@@ -2232,14 +2236,11 @@ export class RecordingController {
             
             // Load all saved chunks
             for (const chunkInfo of this.recordingAutoSave.savedChunks) {
-                try {
-                    const chunkData = await window.electronAPI.loadRecordingChunk(chunkInfo.path);
-                    if (chunkData) {
-                        chunkBlobs.push(new Blob([chunkData], { type: this.getMimeType() }));
-                    }
-                } catch (error) {
-                    console.error(`Failed to load chunk ${chunkInfo.filename}:`, error);
+                const chunkData = await window.electronAPI.loadRecordingChunk(chunkInfo.filePath);
+                if (!chunkData) {
+                    throw new Error(`Failed to load chunk ${chunkInfo.filename}: no data returned`);
                 }
+                chunkBlobs.push(new Blob([chunkData], { type: this.getMimeType() }));
             }
             
             // Add final recording blob
@@ -2254,7 +2255,7 @@ export class RecordingController {
             return combinedBlob;
         } catch (error) {
             console.error('Error combining recording chunks:', error);
-            return finalAudioBlob;
+            throw error;
         }
     }
 
@@ -2271,7 +2272,7 @@ export class RecordingController {
         const failedChunks = [];
         for (const chunkInfo of this.recordingAutoSave.savedChunks) {
             try {
-                await window.electronAPI.deleteRecordingChunk(chunkInfo.path);
+                await window.electronAPI.deleteRecordingChunk(chunkInfo.filePath);
             } catch (error) {
                 console.error(`Failed to delete chunk ${chunkInfo.filename}:`, error);
                 failedChunks.push(chunkInfo);

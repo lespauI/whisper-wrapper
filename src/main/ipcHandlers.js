@@ -6,6 +6,7 @@ const { ipcMain, dialog, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const FileService = require('../services/fileService');
 const TranscriptionService = require('../services/transcriptionService');
 const RecordingService = require('../services/recordingService');
@@ -13,15 +14,16 @@ const TranscriptionStoreService = require('../services/transcriptionStoreService
 const MeetingNotesService = require('../services/meetingNotesService');
 const config = require('../config');
 
-const MAX_SAVE_FILE_BYTES = 300 * 1024 * 1024;
 const MAX_RECORDING_CHUNK_BYTES = 100 * 1024 * 1024;
-const RECORDING_CHUNK_FILENAME = /^recording_\d{10,16}_[a-z0-9]{1,16}_chunk_\d{3,8}\.(webm|wav|m4a)$/;
+const RECORDING_SESSION_ID = /^recording_\d{10,16}_[a-z0-9]{1,16}$/;
+const RECORDING_CHUNK_FILENAME = /^(recording_\d{10,16}_[a-z0-9]{1,16})_chunk_(\d{3,8})\.(webm|wav|m4a)$/;
 const SAFE_OBJECT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 class IPCHandlers {
     constructor(mainWindow = null) {
         this.mainWindow = mainWindow;
         this.activeTranscriptions = new Map();
+        this.recordingSessions = new Map();
         this.fileService = new FileService();
         this.transcriptionService = new TranscriptionService();
         this.recordingService = new RecordingService();
@@ -72,6 +74,7 @@ class IPCHandlers {
         ipcMain.handle('recording:loadChunk', this.handleLoadRecordingChunk.bind(this));
         ipcMain.handle('recording:deleteChunk', this.handleDeleteRecordingChunk.bind(this));
         ipcMain.handle('recording:findChunks', this.handleFindRecordingChunks.bind(this));
+        ipcMain.handle('recording:startChunkSession', this.handleStartRecordingChunkSession.bind(this));
 
         // Model download handlers
         ipcMain.handle('model:download', this.handleDownloadModel.bind(this));
@@ -185,11 +188,11 @@ class IPCHandlers {
         return recordingsDir;
     }
 
-    _resolveRecordingChunkPath(filePath, create = false) {
+    _resolveRecordingChunkPath(filePath) {
         if (typeof filePath !== 'string' || filePath.length > 4096) {
             throw new Error('Invalid recording chunk path');
         }
-        const recordingsDir = this._getRecordingsDirectory(create);
+        const recordingsDir = this._getRecordingsDirectory();
         if (!recordingsDir) return null;
         const resolved = path.resolve(filePath);
         const filename = path.basename(resolved);
@@ -212,6 +215,50 @@ class IPCHandlers {
 
     _validateNotesId(id) {
         return typeof id === 'string' && SAFE_OBJECT_ID.test(id);
+    }
+
+    _getRecordingSessionOwner(event) {
+        if (!event || !event.sender) throw new Error('Recording session owner is missing');
+        return event.sender.id === undefined ? event.sender : event.sender.id;
+    }
+
+    _requireRecordingSession(event, sessionId) {
+        this._assertTrustedRenderer(event);
+        if (typeof sessionId !== 'string' || !RECORDING_SESSION_ID.test(sessionId)) {
+            throw new Error('Invalid recording session id');
+        }
+        const session = this.recordingSessions.get(sessionId);
+        if (!session || session.owner !== this._getRecordingSessionOwner(event)) {
+            throw new Error('Recording session is not authorized for this renderer');
+        }
+        return session;
+    }
+
+    _requireRecordingChunk(event, filePath) {
+        const chunkPath = this._resolveRecordingChunkPath(filePath);
+        if (!chunkPath) throw new Error('Recording chunk file not found');
+        const filename = path.basename(chunkPath);
+        const match = filename.match(RECORDING_CHUNK_FILENAME);
+        const session = this._requireRecordingSession(event, match[1]);
+        if (!session.filenames.has(filename)) {
+            throw new Error('Recording chunk is not authorized for this session');
+        }
+        return { chunkPath, filename, session };
+    }
+
+    async handleStartRecordingChunkSession(event) {
+        try {
+            this._assertTrustedRenderer(event);
+            const owner = this._getRecordingSessionOwner(event);
+            let sessionId;
+            do {
+                sessionId = `recording_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
+            } while (this.recordingSessions.has(sessionId));
+            this.recordingSessions.set(sessionId, { owner, filenames: new Set() });
+            return { success: true, sessionId };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
     }
 
     async _getOwnedTranscription(event, transcriptionId) {
@@ -317,21 +364,14 @@ class IPCHandlers {
             }
 
             let fileContent;
-            let size;
             if (content instanceof ArrayBuffer) {
                 fileContent = Buffer.from(content);
-                size = content.byteLength;
             } else if (Buffer.isBuffer(content)) {
                 fileContent = content;
-                size = content.length;
             } else if (typeof content === 'string') {
                 fileContent = content;
-                size = Buffer.byteLength(content, 'utf8');
             } else {
                 throw new Error('Invalid file content format');
-            }
-            if (size > MAX_SAVE_FILE_BYTES) {
-                throw new Error('File is too large to save');
             }
 
             // Determine file type and filters based on filename
@@ -932,9 +972,12 @@ class IPCHandlers {
     async handleSaveRecordingChunk(event, audioData, filename) {
         try {
             this._assertTrustedRenderer(event);
-            if (typeof filename !== 'string' || !RECORDING_CHUNK_FILENAME.test(filename)) {
+            if (typeof filename !== 'string') {
                 throw new Error('Invalid recording chunk filename');
             }
+            const filenameMatch = filename.match(RECORDING_CHUNK_FILENAME);
+            if (!filenameMatch) throw new Error('Invalid recording chunk filename');
+            const session = this._requireRecordingSession(event, filenameMatch[1]);
 
             let buffer;
             if (audioData instanceof ArrayBuffer) {
@@ -950,8 +993,12 @@ class IPCHandlers {
 
             const recordingsDir = this._getRecordingsDirectory(true);
             const chunkPath = path.join(recordingsDir, filename);
+            if (fs.existsSync(chunkPath) && !session.filenames.has(filename)) {
+                throw new Error('Recording chunk already exists outside this session');
+            }
             this._writeFileNoFollow(chunkPath, buffer);
             const stats = this._assertRecordingChunkFile(chunkPath);
+            session.filenames.add(filename);
             
             console.log(`Saved recording chunk: ${filename} (${stats.size} bytes)`);
             
@@ -969,14 +1016,13 @@ class IPCHandlers {
 
     async handleLoadRecordingChunk(event, filePath) {
         try {
-            this._assertTrustedRenderer(event);
-            const chunkPath = this._resolveRecordingChunkPath(filePath);
-            if (!chunkPath || !fs.existsSync(chunkPath)) {
+            const { chunkPath, filename } = this._requireRecordingChunk(event, filePath);
+            if (!fs.existsSync(chunkPath)) {
                 throw new Error('Recording chunk file not found');
             }
             this._assertRecordingChunkFile(chunkPath);
             const buffer = this._readFileNoFollow(chunkPath, MAX_RECORDING_CHUNK_BYTES);
-            console.log(`Loaded recording chunk: ${path.basename(chunkPath)} (${buffer.length} bytes)`);
+            console.log(`Loaded recording chunk: ${filename} (${buffer.length} bytes)`);
             
             return buffer;
         } catch (error) {
@@ -987,12 +1033,15 @@ class IPCHandlers {
 
     async handleDeleteRecordingChunk(event, filePath) {
         try {
-            this._assertTrustedRenderer(event);
-            const chunkPath = this._resolveRecordingChunkPath(filePath);
-            if (chunkPath && fs.existsSync(chunkPath)) {
+            const { chunkPath, filename, session } = this._requireRecordingChunk(event, filePath);
+            if (fs.existsSync(chunkPath)) {
                 this._assertRecordingChunkFile(chunkPath);
                 fs.unlinkSync(chunkPath);
-                console.log(`Deleted recording chunk: ${path.basename(chunkPath)}`);
+                session.filenames.delete(filename);
+                if (session.filenames.size === 0) {
+                    this.recordingSessions.delete(filename.match(RECORDING_CHUNK_FILENAME)[1]);
+                }
+                console.log(`Deleted recording chunk: ${filename}`);
             }
             
             return { success: true };
@@ -1005,30 +1054,44 @@ class IPCHandlers {
     async handleFindRecordingChunks(event, sessionId) {
         try {
             this._assertTrustedRenderer(event);
+            const owner = this._getRecordingSessionOwner(event);
+            const isRecoveryScan = sessionId === 'recording_';
             if (typeof sessionId !== 'string' || sessionId.length > 64 ||
-                (sessionId !== 'recording_' && !/^recording_\d{10,16}_[a-z0-9]{1,16}$/.test(sessionId))) {
+                (!isRecoveryScan && !RECORDING_SESSION_ID.test(sessionId))) {
                 throw new Error('Invalid recording session id');
             }
+            if (!isRecoveryScan) this._requireRecordingSession(event, sessionId);
             const recordingsDir = this._getRecordingsDirectory();
             if (!recordingsDir) {
                 return [];
             }
 
-            const files = fs.readdirSync(recordingsDir);
-            const sessionChunks = files
-                .filter(file => RECORDING_CHUNK_FILENAME.test(file) && file.startsWith(sessionId))
-                .filter(file => {
-                    const filePath = path.join(recordingsDir, file);
-                    try {
-                        const stats = this._assertRecordingChunkFile(filePath);
-                        return stats.size <= MAX_RECORDING_CHUNK_BYTES;
-                    } catch (error) {
-                        if (error.code === 'ENOENT') return false;
-                        throw error;
+            const sessionChunks = [];
+            for (const filename of fs.readdirSync(recordingsDir).sort()) {
+                const filenameMatch = filename.match(RECORDING_CHUNK_FILENAME);
+                if (!filenameMatch || (!isRecoveryScan && filenameMatch[1] !== sessionId)) continue;
+
+                let session = this.recordingSessions.get(filenameMatch[1]);
+                if (session && session.owner !== owner) continue;
+                if (!session && !isRecoveryScan) continue;
+
+                const filePath = path.join(recordingsDir, filename);
+                try {
+                    const lstat = fs.lstatSync(filePath);
+                    if (lstat.isSymbolicLink() || !lstat.isFile() ||
+                        (typeof process.getuid === 'function' && lstat.uid !== process.getuid())) continue;
+                    const stats = this._assertRecordingChunkFile(filePath);
+                    if (stats.size > MAX_RECORDING_CHUNK_BYTES) continue;
+                    if (!session) {
+                        session = { owner, filenames: new Set() };
+                        this.recordingSessions.set(filenameMatch[1], session);
                     }
-                })
-                .sort() // Sort to maintain chunk order
-                .map(file => path.join(recordingsDir, file));
+                    session.filenames.add(filename);
+                    sessionChunks.push(filePath);
+                } catch (error) {
+                    if (error.code !== 'ENOENT' && error.message !== 'Recording chunk is not an owned regular file') throw error;
+                }
+            }
             
             console.log(`Found ${sessionChunks.length} chunks for session ${sessionId}`);
             return sessionChunks;

@@ -204,59 +204,12 @@ export class FileUploadController {
             segments: segments 
         });
         
-        const transcriptionText = UIHelpers.getElementById('transcription-text');
-        const transcriptionSegments = UIHelpers.getElementById('transcription-segments');
-        const emptyState = UIHelpers.getElementById('transcription-empty');
-        const loadingState = UIHelpers.getElementById('transcription-loading');
-        const editor = UIHelpers.getElementById('transcription-editor');
-        
-        if (!transcriptionText || !editor) {
-            console.error('Required transcription elements not found');
-            return;
+        const transcriptionController = window.whisperApp?.controllers?.transcription;
+        if (!transcriptionController) {
+            throw new Error('Transcription controller is not available');
         }
 
-        console.log('🎬 DOM elements found:', {
-            transcriptionText: !!transcriptionText,
-            transcriptionSegments: !!transcriptionSegments,
-            emptyState: !!emptyState,
-            loadingState: !!loadingState,
-            editor: !!editor
-        });
-        
-        // Hide loading and empty states, show editor
-        UIHelpers.hide(emptyState);
-        UIHelpers.hide(loadingState);
-        UIHelpers.show(editor);
-        console.log('🎬 Hidden loading and empty states, shown editor');
-        
-        // Set up both views
-        UIHelpers.setValue(transcriptionText, text);
-        console.log('🎬 Set transcription text value:', text?.substring(0, 50) + '...');
-        
-        if (segments && segments.length > 0) {
-            console.log('🎬 Has segments, rendering timestamped view');
-            await this.renderTimestampedSegments(segments);
-            
-            // Show appropriate view based on current mode
-            const transcriptionState = this.appState.getTranscriptionState();
-            if (transcriptionState.viewMode === 'timestamped') {
-                console.log('🎬 Showing timestamped view after rendering segments');
-                this.showTimestampedView();
-            } else {
-                console.log('🎬 Showing plain text view after rendering segments');
-                this.showPlainTextView();
-            }
-        } else {
-            // If no segments, always default to plain text view
-            console.log('🎬 No segments, defaulting to plain text view');
-            this.appState.setTranscriptionState({ viewMode: 'plain' });
-            this.showPlainTextView();
-        }
-
-        // Update toggle button state
-        if (window.app && window.app.updateToggleButton) {
-            window.app.updateToggleButton();
-        }
+        transcriptionController.showTranscriptionResult(text, segments);
 
         // Load audio player if a file path is available
         if (audioFilePath && window.whisperApp && window.whisperApp.controllers.transcription) {

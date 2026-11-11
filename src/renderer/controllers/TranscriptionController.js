@@ -526,7 +526,7 @@ ${text}
         const transcriptionSegments = UIHelpers.getElementById('transcription-segments');
         
         // Ensure the textarea has the current text from the transcription state
-        if (transcriptionText && this.transcriptionState.currentText) {
+        if (transcriptionText) {
             transcriptionText.value = this.transcriptionState.currentText;
             console.log('🎬 Synced textarea with current text:', this.transcriptionState.currentText.substring(0, 50) + '...');
         }

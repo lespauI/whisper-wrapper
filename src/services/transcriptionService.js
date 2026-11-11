@@ -4,6 +4,8 @@
 
 const { LocalWhisperService } = require('./localWhisperService');
 const TranscriptionFormatter = require('./transcriptionFormatter');
+const path = require('path');
+const { transcribeResumableFile } = require('./resumableTranscription');
 
 class TranscriptionService {
     constructor() {
@@ -128,7 +130,9 @@ class TranscriptionService {
             } else {
                 console.log(`🔤 TranscriptionService: Initial prompt is DISABLED`);
             }
-            const result = await this.localWhisper.transcribeFile(filePath, whisperOptions);
+            const result = await transcribeResumableFile(filePath, whisperOptions,
+                this.localWhisper.transcribeFile.bind(this.localWhisper),
+                path.join(process.cwd(), 'data', 'transcription-checkpoints'));
             
             console.log('🎯 TranscriptionService: Received result from LocalWhisperService:', {
                 success: result.success,

@@ -155,10 +155,10 @@ describe('resident multilingual transcription', () => {
         await expect(service.transcribe(wav(30), settings)).rejects.toThrow('invalid segment');
     });
 
-    it('forwards explicit prompt and translation without carrying decoded history', async () => {
+    it('forwards explicit prompt and translation with bounded context', async () => {
         await service.transcribe(wav(30), { ...settings, options: { ...settings.options, prompt: 'Acme', translate: true } });
         const decoder = workers.find(worker => worker.model === '/large');
-        expect(decoder.infer.mock.calls.at(-1)[1]).toMatchObject({ prompt: 'Acme', translate: true, max_context: 0 });
+        expect(decoder.infer.mock.calls.at(-1)[1]).toMatchObject({ prompt: 'Acme', translate: true, max_context: 48 });
     });
 
     it('rejects work after cleanup', async () => {

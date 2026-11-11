@@ -1,5 +1,9 @@
 const TranscriptionService = require('../../src/services/transcriptionService');
 
+jest.mock('../../src/services/resumableTranscription', () => ({
+    transcribeResumableFile: (filePath, options, transcribe) => transcribe(filePath, options)
+}));
+
 // Mock LocalWhisperService
 jest.mock('../../src/services/localWhisperService', () => {
     return {

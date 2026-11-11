@@ -40,4 +40,31 @@ describe('Recording auto-save session registration', () => {
             tempDirectory: '/tmp/whisper-wrapper'
         });
     });
+
+    test('keeps prior recording fragments out of a new session with auto-save disabled', async () => {
+        await controller.initializeAutoSaveSession();
+        controller.recordingAutoSave.savedChunks.push({ filePath: '/tmp/old-chunk' });
+        controller.appState.getRecordingState = () => ({ enableAutoSave: false });
+
+        await controller.initializeAutoSaveSession();
+
+        const newAudio = new Blob(['new recording']);
+        expect(await controller.combineRecordingChunks(newAudio)).toBe(newAudio);
+        expect(controller.recordingAutoSave.sessionId).toBeNull();
+        expect(startRecordingChunkSession).toHaveBeenCalledTimes(1);
+    });
+
+    test('detaches prior fragments when the new session cannot be registered', async () => {
+        await controller.initializeAutoSaveSession();
+        controller.recordingAutoSave.savedChunks.push({ filePath: '/tmp/old-chunk' });
+        startRecordingChunkSession.mockRejectedValueOnce(new Error('IPC unavailable'));
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+
+        await controller.initializeAutoSaveSession();
+
+        const newAudio = new Blob(['new recording']);
+        expect(await controller.combineRecordingChunks(newAudio)).toBe(newAudio);
+        expect(controller.recordingAutoSave.sessionId).toBeNull();
+        expect(controller.appState.setRecordingState).toHaveBeenCalledWith({ enableAutoSave: false });
+    });
 });

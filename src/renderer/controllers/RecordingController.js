@@ -604,6 +604,7 @@ export class RecordingController {
             const mimeType = this.getMimeType();
             this.mediaRecorder = new MediaRecorder(stream, { mimeType });
             this.audioChunks = [];
+            this.recordingBlob = null;
             
             this.mediaRecorder.ondataavailable = (event) => {
                 if (event.data.size > 0) {
@@ -2163,6 +2164,9 @@ export class RecordingController {
      * Initialize auto-save session
      */
     async initializeAutoSaveSession() {
+        this.recordingAutoSave.sessionId = null;
+        this.recordingAutoSave.chunkIndex = 0;
+        this.recordingAutoSave.savedChunks = [];
         const recordingState = this.appState.getRecordingState();
         if (!recordingState.enableAutoSave) {
             console.log('Auto-save disabled');
@@ -2176,8 +2180,6 @@ export class RecordingController {
                 throw new Error((session && session.error) || 'Failed to create recording auto-save session');
             }
             this.recordingAutoSave.sessionId = session.sessionId;
-            this.recordingAutoSave.chunkIndex = 0;
-            this.recordingAutoSave.savedChunks = [];
             
             // Store temp directory path
             this.recordingAutoSave.tempDirectory = paths.temp;

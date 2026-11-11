@@ -127,10 +127,11 @@ export class FileUploadController {
             // Start transcription
             const result = await window.electronAPI.transcribeFile(filePath);
             console.log('🎬 Transcription result from IPC:', result);
-            
-            if (operation.canceled || result.canceled) {
+
+            if (!this.isCurrentOperation(operation)) return;
+            if (result.canceled) {
                 this.appState.setFileUploadState({ currentFile: null, isProcessing: false, progress: 0 });
-                if (!operation.canceled) this.statusController.updateStatus('Transcription stopped');
+                this.statusController.updateStatus('Transcription stopped');
                 return;
             }
             if (result.success) {
@@ -140,6 +141,7 @@ export class FileUploadController {
             }
             
         } catch (error) {
+            if (!this.isCurrentOperation(operation)) return;
             if (operation?.canceled) {
                 this.appState.setFileUploadState({ currentFile: null, isProcessing: false, progress: 0 });
                 return;
@@ -153,11 +155,22 @@ export class FileUploadController {
             });
         } finally {
             if (operation) {
-                this.statusController.showProgress(false);
+                const uploadState = this.appState.getFileUploadState();
+                if (!this.isCurrentOperation(operation) && uploadState.currentFile === filePath) {
+                    this.appState.setFileUploadState({ currentFile: null, isProcessing: false, progress: 0 });
+                    this.statusController.showProgress(false);
+                } else if (this.isCurrentOperation(operation)) {
+                    this.statusController.showProgress(false);
+                }
                 this.statusController.endTranscription(operation);
             }
             unsubscribe?.();
         }
+    }
+
+    isCurrentOperation(operation) {
+        if (typeof this.statusController.isCurrentTranscription !== 'function') return true;
+        return this.statusController.isCurrentTranscription(operation);
     }
 
     /**
@@ -165,6 +178,7 @@ export class FileUploadController {
      * @param {Object} result - Transcription result
      */
     async handleTranscriptionSuccess(result) {
+        const partial = result.partial === true || result.status === 'partial';
         // Update transcription state
         this.appState.setTranscriptionState({
             originalText: result.text,
@@ -173,7 +187,13 @@ export class FileUploadController {
             isDirty: false,
             lastSaved: new Date(),
             history: [result.text],
-            historyIndex: 0
+            historyIndex: 0,
+            status: partial ? 'partial' : 'complete',
+            partial,
+            issues: Array.isArray(result.issues) ? result.issues : [],
+            resumeId: result.resumeId || null,
+            audioDurationSeconds: result.audioDurationSeconds ?? null,
+            processingDurationMs: result.processingDurationMs ?? null
         });
 
         // Update file upload state
@@ -187,7 +207,12 @@ export class FileUploadController {
         await this.showTranscriptionResult(result.text, result.segments, result.audioFilePath || null);
         
         // Update status and switch to transcription tab
-        this.statusController.updateStatus(`Transcription completed (Language: ${result.language || 'unknown'})`);
+        if (partial) {
+            const issueCount = Array.isArray(result.issues) ? result.issues.length : 0;
+            this.statusController.showWarning(`Partial transcription saved. Review ${issueCount} audio interval${issueCount === 1 ? '' : 's'} before use.`);
+        } else {
+            this.statusController.updateStatus(`Transcription completed (Language: ${result.language || 'unknown'})`);
+        }
         await this.tabController.switchTab(TABS.TRANSCRIPTION);
     }
 

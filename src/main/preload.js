@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cancelTranscription: () => ipcRenderer.invoke('transcription:cancel'),
     transcribeFile: (filePath) => ipcRenderer.invoke('transcription:file', filePath),
     transcribeAudio: (audioData, prompt = null, options = {}) => ipcRenderer.invoke('transcription:audio', audioData, prompt, options),
+    resumeTranscription: (historyId) => ipcRenderer.invoke('transcription:resume', historyId),
   
     // Configuration
     getConfig: () => ipcRenderer.invoke('config:get'),
@@ -38,6 +39,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     loadRecordingChunk: (filePath) => ipcRenderer.invoke('recording:loadChunk', filePath),
     deleteRecordingChunk: (filePath) => ipcRenderer.invoke('recording:deleteChunk', filePath),
     findRecordingChunks: (sessionId) => ipcRenderer.invoke('recording:findChunks', sessionId),
+    startRecordingChunkSession: () => ipcRenderer.invoke('recording:startChunkSession'),
     // VAD metrics (QA/devtools)
     getVADMetrics: () => ipcRenderer.invoke('recording:vadMetrics:get'),
     updateVADMetrics: (metrics) => ipcRenderer.invoke('recording:vadMetrics:set', metrics),

@@ -61,4 +61,24 @@ describe('segmenter.segment', () => {
     expect(s.endMs).toBeGreaterThanOrEqual(4000);
     expect(s.endMs).toBeLessThanOrEqual(4500);
   });
+
+  test('uses the selected detector and mode options', () => {
+    const calibrate = jest.fn(() => ({}));
+    const detect = jest.fn(() => ({ isSpeech: false, confidence: 0 }));
+
+    seg.segment(genTone(1, 16000), 16000, {
+      calibrationMs: 200,
+      calibrate,
+      detect,
+      mode: 'aggressive',
+      adaptive: false,
+    });
+
+    expect(calibrate).toHaveBeenCalledWith(expect.any(Array), 16000, { adaptive: false });
+    expect(detect).toHaveBeenCalledWith(expect.any(Float32Array), 16000, {}, {
+      sensitivity: 0.6,
+      adaptive: false,
+      mode: 'aggressive',
+    });
+  });
 });

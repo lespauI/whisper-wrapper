@@ -64,6 +64,109 @@ describe('transcription stop controls', () => {
         expect(document.getElementById('status-text').textContent).toBe('Transcription stopped');
     });
 
+    test('displays partial text returned after canceling the active file task', async () => {
+        let finishTranscription;
+        window.electronAPI.transcribeFile.mockImplementation(() => new Promise(resolve => {
+            finishTranscription = resolve;
+        }));
+        appState.setTranscriptionState = jest.fn();
+        jest.spyOn(status, 'showWarning').mockImplementation(() => {});
+        const upload = Object.create(FileUploadController.prototype);
+        const tabController = { switchTab: jest.fn().mockResolvedValue() };
+        Object.assign(upload, {
+            appState,
+            statusController: status,
+            tabController,
+            validateFile: () => true,
+            showTranscriptionResult: jest.fn().mockResolvedValue()
+        });
+
+        const task = upload.handleFileUpload('/audio.wav');
+        await Promise.resolve();
+        await status.stopTranscription();
+        finishTranscription({
+            success: true,
+            status: 'partial',
+            partial: true,
+            text: 'Recognized before stop',
+            segments: [{ id: 0, start: 0, end: 2, text: 'Recognized before stop' }],
+            audioFilePath: '/audio.wav',
+            issues: [{ code: 'canceled', start: 240, end: 480, message: 'Transcription canceled' }],
+            resumeId: 'a'.repeat(64)
+        });
+        await task;
+
+        expect(appState.setTranscriptionState).toHaveBeenCalledWith(expect.objectContaining({
+            currentText: 'Recognized before stop',
+            partial: true,
+            issues: [{ code: 'canceled', start: 240, end: 480, message: 'Transcription canceled' }],
+            resumeId: 'a'.repeat(64)
+        }));
+        expect(upload.showTranscriptionResult).toHaveBeenCalledWith(
+            'Recognized before stop',
+            [{ id: 0, start: 0, end: 2, text: 'Recognized before stop' }],
+            '/audio.wav'
+        );
+        expect(status.showWarning).toHaveBeenCalledWith(expect.stringContaining('Partial transcription saved'));
+    });
+
+    test('ignores a canceled partial response after a newer transcription starts', async () => {
+        let finishOldTask;
+        window.electronAPI.transcribeFile.mockImplementation(() => new Promise(resolve => {
+            finishOldTask = resolve;
+        }));
+        appState.setTranscriptionState = jest.fn();
+        const upload = Object.create(FileUploadController.prototype);
+        Object.assign(upload, {
+            appState,
+            statusController: status,
+            validateFile: () => true,
+            handleTranscriptionSuccess: jest.fn()
+        });
+
+        const oldTask = upload.handleFileUpload('/old.wav');
+        await Promise.resolve();
+        await status.stopTranscription();
+        const newOperation = status.beginTranscription();
+        appState.currentText = 'New task result';
+        finishOldTask({ success: true, status: 'partial', partial: true, text: 'Old partial result' });
+        await oldTask;
+
+        expect(upload.handleTranscriptionSuccess).not.toHaveBeenCalled();
+        expect(appState.setTranscriptionState).not.toHaveBeenCalled();
+        expect(appState.currentText).toBe('New task result');
+        expect(status.transcriptionOperations.has(newOperation)).toBe(true);
+    });
+
+    test('keeps a foreground file task current when a background chunk starts', async () => {
+        let finishTranscription;
+        window.electronAPI.transcribeFile.mockImplementation(() => new Promise(resolve => {
+            finishTranscription = resolve;
+        }));
+        appState.setTranscriptionState = jest.fn();
+        const upload = Object.create(FileUploadController.prototype);
+        Object.assign(upload, {
+            appState,
+            statusController: status,
+            tabController: { switchTab: jest.fn().mockResolvedValue() },
+            validateFile: () => true,
+            showTranscriptionResult: jest.fn().mockResolvedValue()
+        });
+
+        const task = upload.handleFileUpload('/audio.wav');
+        await Promise.resolve();
+        const [foregroundOperation] = status.transcriptionOperations;
+        const backgroundOperation = status.beginTranscription(false);
+        finishTranscription({ success: true, text: 'Foreground result', segments: [] });
+        await task;
+
+        expect(status.isCurrentTranscription(foregroundOperation)).toBe(true);
+        expect(appState.setTranscriptionState).toHaveBeenCalledWith(expect.objectContaining({
+            currentText: 'Foreground result'
+        }));
+        status.endTranscription(backgroundOperation);
+    });
+
     test('canceled recorded audio stays available for another attempt', async () => {
         const recording = Object.create(RecordingController.prototype);
         const recordingBlob = { arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(1)) };

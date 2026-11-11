@@ -148,6 +148,18 @@ describe('Recording integrity', () => {
         expect(controller.getMimeType()).toBe('audio/webm;codecs=opus');
     });
 
+    test('preserves the full chunk when VAD is disabled', async () => {
+        const pcm = new Float32Array(16000);
+        pcm.fill(0.25);
+        controller._vad = { enabled: false };
+        controller._decodeToMonoPCM = jest.fn().mockResolvedValue({ mono: pcm, sampleRate: 16000 });
+
+        const result = await controller._segmentChunkToWavs(new ArrayBuffer(1));
+
+        expect(result.segments).toEqual([{ startMs: 0, endMs: 1000 }]);
+        expect(result.wavBuffers).toHaveLength(1);
+    });
+
     test.each([['audio/webm;codecs=opus', 'webm'], ['audio/mp4', 'm4a'], ['audio/wav', 'wav']])(
         'exports %s with the matching extension', async (type, extension) => {
             controller.recordingBlob = new Blob(['audio'], { type });

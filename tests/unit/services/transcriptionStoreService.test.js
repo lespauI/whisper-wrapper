@@ -137,6 +137,75 @@ describe('TranscriptionStoreService', () => {
       const entry = await service.store('No audio path', { sourceFile: 'file.wav' });
       expect(entry.audioFilePath).toBe('');
     });
+
+    it('persists partial status and resume data before generating metadata', async () => {
+      let finishMetadata;
+      ollamaService.generateTranscriptionMeta.mockReturnValueOnce(new Promise(resolve => {
+        finishMetadata = resolve;
+      }));
+      const pending = service.store('Saved partial text', {
+        status: 'partial',
+        partial: true,
+        issues: [{ code: 'decoder_recovery_failed', start: 12, end: 20 }],
+        resumeId: 'a'.repeat(64),
+        audioDurationSeconds: 95.25,
+        processingDurationMs: 14000
+      });
+
+      const persisted = JSON.parse(fs.readFileSync(path.join(testDataDir, 'index.json'), 'utf8'))[0];
+      expect(persisted).toMatchObject({
+        status: 'partial',
+        partial: true,
+        resumeId: 'a'.repeat(64),
+        audioDurationSeconds: 95.25,
+        processingDurationMs: 14000,
+        metaStatus: 'pending'
+      });
+      expect(persisted.issues).toEqual([{ code: 'decoder_recovery_failed', start: 12, end: 20 }]);
+
+      finishMetadata({ title: 'Recovered title', summary: 'Summary', labels: ['review'] });
+      const entry = await pending;
+      expect(entry).toMatchObject({ status: 'partial', resumeId: 'a'.repeat(64), metaStatus: 'success' });
+      await expect(service.get(entry.id)).resolves.toMatchObject({
+        entry: { partial: true, status: 'partial', resumeId: 'a'.repeat(64) },
+        text: 'Saved partial text'
+      });
+    });
+
+    it('replaces a resumed transcription before its checkpoint source is removed', async () => {
+      const resumeId = 'c'.repeat(64);
+      const entry = await service.store('Partial words', { partial: true, resumeId });
+
+      const updated = await service.updateResult(entry.id, 'Complete words', {
+        status: 'complete',
+        partial: false,
+        issues: [],
+        resumeId,
+        audioDurationSeconds: 120,
+        processingDurationMs: 45000
+      });
+
+      expect(updated).toMatchObject({
+        status: 'complete',
+        partial: false,
+        resumeId,
+        audioDurationSeconds: 120,
+        processingDurationMs: 45000,
+        wordCount: 2
+      });
+      await expect(service.get(entry.id)).resolves.toMatchObject({ text: 'Complete words' });
+    });
+
+    it('removes the text file and in-memory entry when the index cannot be replaced', async () => {
+      const rename = jest.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+        throw new Error('index write failed');
+      });
+
+      await expect(service.store('Unindexed text', {})).rejects.toThrow('index write failed');
+      expect(service.list()).toHaveLength(0);
+      expect(fs.readdirSync(testDataDir).filter(file => file.endsWith('.txt') || file.endsWith('.tmp'))).toEqual([]);
+      rename.mockRestore();
+    });
   });
 
   describe('list()', () => {

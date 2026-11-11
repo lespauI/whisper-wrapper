@@ -88,6 +88,10 @@ export class RecordingController {
             currentChunkRecorder: null,
             transcriptionText: '', // Keep for backwards compatibility
             chunks: [], // Array of individual chunk texts
+            status: 'complete',
+            partial: false,
+            issues: [],
+            resumeIds: [],
             chunkCount: 0,
             chunkQueue: [], // Queue of chunks waiting for transcription
             processingQueue: false, // Background transcription worker status
@@ -817,13 +821,15 @@ export class RecordingController {
             // Start transcription
             const result = await window.electronAPI.transcribeAudio(arrayBuffer);
             console.log('🎬 Manual transcription result from IPC:', result);
-            if (operation.canceled) return;
+            if (typeof this.statusController.isCurrentTranscription === 'function' &&
+                !this.statusController.isCurrentTranscription(operation)) return;
             if (result.canceled) {
                 this.statusController.updateStatus('Transcription stopped');
                 return;
             }
             
             if (result.success) {
+                const partial = result.partial === true || result.status === 'partial';
                 // Update transcription state
                 this.appState.setTranscriptionState({
                     originalText: result.text,
@@ -832,7 +838,13 @@ export class RecordingController {
                     isDirty: false,
                     lastSaved: new Date(),
                     history: [result.text],
-                    historyIndex: 0
+                    historyIndex: 0,
+                    status: result.status || (partial ? 'partial' : 'complete'),
+                    partial,
+                    issues: Array.isArray(result.issues) ? result.issues : [],
+                    resumeId: result.resumeId || null,
+                    audioDurationSeconds: result.audioDurationSeconds ?? null,
+                    processingDurationMs: result.processingDurationMs ?? null
                 });
 
                 // Show transcription result using FileUploadController's working method
@@ -840,13 +852,19 @@ export class RecordingController {
                     await window.whisperApp.controllers.fileUpload.showTranscriptionResult(result.text, result.segments);
                 }
                 
-                this.statusController.updateStatus(`Recording transcribed (Language: ${result.language || 'unknown'})`);
+                if (partial) {
+                    this.statusController.showWarning('Recording transcription is partial. Review the flagged audio intervals before use.');
+                } else {
+                    this.statusController.updateStatus(`Recording transcribed (Language: ${result.language || 'unknown'})`);
+                }
                 await this.tabController.switchTab(TABS.TRANSCRIPTION);
             } else {
                 throw new Error('Transcription failed');
             }
             
         } catch (error) {
+            if (typeof this.statusController.isCurrentTranscription === 'function' &&
+                !this.statusController.isCurrentTranscription(operation)) return;
             if (operation.canceled) return;
             console.error('Error transcribing recording:', error);
             this.statusController.showError('Failed to transcribe recording');
@@ -914,6 +932,10 @@ export class RecordingController {
         // Reset state
         this.ongoingTranscription.transcriptionText = '';
         this.ongoingTranscription.chunks = [];
+        this.ongoingTranscription.status = 'complete';
+        this.ongoingTranscription.partial = false;
+        this.ongoingTranscription.issues = [];
+        this.ongoingTranscription.resumeIds = [];
         this.ongoingTranscription.chunkCount = 0;
         this.ongoingTranscription.chunkQueue = [];
         this.ongoingTranscription.pendingStop = false;
@@ -1469,6 +1491,10 @@ export class RecordingController {
             minSilenceMs: Math.max(120, v.minSilenceMs || 350),
             leadInMs: Math.max(0, v.leadInMs || 200),
             hangoverMs: Math.max(0, v.hangoverMs || 250),
+            adaptive: v.adaptive !== false,
+            calibrate: v.fn?.calibrate,
+            detect: v.fn?.detect,
+            mode: v.mode,
         };
     }
 
@@ -1483,7 +1509,9 @@ export class RecordingController {
             return { wavBuffers: [], segments: [], sampleRate: 0 };
         }
         const opts = this._getSegmentationOpts();
-        const { segments } = segmentPCM(mono, sampleRate, opts);
+        const segments = this._vad.enabled
+            ? segmentPCM(mono, sampleRate, opts).segments
+            : [{ startMs: 0, endMs: (mono.length / sampleRate) * 1000 }];
         if (!segments || segments.length === 0) {
             return { wavBuffers: [], segments: [], sampleRate };
         }
@@ -1565,13 +1593,24 @@ export class RecordingController {
                     if (operation.canceled || this.transcriptionWorker !== worker || !this.ongoingTranscription.processingQueue) break;
                     try { VADMetrics.onSentSegment(1); } catch {}
                     const subResult = await window.electronAPI.transcribeAudio(wavBuffers[i], runningPrompt || null, { skipStore: true });
-                    if (operation.canceled) break;
                     if (subResult.canceled) {
                         this.cancelOngoingTranscription();
                         this.statusController.updateStatus('Transcription stopped');
                         break;
                     }
                     if (!subResult.success) throw new Error(subResult.error || 'Background transcription failed');
+                    const partial = subResult.partial === true || subResult.status === 'partial';
+                    if (operation.canceled && !partial) break;
+                    if (partial) {
+                        this.ongoingTranscription.status = 'partial';
+                        this.ongoingTranscription.partial = true;
+                        this.ongoingTranscription.issues.push(...(Array.isArray(subResult.issues) ? subResult.issues : [])
+                            .map(issue => ({ ...issue, chunkNumber: queueItem.chunkNumber, segmentNumber: i + 1 })));
+                        if (subResult.resumeId && !this.ongoingTranscription.resumeIds.includes(subResult.resumeId)) {
+                            this.ongoingTranscription.resumeIds.push(subResult.resumeId);
+                        }
+                        UIHelpers.setText('#ongoing-transcription-status', 'Partial transcription — review the flagged audio intervals');
+                    }
                     if (subResult.text && subResult.text.trim()) {
                         const cleanText = subResult.text.trim();
                         console.log(`✓ Chunk ${queueItem.chunkNumber} seg ${i + 1}/${wavBuffers.length}: "${cleanText}"`);
@@ -2123,7 +2162,11 @@ export class RecordingController {
 
         try {
             const paths = await window.electronAPI.getAppPaths();
-            this.recordingAutoSave.sessionId = `recording_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const session = await window.electronAPI.startRecordingChunkSession();
+            if (!session || !session.success || typeof session.sessionId !== 'string') {
+                throw new Error((session && session.error) || 'Failed to create recording auto-save session');
+            }
+            this.recordingAutoSave.sessionId = session.sessionId;
             this.recordingAutoSave.chunkIndex = 0;
             this.recordingAutoSave.savedChunks = [];
             

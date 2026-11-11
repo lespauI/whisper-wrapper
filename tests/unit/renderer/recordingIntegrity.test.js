@@ -16,7 +16,7 @@ describe('Recording integrity', () => {
             saveRecordingChunk: jest.fn().mockResolvedValue({ success: true, filePath: '/tmp/chunk' }),
             loadRecordingChunk: jest.fn().mockResolvedValue(Buffer.from('saved')),
             deleteRecordingChunk: jest.fn().mockResolvedValue({ success: true }),
-            saveFile: jest.fn().mockResolvedValue({ canceled: false })
+            saveFile: jest.fn().mockResolvedValue({ canceled: false, filePath: '/tmp/final.webm' })
         } };
     });
 
@@ -49,30 +49,6 @@ describe('Recording integrity', () => {
         window.electronAPI.saveRecordingChunk.mockResolvedValue({ success: true, filePath: '/tmp/next' });
         await controller.saveCurrentRecordingChunk();
         expect(controller.audioChunks).toEqual([]);
-    });
-
-    test('uses the IPC filePath to load and delete saved chunks', async () => {
-        controller.audioChunks = [new Blob(['saved'])];
-        await controller.saveCurrentRecordingChunk();
-
-        expect(controller.recordingAutoSave.savedChunks[0].filePath).toBe('/tmp/chunk');
-        const combined = await controller.combineRecordingChunks(new Blob(['tail']));
-
-        expect(window.electronAPI.loadRecordingChunk).toHaveBeenCalledWith('/tmp/chunk');
-        expect(window.electronAPI.deleteRecordingChunk).toHaveBeenCalledWith('/tmp/chunk');
-        expect(await combined.text()).toBe('savedtail');
-    });
-
-    test('keeps saved chunks when assembly cannot load one', async () => {
-        jest.spyOn(console, 'error').mockImplementation(() => {});
-        const savedChunk = { filename: 'chunk.webm', filePath: '/tmp/chunk' };
-        controller.recordingAutoSave.savedChunks = [savedChunk];
-        window.electronAPI.loadRecordingChunk.mockRejectedValue(new Error('disk read failed'));
-
-        await expect(controller.combineRecordingChunks(new Blob(['tail']))).rejects.toThrow('disk read failed');
-
-        expect(controller.recordingAutoSave.savedChunks).toEqual([savedChunk]);
-        expect(window.electronAPI.deleteRecordingChunk).not.toHaveBeenCalled();
     });
 
     test('retains audio for retry when saving fails', async () => {

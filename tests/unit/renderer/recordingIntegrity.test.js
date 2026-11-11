@@ -92,6 +92,37 @@ describe('Recording integrity', () => {
         }
     });
 
+    test('does not clear a newer recording session when an older save completes', async () => {
+        const oldChunk = { filename: 'old.webm', filePath: '/tmp/old-chunk' };
+        const newChunk = { filename: 'new.webm', filePath: '/tmp/new-chunk' };
+        controller.recordingBlob = new Blob(['old audio'], { type: 'audio/webm' });
+        controller.recordingAutoSave.sessionId = 'old-session';
+        controller.recordingAutoSave.savedChunks = [oldChunk];
+
+        let finishSave;
+        window.electronAPI.saveFile.mockImplementation(() => new Promise(resolve => { finishSave = resolve; }));
+        const pendingSave = controller.saveRecording();
+        while (!finishSave) await Promise.resolve();
+
+        controller.recordingBlob = new Blob(['new audio'], { type: 'audio/mp4' });
+        controller.recordingAutoSave.sessionId = 'new-session';
+        controller.recordingAutoSave.chunkIndex = 1;
+        controller.recordingAutoSave.savedChunks = [newChunk];
+        finishSave({ canceled: false, filePath: '/tmp/old-final.webm' });
+        await pendingSave;
+
+        const [savedData, filename] = window.electronAPI.saveFile.mock.calls[0];
+        expect(Buffer.from(savedData).toString()).toBe('old audio');
+        expect(filename).toMatch(/\.webm$/);
+        expect(window.electronAPI.deleteRecordingChunk).toHaveBeenCalledWith('/tmp/old-chunk');
+        expect(window.electronAPI.deleteRecordingChunk).not.toHaveBeenCalledWith('/tmp/new-chunk');
+        expect(controller.recordingAutoSave).toMatchObject({
+            sessionId: 'new-session',
+            chunkIndex: 1,
+            savedChunks: [newChunk]
+        });
+    });
+
     test('keeps saved chunks when assembly cannot load one', async () => {
         jest.spyOn(console, 'error').mockImplementation(() => {});
         const savedChunk = { filename: 'chunk.webm', filePath: '/tmp/chunk' };

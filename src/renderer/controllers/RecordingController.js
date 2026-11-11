@@ -753,14 +753,20 @@ export class RecordingController {
             this.statusController.showError('No recording to save');
             return;
         }
+
+        const recordingBlob = this.recordingBlob;
+        const autoSaveSnapshot = {
+            sessionId: this.recordingAutoSave.sessionId,
+            savedChunks: this.recordingAutoSave.savedChunks.slice()
+        };
         
         try {
             // Convert blob to array buffer
-            const arrayBuffer = await this.recordingBlob.arrayBuffer();
+            const arrayBuffer = await recordingBlob.arrayBuffer();
             
             // Create filename with timestamp
             const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-            const extension = this.getRecordingExtension(this.recordingBlob.type);
+            const extension = this.getRecordingExtension(recordingBlob.type);
             const filename = `recording-${timestamp}.${extension}`;
             
             // Save file using Electron API
@@ -774,7 +780,7 @@ export class RecordingController {
                 throw new Error('Recording was not saved to a file');
             }
 
-            await this.cleanupAutoSaveFiles();
+            await this.cleanupAutoSaveFiles(autoSaveSnapshot);
             this.statusController.updateStatus('Recording saved successfully');
         } catch (error) {
             console.error('Error saving recording:', error);
@@ -2259,15 +2265,18 @@ export class RecordingController {
     /**
      * Clean up auto-save files
      */
-    async cleanupAutoSaveFiles() {
-        if (this.recordingAutoSave.savedChunks.length === 0) {
+    async cleanupAutoSaveFiles(snapshot = {
+        sessionId: this.recordingAutoSave.sessionId,
+        savedChunks: this.recordingAutoSave.savedChunks.slice()
+    }) {
+        if (snapshot.savedChunks.length === 0) {
             return;
         }
 
-        console.log(`Cleaning up ${this.recordingAutoSave.savedChunks.length} auto-save files`);
+        console.log(`Cleaning up ${snapshot.savedChunks.length} auto-save files`);
         
         const failedChunks = [];
-        for (const chunkInfo of this.recordingAutoSave.savedChunks) {
+        for (const chunkInfo of snapshot.savedChunks) {
             try {
                 await window.electronAPI.deleteRecordingChunk(chunkInfo.filePath);
             } catch (error) {
@@ -2276,17 +2285,22 @@ export class RecordingController {
             }
         }
 
-        const deletedCount = this.recordingAutoSave.savedChunks.length - failedChunks.length;
+        const deletedCount = snapshot.savedChunks.length - failedChunks.length;
         console.log(`Deleted ${deletedCount} chunks, ${failedChunks.length} failed`);
 
         if (failedChunks.length > 0) {
             console.warn('Some auto-save files could not be deleted:', failedChunks);
-            this.recordingAutoSave.savedChunks = failedChunks;
-        } else {
-            // Reset auto-save state
-            this.recordingAutoSave.savedChunks = [];
-            this.recordingAutoSave.chunkIndex = 0;
-            this.recordingAutoSave.sessionId = null;
+        }
+
+        if (this.recordingAutoSave.sessionId === snapshot.sessionId) {
+            const failedChunkSet = new Set(failedChunks);
+            const deletedChunkSet = new Set(snapshot.savedChunks.filter(chunk => !failedChunkSet.has(chunk)));
+            this.recordingAutoSave.savedChunks = this.recordingAutoSave.savedChunks.filter(chunk => !deletedChunkSet.has(chunk));
+
+            if (this.recordingAutoSave.savedChunks.length === 0) {
+                this.recordingAutoSave.chunkIndex = 0;
+                this.recordingAutoSave.sessionId = null;
+            }
         }
     }
 

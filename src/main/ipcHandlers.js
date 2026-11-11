@@ -366,6 +366,8 @@ class IPCHandlers {
                     text: result.text,
                     language: result.language,
                     duration: result.duration,
+                    audioDurationSeconds: result.audioDurationSeconds,
+                    processingDurationMs: result.processingDurationMs,
                     segments: result.segments || [],
                     audioFilePath: filePath
                 };
@@ -377,6 +379,8 @@ class IPCHandlers {
                         audioFilePath: filePath,
                         language: result.language,
                         duration: result.duration,
+                        audioDurationSeconds: result.audioDurationSeconds,
+                        processingDurationMs: result.processingDurationMs,
                         model: currentConfig.model || '',
                         status: finalResult.status,
                         partial: finalResult.partial,
@@ -515,6 +519,8 @@ class IPCHandlers {
                     const entry = await this.transcriptionStoreService.store(result.text, {
                         language: result.language,
                         duration: result.duration,
+                        audioDurationSeconds: result.audioDurationSeconds,
+                        processingDurationMs: result.processingDurationMs,
                         model: currentConfig.model || '',
                         status: partial ? 'partial' : 'complete',
                         partial,
@@ -525,6 +531,14 @@ class IPCHandlers {
                 } catch (error) {
                     error.preserveError = true;
                     throw error;
+                }
+            }
+
+            if (!partial && !skipStore && resumeId && this.transcriptionService.finalizeTranscription) {
+                try {
+                    await this.transcriptionService.finalizeTranscription(resumeId);
+                } catch (error) {
+                    console.error('Failed to remove completed transcription checkpoints:', error);
                 }
             }
 
@@ -545,6 +559,8 @@ class IPCHandlers {
                 text: result.text,
                 language: result.language,
                 duration: result.duration,
+                audioDurationSeconds: result.audioDurationSeconds,
+                processingDurationMs: result.processingDurationMs,
                 segments: result.segments || []
             };
 

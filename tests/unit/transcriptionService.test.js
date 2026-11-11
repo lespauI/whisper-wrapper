@@ -1,4 +1,5 @@
 const TranscriptionService = require('../../src/services/transcriptionService');
+const fs = require('fs');
 
 jest.mock('../../src/services/resumableTranscription', () => ({
     finalizeResumableFile: jest.fn().mockResolvedValue(undefined),
@@ -152,6 +153,8 @@ describe('TranscriptionService', () => {
                 segments: [],
                 model: 'base',
                 duration: 10.5,
+                audioDurationSeconds: null,
+                processingDurationMs: null,
                 metadata: expect.any(Object),
                 srt: expect.any(String),
                 vtt: expect.any(String)
@@ -240,6 +243,35 @@ describe('TranscriptionService', () => {
         it('finalizes checkpoints through the resumable service', async () => {
             await service.finalizeTranscription('a'.repeat(64));
             expect(finalizeResumableFile).toHaveBeenCalledWith('a'.repeat(64), service.checkpointRoot);
+        });
+    });
+
+    describe('transcribeBuffer', () => {
+        it('routes a complete recording through the file pipeline and removes its temporary source', async () => {
+            const audioBuffer = Buffer.from('recorded audio');
+            const transcriptionResult = {
+                success: true,
+                text: 'Recorded words',
+                segments: [],
+                partial: true,
+                issues: ['review audio'],
+                resumeId: 'recording-resume-id'
+            };
+            let tempFilePath;
+            const transcribeFile = jest.spyOn(service, 'transcribeFile').mockImplementation(async (filePath, options) => {
+                tempFilePath = filePath;
+                expect(fs.readFileSync(filePath)).toEqual(audioBuffer);
+                expect(options.contextPrompt).toBe('meeting vocabulary');
+                return transcriptionResult;
+            });
+
+            const result = await service.transcribeBuffer(audioBuffer, { contextPrompt: 'meeting vocabulary' });
+
+            expect(transcribeFile).toHaveBeenCalledWith(expect.stringMatching(/\.webm$/), {
+                contextPrompt: 'meeting vocabulary'
+            });
+            expect(result).toBe(transcriptionResult);
+            expect(fs.existsSync(tempFilePath)).toBe(false);
         });
     });
 

@@ -96,6 +96,14 @@ function withResultContract(result, duration = null) {
     };
 }
 
+function withDurationMetadata(result, audioDurationSeconds, startedAt) {
+    return {
+        ...result,
+        audioDurationSeconds: Number.isFinite(audioDurationSeconds) ? audioDurationSeconds : null,
+        processingDurationMs: Date.now() - startedAt
+    };
+}
+
 async function boundaryNearPause(file, position, signal) {
     const start = position - 3;
     const { stderr } = await run('ffmpeg', ['-nostdin', '-hide_banner', '-ss', String(start),
@@ -341,6 +349,7 @@ async function transcribeChunks(filePath, options, transcribe, directory, bounda
 }
 
 async function transcribeResumableFile(filePath, options, transcribe, checkpointRoot, decoderIdentity = null) {
+    const startedAt = Date.now();
     const { signal, ...recognitionOptions } = options;
     checkCanceled(signal);
     let info;
@@ -353,26 +362,31 @@ async function transcribeResumableFile(filePath, options, transcribe, checkpoint
         if (error.code !== 'ENOENT') throw error;
         console.warn('ffprobe is unavailable; transcription cannot resume after interruption');
         const result = await transcribe(filePath, options);
-        return withResultContract(result);
+        return withDurationMetadata(withResultContract(result),
+            result.audioDurationSeconds ?? result.audioDuration ?? null, startedAt);
     }
     const streamDuration = Number(info.streams?.[0]?.duration);
     const duration = streamDuration > 0 ? streamDuration : Number(info.format?.duration);
     if (!Number.isFinite(duration) || duration <= 0) {
         const result = await transcribe(filePath, options);
-        return withResultContract(result);
+        return withDurationMetadata(withResultContract(result),
+            result.audioDurationSeconds ?? result.audioDuration ?? null, startedAt);
     }
 
     const decodeOptions = { ...options, preserveDecoderOutput: true };
     if (duration <= chunkSeconds) {
-        const result = await transcribe(filePath, decodeOptions);
-        if (!validSegments(result) || !hasDecoderLoop(result.segments)) return withResultContract(result, duration);
-        const scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'whisper-retry-'));
-        try {
-            const recovered = await recoverRepeats(result, filePath, duration, 0, scratch, decodeOptions, transcribe);
-            return { ...recovered, resumeId: null };
-        } finally {
-            await fs.promises.rm(scratch, { recursive: true, force: true });
+        let result = await transcribe(filePath, decodeOptions);
+        if (!validSegments(result) || !hasDecoderLoop(result.segments)) {
+            result = withResultContract(result, duration);
+        } else {
+            const scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'whisper-retry-'));
+            try {
+                result = { ...(await recoverRepeats(result, filePath, duration, 0, scratch, decodeOptions, transcribe)), resumeId: null };
+            } finally {
+                await fs.promises.rm(scratch, { recursive: true, force: true });
+            }
         }
+        return withDurationMetadata(result, duration, startedAt);
     }
 
     const boundaries = [0];
@@ -389,7 +403,9 @@ async function transcribeResumableFile(filePath, options, transcribe, checkpoint
     const resumeId = hash.digest('hex');
     const directory = path.join(checkpointRoot, resumeId);
 
-    if (activeJobs.has(directory)) return activeJobs.get(directory);
+    if (activeJobs.has(directory)) {
+        return withDurationMetadata(await activeJobs.get(directory), duration, startedAt);
+    }
     const job = (async () => {
         await ensureManifest(directory, {
             schemaVersion: checkpointSchemaVersion,
@@ -403,7 +419,7 @@ async function transcribeResumableFile(filePath, options, transcribe, checkpoint
     })();
     activeJobs.set(directory, job);
     try {
-        return await job;
+        return withDurationMetadata(await job, duration, startedAt);
     } finally {
         activeJobs.delete(directory);
     }

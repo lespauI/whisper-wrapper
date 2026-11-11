@@ -1,3 +1,4 @@
+const { beforeEach, describe, expect, it } = require('@jest/globals');
 const { TranscriptionController } = require('../../../src/renderer/controllers/TranscriptionController');
 
 describe('partial transcription export metadata', () => {
@@ -11,7 +12,9 @@ describe('partial transcription export metadata', () => {
                 status: 'partial',
                 partial: true,
                 issues: [issue],
-                resumeId: 'b'.repeat(64)
+                resumeId: 'b'.repeat(64),
+                audioDurationSeconds: 42.5,
+                processingDurationMs: 1234
             })
         };
         controller.formatTimestamp = seconds => `${seconds}s`;
@@ -23,6 +26,8 @@ describe('partial transcription export metadata', () => {
         const text = controller.formatAsText('recognized words', controller.getExportMetadata());
         expect(text).toContain('Status: Partial; review required');
         expect(text).toContain('Resume ID: ' + 'b'.repeat(64));
+        expect(text).toContain('Audio duration (seconds): 42.5');
+        expect(text).toContain('Processing duration (milliseconds): 1234');
         expect(text).toContain('12s–20s: Retry failed');
     });
 
@@ -33,11 +38,14 @@ describe('partial transcription export metadata', () => {
 
         expect(markdown).toContain('**Status:** Partial; review required');
         expect(markdown).toContain('12s–20s: Retry failed');
+        expect(markdown).toContain('**Audio Duration (seconds):** 42.5');
         expect(json.metadata).toMatchObject({
             status: 'partial',
             partial: true,
             issues: [issue],
-            resumeId: 'b'.repeat(64)
+            resumeId: 'b'.repeat(64),
+            audioDurationSeconds: 42.5,
+            processingDurationMs: 1234
         });
     });
 });

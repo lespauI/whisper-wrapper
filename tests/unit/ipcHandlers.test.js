@@ -193,7 +193,9 @@ describe('IPCHandlers', () => {
             const mockResult = {
                 success: true,
                 text: 'Hello world',
-                language: 'en'
+                language: 'en',
+                audioDurationSeconds: 12.5,
+                processingDurationMs: 900
             };
             mockTranscriptionService.transcribeFile.mockResolvedValue(mockResult);
 
@@ -203,6 +205,10 @@ describe('IPCHandlers', () => {
             expect(mockTranscriptionService.setModel).toHaveBeenCalledWith('base');
             expect(mockTranscriptionService.transcribeFile).toHaveBeenCalledWith('/temp/audio.wav', expect.objectContaining({ threads: 4, translate: false, useGpu: true, flashAttn: true, gpuDevice: 0 }));
             expect(result).toEqual(expect.objectContaining(mockResult));
+            expect(mockTranscriptionStoreService.store).toHaveBeenCalledWith('Hello world', expect.objectContaining({
+                audioDurationSeconds: 12.5,
+                processingDurationMs: 900
+            }));
         });
 
         it('persists partial results before returning their resume contract', async () => {
@@ -387,6 +393,35 @@ describe('IPCHandlers', () => {
             await handlers.handleTranscribeAudio(mockEvent, audioData, null, { skipStore: true });
 
             expect(handlers.transcriptionStoreService.store).not.toHaveBeenCalled();
+        });
+
+        it('stores duration units and finalizes checkpoints after saving complete recordings', async () => {
+            const order = [];
+            const resumeId = 'f'.repeat(64);
+            mockTranscriptionService.transcribeBuffer.mockResolvedValue({
+                success: true,
+                text: 'Recorded words',
+                language: 'en',
+                resumeId,
+                audioDurationSeconds: 86.25,
+                processingDurationMs: 12000
+            });
+            mockTranscriptionStoreService.store.mockImplementation(async (_text, metadata) => {
+                order.push('stored');
+                expect(metadata).toMatchObject({ audioDurationSeconds: 86.25, processingDurationMs: 12000 });
+                return { id: 'recording-history-id' };
+            });
+            mockTranscriptionService.finalizeTranscription = jest.fn(async () => order.push('finalized'));
+
+            const result = await handlers.handleTranscribeAudio(mockEvent, Buffer.from('audio data'));
+
+            expect(order).toEqual(['stored', 'finalized']);
+            expect(result).toMatchObject({
+                historyId: 'recording-history-id',
+                audioDurationSeconds: 86.25,
+                processingDurationMs: 12000
+            });
+            expect(mockTranscriptionService.finalizeTranscription).toHaveBeenCalledWith(resumeId);
         });
     });
 

@@ -363,7 +363,9 @@ export class TranscriptionController {
             status: state.status || (state.partial ? 'partial' : 'complete'),
             partial: state.partial === true,
             issues: Array.isArray(state.issues) ? state.issues : [],
-            resumeId: state.resumeId || null
+            resumeId: state.resumeId || null,
+            audioDurationSeconds: state.audioDurationSeconds ?? null,
+            processingDurationMs: state.processingDurationMs ?? null
         };
     }
 
@@ -372,7 +374,7 @@ export class TranscriptionController {
         const issues = metadata.issues.length
             ? metadata.issues.map(issue => `- ${this.formatIssue(issue)}`).join('\n')
             : '- None';
-        return `Status: ${status}\nResume ID: ${metadata.resumeId || 'Not resumable'}\nIssues:\n${issues}\n\n${text}`;
+        return `Status: ${status}\nResume ID: ${metadata.resumeId || 'Not resumable'}\nAudio duration (seconds): ${metadata.audioDurationSeconds ?? 'Unknown'}\nProcessing duration (milliseconds): ${metadata.processingDurationMs ?? 'Unknown'}\nIssues:\n${issues}\n\n${text}`;
     }
 
     /**
@@ -392,6 +394,8 @@ export class TranscriptionController {
 
 **Status:** ${metadata.partial ? 'Partial; review required' : 'Complete'}
 **Resume ID:** ${metadata.resumeId || 'Not resumable'}
+**Audio Duration (seconds):** ${metadata.audioDurationSeconds ?? 'Unknown'}
+**Processing Duration (milliseconds):** ${metadata.processingDurationMs ?? 'Unknown'}
 
 ## Issues
 
@@ -420,7 +424,9 @@ ${text}
                 status: metadata.status,
                 partial: metadata.partial,
                 issues: metadata.issues,
-                resumeId: metadata.resumeId
+                resumeId: metadata.resumeId,
+                audioDurationSeconds: metadata.audioDurationSeconds,
+                processingDurationMs: metadata.processingDurationMs
             }
         };
         

@@ -178,7 +178,9 @@ export class FileUploadController {
             status: partial ? 'partial' : 'complete',
             partial,
             issues: Array.isArray(result.issues) ? result.issues : [],
-            resumeId: result.resumeId || null
+            resumeId: result.resumeId || null,
+            audioDurationSeconds: result.audioDurationSeconds ?? null,
+            processingDurationMs: result.processingDurationMs ?? null
         });
 
         // Update file upload state

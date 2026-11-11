@@ -136,8 +136,10 @@ it('uses the regular transcription for short recordings', async () => {
         stdout: '{"streams":[{"duration":"110"}]}'
     }));
     const transcribe = jestApi.fn().mockResolvedValue(chunk('short'));
-    await transcribeResumableFile(source, options, transcribe, checkpoints);
+    const result = await transcribeResumableFile(source, options, transcribe, checkpoints);
     expect(transcribe).toHaveBeenCalledWith(source, { ...options, preserveDecoderOutput: true });
+    expect(result.audioDurationSeconds).toBe(110);
+    expect(result.processingDurationMs).toEqual(expect.any(Number));
 });
 
 it('marks malformed short transcription output as partial', async () => {
@@ -224,13 +226,16 @@ it('keeps ordinary repetitions with advancing timestamps', async () => {
     })) };
     const transcribe = jestApi.fn().mockResolvedValue(raw);
 
-    expect(await transcribeResumableFile(source, options, transcribe, checkpoints)).toMatchObject({
+    const result = await transcribeResumableFile(source, options, transcribe, checkpoints);
+    expect(result).toMatchObject({
         ...raw,
         status: 'complete',
         partial: false,
         issues: [],
-        resumeId: null
+        resumeId: null,
+        audioDurationSeconds: 30
     });
+    expect(result.processingDurationMs).toEqual(expect.any(Number));
     expect(transcribe).toHaveBeenCalledTimes(1);
 });
 

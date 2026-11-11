@@ -60,6 +60,8 @@ export class AppState {
             partial: false,
             issues: [],
             resumeId: null,
+            audioDurationSeconds: null,
+            processingDurationMs: null,
             viewMode: TRANSCRIPTION_VIEW_MODES.TIMESTAMPED
         };
 
@@ -347,6 +349,8 @@ export class AppState {
             partial: false,
             issues: [],
             resumeId: null,
+            audioDurationSeconds: null,
+            processingDurationMs: null,
             viewMode: TRANSCRIPTION_VIEW_MODES.TIMESTAMPED
         };
         this.notifyStateChange('transcription', this.transcription);

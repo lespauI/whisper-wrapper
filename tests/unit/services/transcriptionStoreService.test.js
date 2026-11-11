@@ -147,7 +147,9 @@ describe('TranscriptionStoreService', () => {
         status: 'partial',
         partial: true,
         issues: [{ code: 'decoder_recovery_failed', start: 12, end: 20 }],
-        resumeId: 'a'.repeat(64)
+        resumeId: 'a'.repeat(64),
+        audioDurationSeconds: 95.25,
+        processingDurationMs: 14000
       });
 
       const persisted = JSON.parse(fs.readFileSync(path.join(testDataDir, 'index.json'), 'utf8'))[0];
@@ -155,6 +157,8 @@ describe('TranscriptionStoreService', () => {
         status: 'partial',
         partial: true,
         resumeId: 'a'.repeat(64),
+        audioDurationSeconds: 95.25,
+        processingDurationMs: 14000,
         metaStatus: 'pending'
       });
       expect(persisted.issues).toEqual([{ code: 'decoder_recovery_failed', start: 12, end: 20 }]);

@@ -4,7 +4,10 @@
 
 const { LocalWhisperService } = require('./localWhisperService');
 const TranscriptionFormatter = require('./transcriptionFormatter');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { randomBytes } = require('crypto');
 const { finalizeResumableFile, transcribeResumableFile } = require('./resumableTranscription');
 
 class TranscriptionService {
@@ -99,7 +102,7 @@ class TranscriptionService {
     async transcribeFile(filePath, options = {}) {
         console.log('🎯 TranscriptionService: Starting file transcription...');
         console.log(`📁 File path: ${filePath}`);
-        console.log(`⚙️ Options:`, options);
+        console.log('⚙️ Options:', options);
         
         try {
             if (!this.isAvailable()) {
@@ -116,7 +119,8 @@ class TranscriptionService {
                 useInitialPrompt: options.useInitialPrompt !== undefined ? options.useInitialPrompt : true,
                 useGpu: options.useGpu !== undefined ? options.useGpu : this.localWhisper.useGpu,
                 flashAttn: options.flashAttn !== undefined ? options.flashAttn : this.localWhisper.flashAttn,
-                gpuDevice: options.gpuDevice !== undefined ? options.gpuDevice : this.localWhisper.gpuDevice
+                gpuDevice: options.gpuDevice !== undefined ? options.gpuDevice : this.localWhisper.gpuDevice,
+                contextPrompt: options.contextPrompt
             };
             
             // Only add initialPrompt if useInitialPrompt is true
@@ -130,7 +134,7 @@ class TranscriptionService {
             if (whisperOptions.initialPrompt && whisperOptions.useInitialPrompt) {
                 console.log(`🔤 TranscriptionService: Using initial prompt (${whisperOptions.initialPrompt.length} chars)`);
             } else {
-                console.log(`🔤 TranscriptionService: Initial prompt is DISABLED`);
+                console.log('🔤 TranscriptionService: Initial prompt is DISABLED');
             }
             const decoderIdentity = this.localWhisper.getDecoderIdentity?.(whisperOptions.model, whisperOptions.language) || null;
             const result = await transcribeResumableFile(filePath, whisperOptions,
@@ -163,6 +167,8 @@ class TranscriptionService {
                 segments: result.segments,
                 model: result.model,
                 duration: result.duration,
+                audioDurationSeconds: result.audioDurationSeconds ?? result.audioDuration ?? null,
+                processingDurationMs: result.processingDurationMs ?? null,
                 metadata: formattedResult.metadata,
                 // Additional formats
                 srt: this.formatter.generateSRT(result.segments),
@@ -191,55 +197,19 @@ class TranscriptionService {
      * @returns {Promise<Object>} - Transcription result
      */
     async transcribeBuffer(audioBuffer, options = {}) {
+        let tempDirectory;
         try {
-            if (!this.isAvailable()) {
-                throw new Error('Local Whisper is not available. Please run the setup script first.');
-            }
-
-            const whisperOptions = {
-                signal: options.signal,
-                model: options.model || this.model,
-                language: options.language || this.language,
-                translate: options.translate || false,
-                threads: options.threads || 4,
-                useInitialPrompt: options.useInitialPrompt !== undefined ? options.useInitialPrompt : true,
-                useGpu: options.useGpu !== undefined ? options.useGpu : this.localWhisper.useGpu,
-                flashAttn: options.flashAttn !== undefined ? options.flashAttn : this.localWhisper.flashAttn,
-                gpuDevice: options.gpuDevice !== undefined ? options.gpuDevice : this.localWhisper.gpuDevice
-            };
-            
-            // Only add initialPrompt if useInitialPrompt is true
-            if (whisperOptions.useInitialPrompt) {
-                whisperOptions.initialPrompt = options.initialPrompt || this.initialPrompt;
-            }
-            
-            // Add context prompt for chunk processing (takes precedence over initial prompt)
-            if (options.contextPrompt) {
-                whisperOptions.contextPrompt = options.contextPrompt;
-                console.log(`📝 TranscriptionService: Using context prompt (${options.contextPrompt.length} chars): "${options.contextPrompt.substring(0, 100)}..."`);
-            }
-            
-            // Log initial prompt status
-            if (whisperOptions.initialPrompt && whisperOptions.useInitialPrompt && !options.contextPrompt) {
-                console.log(`🔤 TranscriptionService: Using initial prompt (${whisperOptions.initialPrompt.length} chars)`);
-            } else if (!options.contextPrompt) {
-                console.log(`🔤 TranscriptionService: Initial prompt is DISABLED`);
-            }
-
-            const result = await this.localWhisper.transcribeBuffer(audioBuffer, whisperOptions);
-            
-            return {
-                success: true,
-                text: result.text,
-                language: result.language,
-                segments: result.segments,
-                model: result.model,
-                duration: result.duration
-            };
+            const buffer = Buffer.isBuffer(audioBuffer) ? audioBuffer : Buffer.from(audioBuffer);
+            tempDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'whisper-recording-'));
+            const tempFilePath = path.join(tempDirectory, `${randomBytes(8).toString('hex')}.webm`);
+            await fs.promises.writeFile(tempFilePath, buffer, { mode: 0o600 });
+            return await this.transcribeFile(tempFilePath, options);
 
         } catch (error) {
             console.error('Local transcription error:', error);
             throw new Error(`Transcription failed: ${error.message}`);
+        } finally {
+            if (tempDirectory) await fs.promises.rm(tempDirectory, { recursive: true, force: true });
         }
     }
 

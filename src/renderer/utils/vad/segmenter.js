@@ -74,6 +74,8 @@ export function segment(pcm, sampleRate, opts = {}) {
   const minSilenceMs = opts.minSilenceMs ?? 350;
   const leadInMs = opts.leadInMs ?? 200;
   const hangoverMs = opts.hangoverMs ?? 250;
+    const calibrate = typeof opts.calibrate === 'function' ? opts.calibrate : vadCalibrate;
+    const detect = typeof opts.detect === 'function' ? opts.detect : vadDetect;
 
   const frameSize = Math.max(1, Math.round((sampleRate * frameMs) / 1000));
   const frames = framePCM(pcm, frameSize);
@@ -85,7 +87,7 @@ export function segment(pcm, sampleRate, opts = {}) {
 
   // Calibration on first N ms (or all if shorter)
   const calFramesCount = Math.max(1, Math.min(totalFrames, Math.round(calibrationMs / frameMs)));
-  const calState = vadCalibrate(frames.slice(0, calFramesCount), sampleRate, { adaptive: true });
+  const calState = calibrate(frames.slice(0, calFramesCount), sampleRate, { adaptive: opts.adaptive ?? true });
 
   const minSpeechFrames = Math.max(1, Math.round(minSpeechMs / frameMs));
   const minSilenceFrames = Math.max(1, Math.round(minSilenceMs / frameMs));
@@ -96,9 +98,10 @@ export function segment(pcm, sampleRate, opts = {}) {
   const features = new Array(totalFrames);
 
   for (let i = 0; i < totalFrames; i++) {
-    const res = vadDetect(frames[i], sampleRate, calState, {
+    const res = detect(frames[i], sampleRate, calState, {
       sensitivity,
-      adaptive: true,
+      adaptive: opts.adaptive ?? true,
+            mode: opts.mode,
     });
     decisions[i] = !!res.isSpeech;
     features[i] = res.features;

@@ -83,6 +83,8 @@ class TranscriptionStoreService {
             audioFilePath: metadata.audioFilePath || '',
             language: metadata.language || '',
             duration: metadata.duration || null,
+            audioDurationSeconds: metadata.audioDurationSeconds ?? null,
+            processingDurationMs: metadata.processingDurationMs ?? null,
             model: metadata.model || '',
             status: partial ? 'partial' : 'complete',
             partial,

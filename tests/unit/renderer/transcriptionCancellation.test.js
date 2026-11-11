@@ -138,6 +138,35 @@ describe('transcription stop controls', () => {
         expect(status.transcriptionOperations.has(newOperation)).toBe(true);
     });
 
+    test('keeps a foreground file task current when a background chunk starts', async () => {
+        let finishTranscription;
+        window.electronAPI.transcribeFile.mockImplementation(() => new Promise(resolve => {
+            finishTranscription = resolve;
+        }));
+        appState.setTranscriptionState = jest.fn();
+        const upload = Object.create(FileUploadController.prototype);
+        Object.assign(upload, {
+            appState,
+            statusController: status,
+            tabController: { switchTab: jest.fn().mockResolvedValue() },
+            validateFile: () => true,
+            showTranscriptionResult: jest.fn().mockResolvedValue()
+        });
+
+        const task = upload.handleFileUpload('/audio.wav');
+        await Promise.resolve();
+        const [foregroundOperation] = status.transcriptionOperations;
+        const backgroundOperation = status.beginTranscription(false);
+        finishTranscription({ success: true, text: 'Foreground result', segments: [] });
+        await task;
+
+        expect(status.isCurrentTranscription(foregroundOperation)).toBe(true);
+        expect(appState.setTranscriptionState).toHaveBeenCalledWith(expect.objectContaining({
+            currentText: 'Foreground result'
+        }));
+        status.endTranscription(backgroundOperation);
+    });
+
     test('canceled recorded audio stays available for another attempt', async () => {
         const recording = Object.create(RecordingController.prototype);
         const recordingBlob = { arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(1)) };

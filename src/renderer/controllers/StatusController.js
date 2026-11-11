@@ -30,7 +30,8 @@ export class StatusController {
 
     beginTranscription(loading = true) {
         if (this.stoppingTranscription) return null;
-        const operation = { canceled: false, loading, generation: ++this.transcriptionGeneration };
+        const generation = loading ? ++this.transcriptionGeneration : this.transcriptionGeneration;
+        const operation = { canceled: false, loading, generation };
         this.transcriptionOperations.add(operation);
         this.refreshTranscriptionState();
         return operation;

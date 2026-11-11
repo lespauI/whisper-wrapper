@@ -8,7 +8,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { randomBytes } = require('crypto');
-const { finalizeResumableFile, transcribeResumableFile } = require('./resumableTranscription');
+const { finalizeResumableFile, getResumableJob, transcribeResumableFile } = require('./resumableTranscription');
 
 class TranscriptionService {
     constructor() {
@@ -100,6 +100,7 @@ class TranscriptionService {
      * @returns {Promise<Object>} - Transcription result
      */
     async transcribeFile(filePath, options = {}) {
+        const persistSourceAudio = options.persistSourceAudio !== false;
         console.log('🎯 TranscriptionService: Starting file transcription...');
         console.log(`📁 File path: ${filePath}`);
         console.log('⚙️ Options:', options);
@@ -139,7 +140,7 @@ class TranscriptionService {
             const decoderIdentity = this.localWhisper.getDecoderIdentity?.(whisperOptions.model, whisperOptions.language) || null;
             const result = await transcribeResumableFile(filePath, whisperOptions,
                 this.localWhisper.transcribeFile.bind(this.localWhisper),
-                this.checkpointRoot, decoderIdentity);
+                this.checkpointRoot, decoderIdentity, persistSourceAudio);
             if (result.success === false) throw new Error(result.error || 'Decoder did not return a transcription');
             
             console.log('🎯 TranscriptionService: Received result from LocalWhisperService:', {
@@ -188,6 +189,11 @@ class TranscriptionService {
 
     async finalizeTranscription(resumeId) {
         return finalizeResumableFile(resumeId, this.checkpointRoot);
+    }
+
+    async resumeTranscription(resumeId, options = {}) {
+        const job = await getResumableJob(resumeId, this.checkpointRoot);
+        return this.transcribeFile(job.sourcePath, { ...job.options, signal: options.signal });
     }
 
     /**

@@ -3,7 +3,7 @@ const fs = require('fs').promises;
 const os = require('os');
 const path = require('path');
 const { execFile } = require('child_process');
-const { finalizeResumableFile, transcribeResumableFile } = require('../../src/services/resumableTranscription');
+const { finalizeResumableFile, getResumableJob, transcribeResumableFile } = require('../../src/services/resumableTranscription');
 
 jest.mock('child_process', () => ({ execFile: jest.fn() }));
 
@@ -36,6 +36,9 @@ it('resumes after a late failure with a new temporary copy and keeps absolute ti
     expect(partial).toMatchObject({ partial: true, status: 'partial', resumeId: expect.any(String) });
     expect(await fs.readdir(path.join(checkpoints, partial.resumeId))).toContain('0.json');
     expect(await fs.readdir(path.join(checkpoints, partial.resumeId))).toContain('1.json');
+    const savedJob = await getResumableJob(partial.resumeId, checkpoints);
+    expect(await fs.readFile(savedJob.sourcePath)).toEqual(await fs.readFile(source));
+    expect(savedJob.options).toEqual(options);
     const copy = path.join(directory, 'second.mp4');
     await fs.copyFile(source, copy);
 
@@ -50,6 +53,15 @@ it('resumes after a late failure with a new temporary copy and keeps absolute ti
     expect(await fs.readdir(path.join(checkpoints, result.resumeId))).toContain('manifest.json');
     await finalizeResumableFile(result.resumeId, checkpoints);
     expect(await fs.readdir(checkpoints)).toEqual([]);
+});
+
+it('does not persist source audio for background chunk jobs', async () => {
+    const transcribe = jestApi.fn().mockResolvedValue(chunk('background'));
+    const result = await transcribeResumableFile(source, options, transcribe, checkpoints, null, false);
+    const directoryPath = path.join(checkpoints, result.resumeId);
+
+    expect(await fs.readdir(directoryPath)).not.toContain('source.audio');
+    await expect(getResumableJob(result.resumeId, checkpoints)).rejects.toThrow('Resumable transcription job is incomplete');
 });
 
 it('does not reuse chunks after recognition settings change', async () => {
@@ -117,7 +129,7 @@ it('returns decoded text and a partial issue when a checkpoint write fails', asy
     let renameCalls = 0;
     const renameSpy = jestApi.spyOn(fs, 'rename').mockImplementation(async (...args) => {
         renameCalls++;
-        if (renameCalls === 2) throw new Error('checkpoint disk failure');
+        if (renameCalls === 3) throw new Error('checkpoint disk failure');
         return rename(...args);
     });
     try {

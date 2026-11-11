@@ -10,6 +10,7 @@ const chunkSeconds = 240;
 const checkpointSchemaVersion = 1;
 const algorithmVersion = 4;
 const activeJobs = new Map();
+const sourceFilename = 'source.audio';
 
 function hasDecoderLoop(segments) {
     let stalled = 0;
@@ -201,6 +202,77 @@ async function atomicWrite(filePath, content) {
     }
 }
 
+async function hashFile(filePath) {
+    const hash = createHash('sha256');
+    for await (const bytes of fs.createReadStream(filePath)) hash.update(bytes);
+    return hash.digest('hex');
+}
+
+async function ensureSourceAudio(filePath, directory, expectedHash) {
+    await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 });
+    const sourcePath = path.join(directory, sourceFilename);
+    try {
+        if (await hashFile(sourcePath) === expectedHash) return sourcePath;
+    } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+    }
+
+    const temporaryPath = path.join(directory, `.source-${randomBytes(8).toString('hex')}.tmp`);
+    try {
+        await fs.promises.copyFile(filePath, temporaryPath, fs.constants.COPYFILE_EXCL);
+        await fs.promises.chmod(temporaryPath, 0o600);
+        if (await hashFile(temporaryPath) !== expectedHash) {
+            throw new Error('Saved transcription audio did not match its source');
+        }
+        await fs.promises.rm(sourcePath, { force: true });
+        await fs.promises.rename(temporaryPath, sourcePath);
+        return sourcePath;
+    } catch (error) {
+        try {
+            await fs.promises.unlink(temporaryPath);
+        } catch (cleanupError) {
+            if (cleanupError.code !== 'ENOENT') error.cleanupError = cleanupError;
+        }
+        throw error;
+    }
+}
+
+async function getResumableJob(resumeId, checkpointRoot) {
+    if (typeof resumeId !== 'string' || !/^[a-f0-9]{64}$/.test(resumeId)) {
+        throw new Error('Invalid transcription resume id');
+    }
+
+    const directory = path.join(checkpointRoot, resumeId);
+    const manifestPath = path.join(directory, 'manifest.json');
+    let manifest;
+    try {
+        manifest = JSON.parse(await fs.promises.readFile(manifestPath, 'utf8'));
+    } catch (error) {
+        if (error.code === 'ENOENT' || error instanceof SyntaxError) {
+            throw new Error('Resumable transcription job was not found');
+        }
+        throw error;
+    }
+    if (manifest.resumeId !== resumeId || manifest.sourceFile !== sourceFilename ||
+        !/^[a-f0-9]{64}$/.test(manifest.sourceSha256 || '') ||
+        !manifest.options || typeof manifest.options !== 'object' || Array.isArray(manifest.options)) {
+        throw new Error('Resumable transcription job is incomplete');
+    }
+
+    const sourcePath = path.join(directory, sourceFilename);
+    let actualSourceHash;
+    try {
+        actualSourceHash = await hashFile(sourcePath);
+    } catch (error) {
+        if (error.code === 'ENOENT') throw new Error('Saved transcription audio is missing');
+        throw error;
+    }
+    if (actualSourceHash !== manifest.sourceSha256) {
+        throw new Error('Saved transcription audio is missing or damaged');
+    }
+    return { sourcePath, options: manifest.options };
+}
+
 function validCheckpoint(checkpoint, resumeId, start, end) {
     if (!checkpoint || checkpoint.schemaVersion !== checkpointSchemaVersion ||
         checkpoint.algorithmVersion !== algorithmVersion ||
@@ -239,6 +311,8 @@ async function ensureManifest(directory, manifest) {
             existing.resumeId === manifest.resumeId &&
             JSON.stringify(existing.boundaries) === JSON.stringify(manifest.boundaries) &&
             JSON.stringify(existing.decoderIdentity) === JSON.stringify(manifest.decoderIdentity) &&
+            existing.sourceFile === manifest.sourceFile && existing.sourceSha256 === manifest.sourceSha256 &&
+            JSON.stringify(existing.options) === JSON.stringify(manifest.options) &&
             existing.model === manifest.model) return;
     } catch (error) {
         if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
@@ -348,7 +422,8 @@ async function transcribeChunks(filePath, options, transcribe, directory, bounda
     return buildResult(segments, languages, duration, options, resumeId, issues);
 }
 
-async function transcribeResumableFile(filePath, options, transcribe, checkpointRoot, decoderIdentity = null) {
+async function transcribeResumableFile(filePath, options, transcribe, checkpointRoot, decoderIdentity = null,
+    retainSourceAudio = true) {
     const startedAt = Date.now();
     const { signal, ...recognitionOptions } = options;
     checkCanceled(signal);
@@ -396,24 +471,33 @@ async function transcribeResumableFile(filePath, options, transcribe, checkpoint
     boundaries.push(duration);
 
     const hash = createHash('sha256');
+    const sourceHash = retainSourceAudio ? createHash('sha256') : null;
     hash.update(JSON.stringify({ version: algorithmVersion, options: recognitionOptions,
-        decoderIdentity, boundaries }));
-    for await (const bytes of fs.createReadStream(filePath, { signal })) hash.update(bytes);
+        decoderIdentity, boundaries, retainSourceAudio }));
+    for await (const bytes of fs.createReadStream(filePath, { signal })) {
+        hash.update(bytes);
+        sourceHash?.update(bytes);
+    }
     checkCanceled(signal);
     const resumeId = hash.digest('hex');
+    const sourceSha256 = sourceHash?.digest('hex') || null;
     const directory = path.join(checkpointRoot, resumeId);
 
     if (activeJobs.has(directory)) {
         return withDurationMetadata(await activeJobs.get(directory), duration, startedAt);
     }
     const job = (async () => {
+        if (retainSourceAudio) await ensureSourceAudio(filePath, directory, sourceSha256);
         await ensureManifest(directory, {
             schemaVersion: checkpointSchemaVersion,
             algorithmVersion,
             resumeId,
             boundaries,
             model: options.model,
-            decoderIdentity
+            decoderIdentity,
+            sourceFile: retainSourceAudio ? sourceFilename : null,
+            sourceSha256,
+            options: recognitionOptions
         });
         return transcribeChunks(filePath, decodeOptions, transcribe, directory, boundaries, resumeId);
     })();
@@ -432,4 +516,4 @@ async function finalizeResumableFile(resumeId, checkpointRoot) {
     await fs.promises.rm(path.join(checkpointRoot, resumeId), { recursive: true, force: true });
 }
 
-module.exports = { finalizeResumableFile, transcribeResumableFile };
+module.exports = { finalizeResumableFile, getResumableJob, transcribeResumableFile };

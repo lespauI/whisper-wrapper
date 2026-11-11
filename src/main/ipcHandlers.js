@@ -36,6 +36,8 @@ class IPCHandlers {
             this.runTranscription(event, signal => this.handleTranscribeFile(event, filePath, signal)));
         ipcMain.handle('transcription:audio', (event, audioData, prompt = null, options = {}) =>
             this.runTranscription(event, signal => this.handleTranscribeAudio(event, audioData, prompt, options, signal)));
+        ipcMain.handle('transcription:resume', (event, resumeId) =>
+            this.runTranscription(event, signal => this.handleResumeTranscription(event, resumeId, signal)));
         ipcMain.handle('transcription:cancel', this.handleCancelTranscription.bind(this));
 
         // Recording handlers
@@ -485,6 +487,7 @@ class IPCHandlers {
             // Prepare transcription options
             const transcriptionOptions = {
                 signal,
+                persistSourceAudio: !(options && typeof options === 'object' && options.skipStore === true),
                 threads: currentConfig.threads || 4,
                 translate: currentConfig.translate || false,
                 useGpu: currentConfig.useGpu !== undefined ? currentConfig.useGpu : true,
@@ -504,12 +507,12 @@ class IPCHandlers {
             }
             
             // Transcribe the audio buffer
+            const skipStore = !!(options && typeof options === 'object' && options.skipStore === true);
             const result = await this.transcriptionService.transcribeBuffer(
                 audioBuffer,
                 transcriptionOptions
             );
 
-            const skipStore = !!(options && typeof options === 'object' && options.skipStore === true);
             const partial = result.partial === true || result.status === 'partial';
             const issues = Array.isArray(result.issues) ? result.issues : [];
             const resumeId = result.resumeId || null;
@@ -534,7 +537,7 @@ class IPCHandlers {
                 }
             }
 
-            if (!partial && !skipStore && resumeId && this.transcriptionService.finalizeTranscription) {
+            if (!partial && resumeId && this.transcriptionService.finalizeTranscription) {
                 try {
                     await this.transcriptionService.finalizeTranscription(resumeId);
                 } catch (error) {
@@ -578,6 +581,56 @@ class IPCHandlers {
             wrappedError.preserveError = error.preserveError;
             throw wrappedError;
         }
+    }
+
+    async handleResumeTranscription(event, resumeId, signal) {
+        const entry = this.transcriptionStoreService.list().find(item =>
+            item.resumeId === resumeId && item.partial === true);
+        if (!entry) throw new Error('Partial transcription was not found in history');
+
+        event.sender.send('transcription:progress', {
+            status: 'processing',
+            message: 'Resuming transcription from saved audio...'
+        });
+        const result = await this.transcriptionService.resumeTranscription(resumeId, { signal });
+        const partial = result.partial === true || result.status === 'partial';
+        const issues = Array.isArray(result.issues) ? result.issues : [];
+        const updatedEntry = await this.transcriptionStoreService.updateResult(entry.id, result.text, {
+            language: result.language,
+            duration: result.duration,
+            audioDurationSeconds: result.audioDurationSeconds,
+            processingDurationMs: result.processingDurationMs,
+            model: result.model,
+            status: partial ? 'partial' : 'complete',
+            partial,
+            issues,
+            resumeId: result.resumeId || null
+        });
+        if (!updatedEntry) throw new Error('Partial transcription history entry was not found');
+
+        let cleanupPending = false;
+        let cleanupError = null;
+        const jobsToClean = new Set();
+        if (resumeId !== result.resumeId) jobsToClean.add(resumeId);
+        if (!partial && result.resumeId) jobsToClean.add(result.resumeId);
+        if (this.transcriptionService.finalizeTranscription) {
+            for (const jobId of jobsToClean) {
+                try {
+                    await this.transcriptionService.finalizeTranscription(jobId);
+                } catch (error) {
+                    cleanupPending = true;
+                    cleanupError = error.message;
+                }
+            }
+        }
+        event.sender.send('transcription:progress', {
+            status: partial ? 'partial' : 'completed',
+            message: partial
+                ? 'Transcription is still partial; review the flagged audio intervals'
+                : 'Transcription resumed and completed successfully'
+        });
+        return { ...result, status: partial ? 'partial' : 'complete', partial, issues,
+            historyId: updatedEntry.id, cleanupPending, cleanupError };
     }
 
     async handleGetConfig() {
@@ -1002,8 +1055,17 @@ class IPCHandlers {
 
     async handleTranscriptionsDelete(event, { id } = {}) {
         try {
+            const saved = await this.transcriptionStoreService.get(id);
             const deleted = await this.transcriptionStoreService.delete(id);
-            return { success: deleted };
+            if (!deleted) return { success: false };
+            if (saved?.entry?.resumeId && this.transcriptionService.finalizeTranscription) {
+                try {
+                    await this.transcriptionService.finalizeTranscription(saved.entry.resumeId);
+                } catch (error) {
+                    return { success: true, cleanupPending: true, error: error.message };
+                }
+            }
+            return { success: true };
         } catch (error) {
             console.error('Error deleting transcription:', error);
             return { success: false, error: error.message };

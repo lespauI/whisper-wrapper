@@ -9,6 +9,7 @@ describe('partial recording transcription', () => {
     });
 
     it('keeps partial metadata in app state and warns the user', async () => {
+        const operation = { canceled: false };
         const transcriptionResult = {
             success: true,
             status: 'partial',
@@ -22,7 +23,7 @@ describe('partial recording transcription', () => {
         };
         const appState = { setTranscriptionState: jestApi.fn() };
         const statusController = {
-            beginTranscription: () => ({ canceled: false }),
+            beginTranscription: () => operation,
             endTranscription: jestApi.fn(),
             showWarning: jestApi.fn(),
             updateStatus: jestApi.fn(),
@@ -40,7 +41,10 @@ describe('partial recording transcription', () => {
         global.window = {
             electronAPI: {
                 onTranscriptionProgress: jestApi.fn().mockReturnValue(jestApi.fn()),
-                transcribeAudio: jestApi.fn().mockResolvedValue(transcriptionResult)
+                transcribeAudio: jestApi.fn(async () => {
+                    operation.canceled = true;
+                    return transcriptionResult;
+                })
             },
             whisperApp: {
                 controllers: { fileUpload: { showTranscriptionResult: jestApi.fn() } }
@@ -61,8 +65,9 @@ describe('partial recording transcription', () => {
         expect(tabController.switchTab).toHaveBeenCalled();
     });
 
-    it('retains partial metadata from a background audio segment', async () => {
+    it('retains partial metadata from a canceled background audio segment', async () => {
         const issue = { code: 'decoder_recovery_failed', start: 1, end: 2 };
+        const operation = { canceled: false };
         const controller = Object.create(RecordingController.prototype);
         controller.ongoingTranscription = {
             enabled: true,
@@ -76,7 +81,7 @@ describe('partial recording transcription', () => {
             resumeIds: []
         };
         controller.statusController = {
-            beginTranscription: () => ({ canceled: false }),
+            beginTranscription: () => operation,
             endTranscription: jestApi.fn()
         };
         controller._segmentChunkToWavs = jestApi.fn().mockResolvedValue({
@@ -89,6 +94,7 @@ describe('partial recording transcription', () => {
         global.window = {
             electronAPI: {
                 transcribeAudio: jestApi.fn(async () => {
+                    operation.canceled = true;
                     controller.ongoingTranscription.enabled = false;
                     return {
                         success: true,

@@ -172,6 +172,30 @@ describe('TranscriptionStoreService', () => {
       });
     });
 
+    it('replaces a resumed transcription before its checkpoint source is removed', async () => {
+      const resumeId = 'c'.repeat(64);
+      const entry = await service.store('Partial words', { partial: true, resumeId });
+
+      const updated = await service.updateResult(entry.id, 'Complete words', {
+        status: 'complete',
+        partial: false,
+        issues: [],
+        resumeId,
+        audioDurationSeconds: 120,
+        processingDurationMs: 45000
+      });
+
+      expect(updated).toMatchObject({
+        status: 'complete',
+        partial: false,
+        resumeId,
+        audioDurationSeconds: 120,
+        processingDurationMs: 45000,
+        wordCount: 2
+      });
+      await expect(service.get(entry.id)).resolves.toMatchObject({ text: 'Complete words' });
+    });
+
     it('removes the text file and in-memory entry when the index cannot be replaced', async () => {
       const rename = jest.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
         throw new Error('index write failed');

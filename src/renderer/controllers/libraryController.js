@@ -24,6 +24,8 @@ class LibraryController {
         this.detailText = document.getElementById('library-detail-text');
         this.copyBtn = document.getElementById('library-copy-btn');
         this.deleteBtn = document.getElementById('library-delete-btn');
+        this.resumeBtn = document.getElementById('library-resume-btn');
+        this.currentEntry = null;
 
         this.renameBtn = document.getElementById('library-rename-btn');
         this.renameForm = document.getElementById('library-rename-form');
@@ -91,6 +93,9 @@ class LibraryController {
         }
         if (this.deleteBtn) {
             this.deleteBtn.addEventListener('click', () => this.deleteCurrentEntry());
+        }
+        if (this.resumeBtn) {
+            this.resumeBtn.addEventListener('click', () => this.resumeCurrentTranscription());
         }
 
         if (this.renameBtn) {
@@ -622,6 +627,7 @@ class LibraryController {
             }
 
             const { entry, text } = result;
+            this.currentEntry = entry;
             const date = entry.date ? new Date(entry.date).toLocaleString() : '';
 
             if (this.detailTitle) this.detailTitle.textContent = entry.title || entry.sourceFile || entry.id;
@@ -636,6 +642,9 @@ class LibraryController {
 
             if (this.detailSummary) this.detailSummary.textContent = entry.summary || '(no summary)';
             if (this.detailText) this.detailText.textContent = text || '';
+            if (this.resumeBtn) {
+                this.resumeBtn.classList.toggle('hidden', !(entry.partial === true && entry.resumeId));
+            }
 
             if (this.metaErrorEl) {
                 const showBanner = entry.metaStatus === 'failed' ||
@@ -682,12 +691,46 @@ class LibraryController {
 
     clearDetail() {
         this.currentEntryId = null;
+        this.currentEntry = null;
+        if (this.resumeBtn) this.resumeBtn.classList.add('hidden');
         if (this.detailEmpty) this.detailEmpty.classList.remove('hidden');
         if (this.detailContent) this.detailContent.classList.add('hidden');
         if (this.metaErrorEl) this.metaErrorEl.classList.add('hidden');
         const transcriptionController = window.whisperApp && window.whisperApp.controllers && window.whisperApp.controllers.transcription;
         if (transcriptionController) {
             transcriptionController.hideAudioPlayer();
+        }
+    }
+
+    async resumeCurrentTranscription() {
+        const entry = this.currentEntry;
+        if (!entry?.resumeId || !window.electronAPI?.resumeTranscription) return;
+        const statusController = window.whisperApp?.controllers?.status;
+        const operation = statusController?.beginTranscription?.();
+        if (statusController && !operation) return;
+        if (this.resumeBtn) this.resumeBtn.disabled = true;
+
+        try {
+            const result = await window.electronAPI.resumeTranscription(entry.resumeId);
+            const isCurrentOperation = !operation || (!operation.canceled &&
+                (typeof statusController?.isCurrentTranscription !== 'function' ||
+                    statusController.isCurrentTranscription(operation)));
+            if (!isCurrentOperation) return;
+            if (!result?.success) throw new Error(result?.error || 'Failed to resume transcription');
+            const fileUpload = window.whisperApp?.controllers?.fileUpload;
+            if (fileUpload?.handleTranscriptionSuccess) {
+                await fileUpload.handleTranscriptionSuccess(result);
+            }
+            await this.search();
+            await this.showDetail(result.historyId || entry.id);
+        } catch (error) {
+            const isCurrentOperation = !operation || (!operation.canceled &&
+                (typeof statusController?.isCurrentTranscription !== 'function' ||
+                    statusController.isCurrentTranscription(operation)));
+            if (isCurrentOperation) statusController?.showError?.(error.message);
+        } finally {
+            if (operation) statusController?.endTranscription?.(operation);
+            if (this.resumeBtn) this.resumeBtn.disabled = false;
         }
     }
 

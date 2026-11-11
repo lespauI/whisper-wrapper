@@ -3,9 +3,10 @@ const fs = require('fs');
 
 jest.mock('../../src/services/resumableTranscription', () => ({
     finalizeResumableFile: jest.fn().mockResolvedValue(undefined),
+    getResumableJob: jest.fn(),
     transcribeResumableFile: jest.fn((filePath, options, transcribe) => transcribe(filePath, options))
 }));
-const { finalizeResumableFile, transcribeResumableFile } = require('../../src/services/resumableTranscription');
+const { finalizeResumableFile, getResumableJob, transcribeResumableFile } = require('../../src/services/resumableTranscription');
 
 // Mock LocalWhisperService
 jest.mock('../../src/services/localWhisperService', () => {
@@ -243,6 +244,18 @@ describe('TranscriptionService', () => {
         it('finalizes checkpoints through the resumable service', async () => {
             await service.finalizeTranscription('a'.repeat(64));
             expect(finalizeResumableFile).toHaveBeenCalledWith('a'.repeat(64), service.checkpointRoot);
+        });
+
+        it('resumes a saved job with its original options and the new cancellation signal', async () => {
+            const signal = new AbortController().signal;
+            const options = { model: 'small', language: 'ru', threads: 2, useInitialPrompt: false };
+            getResumableJob.mockResolvedValue({ sourcePath: '/checkpoint/source.audio', options });
+            const transcribeFile = jest.spyOn(service, 'transcribeFile').mockResolvedValue({ success: true });
+
+            await service.resumeTranscription('a'.repeat(64), { signal });
+
+            expect(getResumableJob).toHaveBeenCalledWith('a'.repeat(64), service.checkpointRoot);
+            expect(transcribeFile).toHaveBeenCalledWith('/checkpoint/source.audio', { ...options, signal });
         });
     });
 

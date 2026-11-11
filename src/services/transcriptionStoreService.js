@@ -204,6 +204,76 @@ class TranscriptionStoreService {
     return entry;
   }
 
+    async updateResult(id, text, metadata = {}) {
+        const entry = this.index.find(e => e.id === id);
+        if (!entry) return null;
+        const txtPath = path.join(this.transcriptionsDir, `${id}.txt`);
+        const previousText = fs.existsSync(txtPath) ? fs.readFileSync(txtPath, 'utf8') : '';
+        const previousEntry = { ...entry, issues: [...(entry.issues || [])], labels: [...(entry.labels || [])] };
+        const temporaryPath = `${txtPath}.${uuidv4()}.tmp`;
+        const partial = metadata.partial === true || metadata.status === 'partial';
+        let textReplaced = false;
+
+        try {
+            fs.writeFileSync(temporaryPath, text, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+            fs.renameSync(temporaryPath, txtPath);
+            textReplaced = true;
+            Object.assign(entry, {
+                language: metadata.language ?? entry.language,
+                duration: metadata.duration ?? null,
+                audioDurationSeconds: metadata.audioDurationSeconds ?? null,
+                processingDurationMs: metadata.processingDurationMs ?? null,
+                model: metadata.model ?? entry.model,
+                status: partial ? 'partial' : 'complete',
+                partial,
+                issues: Array.isArray(metadata.issues) ? metadata.issues : [],
+                resumeId: typeof metadata.resumeId === 'string' ? metadata.resumeId : null,
+                wordCount: text.trim().split(/\s+/).filter(Boolean).length,
+                summary: '',
+                labels: [],
+                metaStatus: 'pending',
+                metaError: ''
+            });
+            this._saveIndex();
+        } catch (error) {
+            Object.assign(entry, previousEntry);
+            try {
+                if (textReplaced) fs.writeFileSync(txtPath, previousText, { encoding: 'utf8', mode: 0o600 });
+                if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);
+            } catch (cleanupError) {
+                if (cleanupError.code !== 'ENOENT') error.cleanupError = cleanupError;
+            }
+            throw error;
+        }
+
+        const minimalEntry = { ...entry, issues: [...entry.issues], labels: [...entry.labels] };
+        try {
+            const meta = await ollamaService.generateTranscriptionMeta(text);
+            entry.summary = meta.summary || '';
+            entry.labels = meta.labels || [];
+            entry.title = meta.title || entry.title;
+            if (meta.metaFailed) {
+                entry.metaStatus = 'failed';
+                entry.metaError = meta.metaError || 'Unknown error';
+            } else if (meta.metaDisabled) {
+                entry.metaStatus = 'disabled';
+            } else {
+                entry.metaStatus = 'success';
+            }
+        } catch (error) {
+            entry.metaStatus = 'failed';
+            entry.metaError = error.message;
+        }
+
+        try {
+            this._saveIndex();
+        } catch (error) {
+            Object.assign(entry, minimalEntry);
+            throw error;
+        }
+        return entry;
+    }
+
   /**
    * Delete a transcription by id.
    * @param {string} id

@@ -808,7 +808,6 @@ export class RecordingController {
             // Start transcription
             const result = await window.electronAPI.transcribeAudio(arrayBuffer);
             console.log('🎬 Manual transcription result from IPC:', result);
-            if (operation.canceled) return;
             if (result.canceled) {
                 this.statusController.updateStatus('Transcription stopped');
                 return;
@@ -1577,14 +1576,15 @@ export class RecordingController {
                     if (operation.canceled || this.transcriptionWorker !== worker || !this.ongoingTranscription.processingQueue) break;
                     try { VADMetrics.onSentSegment(1); } catch {}
                     const subResult = await window.electronAPI.transcribeAudio(wavBuffers[i], runningPrompt || null, { skipStore: true });
-                    if (operation.canceled) break;
                     if (subResult.canceled) {
                         this.cancelOngoingTranscription();
                         this.statusController.updateStatus('Transcription stopped');
                         break;
                     }
                     if (!subResult.success) throw new Error(subResult.error || 'Background transcription failed');
-                    if (subResult.partial === true || subResult.status === 'partial') {
+                    const partial = subResult.partial === true || subResult.status === 'partial';
+                    if (operation.canceled && !partial) break;
+                    if (partial) {
                         this.ongoingTranscription.status = 'partial';
                         this.ongoingTranscription.partial = true;
                         this.ongoingTranscription.issues.push(...(Array.isArray(subResult.issues) ? subResult.issues : [])
